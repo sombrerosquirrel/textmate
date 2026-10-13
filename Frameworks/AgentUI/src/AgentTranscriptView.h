@@ -19,7 +19,7 @@
 
 @property (nonatomic) AgentTranscript* transcript;
 @property (nonatomic, weak) id<AgentTranscriptViewDelegate> actionDelegate;
-@property (nonatomic) NSString* placeholderString; // shown while the transcript is empty
+@property (nonatomic) NSString* emptyStateString; // shown while the transcript is empty
 
 - (void)setNeedsDisplayItem:(AgentTranscriptItem*)item; // coalesced re-render
 - (void)reloadData;                                       // re-render everything now

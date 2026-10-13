@@ -1,6 +1,6 @@
 #import "AgentPromptView.h"
 
-static CGFloat const kMinTextHeight = 20;
+static CGFloat const kMinTextHeight = 28;
 static CGFloat const kMaxTextHeight = 180;
 static NSUInteger const kMaxHistory = 50;
 
@@ -17,19 +17,19 @@ static NSUInteger const kMaxHistory = 50;
 
 @interface AgentPromptTextView : NSTextView
 @property (nonatomic, weak) id<AgentPromptTextViewOwner> owner;
-@property (nonatomic) NSString* placeholderString;
+@property (nonatomic) NSString* promptPlaceholder;
 @end
 
 @implementation AgentPromptTextView
 - (void)drawRect:(NSRect)rect
 {
 	[super drawRect:rect];
-	if(self.string.length || !_placeholderString.length)
+	if(self.string.length || !_promptPlaceholder.length)
 		return;
 
 	NSPoint origin = self.textContainerOrigin;
 	origin.x += self.textContainer.lineFragmentPadding;
-	[_placeholderString drawAtPoint:origin withAttributes:@{ NSFontAttributeName: self.font ?: [NSFont systemFontOfSize:NSFont.systemFontSize], NSForegroundColorAttributeName: NSColor.placeholderTextColor }];
+	[_promptPlaceholder drawAtPoint:origin withAttributes:@{ NSFontAttributeName: self.font ?: [NSFont systemFontOfSize:NSFont.systemFontSize], NSForegroundColorAttributeName: NSColor.placeholderTextColor }];
 }
 
 // Include the leading “/” so slash commands complete as one word
@@ -111,7 +111,14 @@ static NSUInteger const kMaxHistory = 50;
 		_textScrollView = [AgentPromptTextView scrollableTextView];
 		_textScrollView.hasVerticalScroller = YES;
 		_textScrollView.autohidesScrollers  = YES;
-		_textScrollView.drawsBackground     = NO;
+		// A rounded input field on the panel’s window-colored background
+		_textScrollView.drawsBackground     = YES;
+		_textScrollView.backgroundColor     = NSColor.textBackgroundColor;
+		_textScrollView.wantsLayer          = YES;
+		_textScrollView.layer.cornerRadius  = 6;
+		_textScrollView.layer.borderWidth   = 1;
+		_textScrollView.contentInsets       = NSEdgeInsetsMake(4, 6, 4, 6);
+		_textScrollView.automaticallyAdjustsContentInsets = NO;
 		_textScrollView.borderType          = NSNoBorder;
 
 		// Replace the scroll view’s text view with our subclass, keeping its configuration
@@ -164,8 +171,23 @@ static NSUInteger const kMaxHistory = 50;
 			[buttons.widthAnchor constraintEqualToAnchor:stack.widthAnchor constant:-20],
 			_textHeightConstraint,
 		]];
+		[self updateFieldBorder];
 	}
 	return self;
+}
+
+// Layer colors don’t follow appearance changes by themselves
+- (void)viewDidChangeEffectiveAppearance
+{
+	[super viewDidChangeEffectiveAppearance];
+	[self updateFieldBorder];
+}
+
+- (void)updateFieldBorder
+{
+	[self.effectiveAppearance performAsCurrentDrawingAppearance:^{
+		_textScrollView.layer.borderColor = NSColor.separatorColor.CGColor;
+	}];
 }
 
 - (NSView*)initialFirstResponder { return _textView; }
@@ -183,7 +205,7 @@ static NSUInteger const kMaxHistory = 50;
 - (void)setPlaceholderString:(NSString*)placeholderString
 {
 	_placeholderString = placeholderString;
-	_textView.placeholderString = placeholderString;
+	_textView.promptPlaceholder = placeholderString;
 	_textView.needsDisplay = YES;
 }
 
@@ -205,7 +227,7 @@ static NSUInteger const kMaxHistory = 50;
 - (void)updateTextHeight
 {
 	[_textView.layoutManager ensureLayoutForTextContainer:_textView.textContainer];
-	CGFloat height = NSHeight([_textView.layoutManager usedRectForTextContainer:_textView.textContainer]) + 2 * _textView.textContainerInset.height;
+	CGFloat height = NSHeight([_textView.layoutManager usedRectForTextContainer:_textView.textContainer]) + 2 * _textView.textContainerInset.height + _textScrollView.contentInsets.top + _textScrollView.contentInsets.bottom;
 	_textHeightConstraint.constant = MIN(MAX(height, kMinTextHeight), kMaxTextHeight);
 }
 

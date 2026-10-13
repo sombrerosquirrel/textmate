@@ -23,6 +23,21 @@ static NSString* StopReasonNotice (NSString* stopReason)
 	return nil;
 }
 
+// Header, prompt area and footer use the window background (like the file
+// browser and status bar); the transcript draws its own text background.
+@interface AgentPanelBackgroundView : NSView
+@end
+
+@implementation AgentPanelBackgroundView
+- (BOOL)isOpaque { return YES; }
+
+- (void)drawRect:(NSRect)rect
+{
+	[NSColor.windowBackgroundColor setFill];
+	NSRectFill(rect);
+}
+@end
+
 static NSView* Separator ()
 {
 	NSBox* box = [[NSBox alloc] initWithFrame:NSZeroRect];
@@ -126,7 +141,7 @@ static NSView* Separator ()
 		[view.widthAnchor constraintEqualToAnchor:stack.widthAnchor].active = YES;
 	[transcriptScrollView setContentHuggingPriority:NSLayoutPriorityDefaultLow forOrientation:NSLayoutConstraintOrientationVertical];
 
-	NSView* container = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 380, 600)];
+	NSView* container = [[AgentPanelBackgroundView alloc] initWithFrame:NSMakeRect(0, 0, 380, 600)];
 	stack.translatesAutoresizingMaskIntoConstraints = NO;
 	[container addSubview:stack];
 	[NSLayoutConstraint activateConstraints:@[
@@ -143,7 +158,7 @@ static NSView* Separator ()
 
 - (void)updatePlaceholders
 {
-	_transcriptView.placeholderString = [NSString stringWithFormat:@"Ask %@ about this project.\n\nType / for the agent’s commands.\nUse + or drag files in to add context.", _agent.name];
+	_transcriptView.emptyStateString = [NSString stringWithFormat:@"Ask %@ about this project.\n\nType / for the agent’s commands.\nUse + or drag files in to add context.", _agent.name];
 	_promptView.placeholderString     = [NSString stringWithFormat:@"Ask %@…", _agent.name];
 }
 

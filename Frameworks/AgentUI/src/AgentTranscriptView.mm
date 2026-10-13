@@ -53,7 +53,8 @@ static NSString* PathFromURI (NSString* uri)
 	scrollView.hasVerticalScroller   = YES;
 	scrollView.hasHorizontalScroller = NO;
 	scrollView.borderType            = NSNoBorder;
-	scrollView.drawsBackground       = NO;
+	scrollView.drawsBackground       = YES; // fills below short transcripts, where the text view ends
+	scrollView.backgroundColor       = NSColor.textBackgroundColor;
 
 	NSTextStorage* textStorage     = [[NSTextStorage alloc] init];
 	NSLayoutManager* layoutManager = [[NSLayoutManager alloc] init];
@@ -103,16 +104,16 @@ static NSString* PathFromURI (NSString* uri)
 	[self reloadData];
 }
 
-- (void)setPlaceholderString:(NSString*)placeholderString
+- (void)setEmptyStateString:(NSString*)emptyStateString
 {
-	_placeholderString = placeholderString;
+	_emptyStateString = emptyStateString;
 	self.needsDisplay = YES;
 }
 
 - (void)drawRect:(NSRect)rect
 {
 	[super drawRect:rect];
-	if(self.textStorage.length || !_placeholderString.length)
+	if(self.textStorage.length || !_emptyStateString.length)
 		return;
 
 	NSMutableParagraphStyle* paragraph = [[NSMutableParagraphStyle alloc] init];
@@ -121,7 +122,7 @@ static NSString* PathFromURI (NSString* uri)
 	NSRect textRect = NSInsetRect(self.bounds, 24, 0);
 	textRect.origin.y    = NSMinY(self.bounds) + 40;
 	textRect.size.height = 200;
-	[_placeholderString drawWithRect:textRect options:NSStringDrawingUsesLineFragmentOrigin attributes:attributes];
+	[_emptyStateString drawWithRect:textRect options:NSStringDrawingUsesLineFragmentOrigin attributes:attributes];
 }
 
 // ==========
