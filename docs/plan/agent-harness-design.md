@@ -1,7 +1,7 @@
 ---
 title: TextMate Agent Harness — Design
 created: 2026-10-13
-status: draft for review
+status: approved 2026-10-13 — M1 in progress
 branch: feature/agent
 related: textmate-ai-plan.md
 ---
@@ -18,8 +18,8 @@ Lets AI coding agents — **GitHub Copilot** and **Claude Code** first, any othe
 | D2 | Copilot backend | `copilot --acp` (Copilot CLI, native ACP) | Verified 2026-10-13 |
 | D3 | Claude backend | `@agentclientprotocol/claude-agent-acp` adapter (Claude Agent SDK) | Verified 2026-10-13 |
 | D4 | JSON | Foundation `NSJSONSerialization` (no new dependency) | Proposed |
-| D5 | UI toolkit | **AppKit** (Objective-C++) | **Needs your OK** — see §7 |
-| D6 | Panel placement | Docked panel in the project window, toggled from the View menu | **Needs your OK** — see §7 |
+| D5 | UI toolkit | **AppKit** (Objective-C++) | Decided 2026-10-13 |
+| D6 | Panel placement | Docked panel in the project window, **left or right side (user setting)**, toggled from the View menu | Decided 2026-10-13 |
 | D7 | Session scope | One agent session per project window (cwd = project folder) | Proposed |
 | D8 | Agent configuration | Preferences pane + optional `.tm_properties` override | Proposed |
 
@@ -156,16 +156,16 @@ Transcript model types (`AgentMessage`, `AgentToolCall`, `AgentPlan`, …) are p
 | **M4** | Preferences ▸ Agents, Keychain API key, `.tm_properties` override, session resume, plan view, context actions | All §5 configuration works |
 | **M5** | Polish: theme integration, keyboard shortcuts, error states, log view, documentation | Ready for daily use; `pr/agent` port branch prepared |
 
-## 7. Open questions for review
+## 7. Review outcome (2026-10-13)
 
-**Q1 — UI toolkit (D5).** Recommended: **AppKit**. It keeps the feature independent of tectiv3's Swift package (OakSwiftUI) and builds with upstream's Objective-C++ toolchain; macOS's built-in Markdown support (`NSAttributedString`, macOS 12+) covers rendering on this fork's macOS 14 minimum. Caveat: upstream `master` still targets **macOS 10.12**, so an upstream PR would need either a raised minimum macOS or a simpler Markdown fallback — portability is better than with SwiftUI, but not free. Alternative: SwiftUI via OakSwiftUI — faster to build a polished chat view and consistent with tectiv3's LSP panels, but ties the feature to #1467.
+**Q1 — UI toolkit: AppKit.** Chosen for chat-specific strengths: one continuous, selectable and searchable transcript (TextKit), smooth handling of long conversations, code blocks highlighted with TextMate's own grammars and themes, no dependency on OakSwiftUI or the Swift build step, and year-to-year stability. Markdown: macOS's built-in parser labels block structure; an M2 renderer turns it into fonts, indentation, code-block backgrounds and tables in one text view. The UI stays a thin layer over `AgentClient` so parts could move to SwiftUI later. Note: upstream `master` targets macOS 10.12, so an upstream PR would need a raised minimum or a Markdown fallback.
 
-**Q2 — Panel placement (D6).** Recommended: **docked panel on the right of the project window** (file browser stays left), resizable and hideable. Alternatives: a separate floating window per project (like the HTML output window), or both with a preference.
+**Q2 — Panel placement: docked, user chooses left or right side.** Resizable and hideable. Behaviour when it shares a side with the file browser is designed in M2.
 
-**Q3 — Scope of v1 tools.** Recommended: everything in §5 (files, permissions, diffs, terminals) by M3. Terminal support could be deferred if you'd prefer a smaller first release.
+**Q3 — Scope of v1: everything in §5** (files, permissions, diffs, terminals) by M3.
 
 ## 8. Testing approach
-- **Unit tests (CxxTest)** in `Frameworks/AgentClient/tests`: framing (partial lines, large messages, invalid JSON), request/response matching, notification dispatch, cancellation, permission flow, fs boundary checks — using a small scripted fake agent built as a test helper.
+- **Unit tests (CxxTest)** in `Frameworks/AgentClient/tests`: framing (partial lines, large messages, invalid JSON), request/response matching, notification dispatch, cancellation, permission flow, fs boundary checks — using a small fake agent written in Ruby (`tests/fake_agent.rb`; Ruby is already a build requirement via `bin/gen_test`).
 - **Integration (manual, per milestone):** Copilot CLI and Claude adapter on a scratch project; stderr captured per `.serena/memories/dev_testing_workflow.md`.
 - Build and full `ctest` stay green on every merge to `main`.
 
