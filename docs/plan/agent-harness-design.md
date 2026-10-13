@@ -1,7 +1,7 @@
 ---
 title: TextMate Agent Harness — Design
 created: 2026-10-13
-status: approved 2026-10-13 — M1 in progress
+status: approved 2026-10-13 — M1 done, M2 in progress
 branch: feature/agent
 related: textmate-ai-plan.md
 ---
@@ -155,6 +155,47 @@ Transcript model types (`AgentMessage`, `AgentToolCall`, `AgentPlan`, …) are p
 | **M3** | Tools: `fs/*` via OakDocument, permission prompts, diff review, `terminal/*` | An agent can read, edit (with approval) and run commands in a project; edits are undoable |
 | **M4** | Preferences ▸ Agents, Keychain API key, `.tm_properties` override, session resume, plan view, context actions | All §5 configuration works |
 | **M5** | Polish: theme integration, keyboard shortcuts, error states, log view, documentation | Ready for daily use; `pr/agent` port branch prepared |
+
+## 6a. Chat panel features (VS Code–style) — added 2026-10-13
+
+The chat panel aims to match VS Code's chat view where ACP makes it possible. Many controls are **driven by the agent** rather than hard-coded, so they work with any ACP agent:
+
+- **Config options** (`configOptions` in `session/new`, `session/set_config_option`, `config_option_update`) → one popup per option in the panel header. Verified: Copilot sends Mode (Agent/Plan/Autopilot), Model, Reasoning Effort, Allow All; Claude sends Mode (Manual/Accept edits/Plan/Auto/Bypass permissions), Model, Effort, Fast mode. Fallback to the older `modes` field when `configOptions` is absent.
+- **Slash commands** (`available_commands_update`) → completion list when typing `/` (Copilot: 33 commands, Claude: ~80 incl. skills). Invoked by sending `/name args` as prompt text.
+- **Usage** (`usage_update`: tokens used/size, optional cost) → footer indicator.
+- **Plans** (`plan`) → to-do list with status.
+
+| VS Code chat feature | TextMate | Milestone |
+|---|---|---|
+| Chat docked beside the editor, toggle shortcut | Docked panel, left or right (setting), stacked next to the editor (file browser outside), **⌃⌘I**, resizable, width remembered | M2 |
+| Agent / mode / model pickers | Agent popup + generic config-option popups | M2 |
+| New chat | New Chat button (new session) | M2 |
+| Markdown replies with code blocks | Markdown renderer (headings, lists, code, quotes, tables, links) | M2 |
+| Code block actions: Copy, Insert at Cursor | Same | M2 |
+| Code block action: Apply in Editor | Same, via diff review | M3 |
+| Thinking / reasoning display | Collapsed “Thinking” row, click to expand | M2 |
+| Tool call progress | Tool rows with status | M2 (output and diffs: M3) |
+| To-do list | Plan view | M2 |
+| Multi-line input, Enter to send, Stop | ↩ sends, ⇧↩/⌥↩ newline, Esc/Stop cancels, ↑ recalls last prompt | M2 |
+| `/` commands | Completion from the agent's commands | M2 |
+| Add Context: file, selection, open editors, drag & drop, images | “+” menu, drag & drop files, paste images (if the agent supports images), removable chips | M2 |
+| Ask about selection from the editor | Text ▸ Ask Agent About Selection | M2 |
+| Token/request usage | Usage footer | M2 |
+| Tool confirmations (Allow / Always allow / Deny) | Permission cards | M3 |
+| Review edits: Keep / Undo per file, changed-files list | Diff review + working set | M3 |
+| Terminal command output | Terminal output in tool rows | M3 |
+| Chat history (previous chats) | Session list / load / resume (both agents support it) | M4 |
+| MCP servers | Configured per agent | M4 |
+| Inline chat in the editor (⌘I) | Inline prompt at the caret | M5 |
+| Syntax-highlighted code blocks | TextMate grammars + theme | M5 |
+| Voice input | macOS Dictation works in the input field | M2 (built-in) |
+
+Not applicable: VS Code chat participants (`@workspace`, `@terminal`) — the agents' own slash commands and tools cover these; thumbs-up/down feedback — not part of ACP.
+
+### M2 layout
+- The editor area is wrapped in a split view: `[chat | editor]` or `[editor | chat]`. `ProjectLayoutView` (upstream code) is unchanged; with the file browser on the same side the result is `file browser | chat | editor` — chat always next to the editor.
+- One panel and session per project window, working in the project folder.
+- Settings: `agentPanelPlacement` (`left`/`right`, default right), `agentPanelWidth`.
 
 ## 7. Review outcome (2026-10-13)
 
