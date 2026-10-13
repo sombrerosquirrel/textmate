@@ -118,6 +118,10 @@ static NSView* Separator ()
 	NSStackView* stack = [NSStackView stackViewWithViews:@[ header, Separator(), transcriptScrollView, Separator(), _promptView, footer ]];
 	stack.orientation = NSUserInterfaceLayoutOrientationVertical;
 	stack.spacing     = 0;
+	// NSStackView hugs its content at a priority above the window’s “stay put”
+	// priority, which would shrink the window to the panel’s minimum size
+	[stack setHuggingPriority:NSLayoutPriorityDefaultLow forOrientation:NSLayoutConstraintOrientationVertical];
+	[stack setHuggingPriority:NSLayoutPriorityDefaultLow forOrientation:NSLayoutConstraintOrientationHorizontal];
 	for(NSView* view in stack.arrangedSubviews)
 		[view.widthAnchor constraintEqualToAnchor:stack.widthAnchor].active = YES;
 	[transcriptScrollView setContentHuggingPriority:NSLayoutPriorityDefaultLow forOrientation:NSLayoutConstraintOrientationVertical];

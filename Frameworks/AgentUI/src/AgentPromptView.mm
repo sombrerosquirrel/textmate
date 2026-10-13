@@ -147,6 +147,7 @@ static NSUInteger const kMaxHistory = 50;
 
 		NSStackView* stack = [NSStackView stackViewWithViews:@[ _chipsView, _textScrollView, buttons ]];
 		stack.orientation = NSUserInterfaceLayoutOrientationVertical;
+		[stack setHuggingPriority:NSLayoutPriorityDefaultLow forOrientation:NSLayoutConstraintOrientationHorizontal];
 		stack.alignment   = NSLayoutAttributeLeading;
 		stack.spacing     = 4;
 		stack.edgeInsets  = NSEdgeInsetsMake(8, 10, 6, 10);
