@@ -1,5 +1,4 @@
 #import "LSPBridge.h"
-#import "AgentDebugWindowController.h"
 #import "AppController.h"
 #import "OakMainMenu.h"
 #import "Favorites.h"
@@ -244,6 +243,8 @@ BOOL HasDocumentWindow (NSArray* windows)
 				},
 				{ @"Show File Browser",      @selector(toggleFileBrowser:),    @"d", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagOption|NSEventModifierFlagControl },
 				{ @"Show HTML Output",       @selector(toggleHTMLOutput:),     @"h", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagOption|NSEventModifierFlagControl },
+				{ @"Show Agent Panel",       @selector(toggleAgentPanel:),     @"i", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagControl },
+				{ @"Move Agent Panel to Left Side", @selector(toggleAgentPanelPlacement:) },
 				{ @"Show Line Numbers",      @selector(toggleLineNumbers:),    @"l", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagOption },
 				{ /* -------- */ },
 				{ @"Show Invisibles",        @selector(toggleShowInvisibles:), @"i", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagOption },
@@ -385,11 +386,7 @@ BOOL HasDocumentWindow (NSArray* windows)
 				{ /* -------- */ },
 				{ @"Copilot Complete",                      @selector(lspCopilotComplete:),          .modifierFlags = NSEventModifierFlagOption, .key = 0x1B },
 				{ /* -------- */ },
-				{ @"Agent",
-					.submenu = {
-						{ @"Ask Agent (Debug)…", @selector(showWindow:), .target = [AgentDebugWindowController class] },
-					}
-				},
+				{ @"Ask Agent About Selection",           @selector(askAgentAboutSelection:) },
 			}
 		},
 		{ @"File Browser",

@@ -1,4 +1,5 @@
 #import "DocumentWindowController.h"
+#import "DocumentWindowController+Agent.h"
 #import "ProjectLayoutView.h"
 #import "SelectGrammarViewController.h"
 #import "OakRunCommandWindowController.h"
@@ -190,6 +191,7 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 
 		self.layoutView = [[ProjectLayoutView alloc] initWithFrame:NSZeroRect];
 		self.layoutView.documentView = self.documentView;
+		[self setupAgentPanelSupport];
 
 		NSUInteger windowStyle = (NSWindowStyleMaskTitled|NSWindowStyleMaskClosable|NSWindowStyleMaskResizable|NSWindowStyleMaskMiniaturizable);
 		self.window = [[NSWindow alloc] initWithContentRect:[NSWindow contentRectForFrameRect:[self frameRectForNewWindow] styleMask:windowStyle] styleMask:windowStyle backing:NSBackingStoreBuffered defer:NO];
@@ -322,6 +324,7 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 	if([self.window.firstResponder isKindOfClass:[NSView class]])
 		[self.window makeFirstResponder:nil];
 
+	[self shutdownAgentPanel];
 	[_arrayController unbind:NSContentBinding];
 
 	self.documents           = nil;
@@ -384,6 +387,7 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 		self.oldWindowFrame = self.newWindowFrame = NSZeroRect;
 		self.layoutView.fileBrowserOnRight = !self.layoutView.fileBrowserOnRight;
 	}
+	[self updateAgentPanelPlacement];
 
 	BOOL disableTabBarCollapsingKey = [NSUserDefaults.standardUserDefaults boolForKey:kUserDefaultsDisableTabBarCollapsingKey];
 	self.titlebarViewController.hidden = !disableTabBarCollapsingKey && self.documents.count <= 1;
@@ -2267,6 +2271,9 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 		@selector(newFolder:), @selector(goBack:), @selector(goForward:),
 		@selector(reload:), @selector(deselectAll:)
 	};
+
+	if([self isAgentPanelMenuItem:menuItem])
+		return [self validateAgentPanelMenuItem:menuItem];
 
 	BOOL active = YES;
 	if([menuItem action] == @selector(toggleFileBrowser:))
