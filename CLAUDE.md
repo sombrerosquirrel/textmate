@@ -1,7 +1,7 @@
 # CLAUDE.md - TextMate Development Guide
 
 ### Workflow
-- always activate serena project first (with full cwd path)
+- **Ignore this** always activate serena project first (with full cwd path)
 - always list serena memories and always read task completion guideline
 
 
@@ -87,7 +87,7 @@ Use `oak::application_t::support("relative/path")` (from `<OakSystem/application
 
 ## Code Conventions
 
-- **Tab size:** 3 (hard tabs, no soft tabs)
+- **Tab size:** use same convention as original textmate/textmate code. Reformat any code that's been added to this repo's code since it was created to follow that convention (ignore tectiv3's files and vendor files).
 - **Namespaces:** `oak::` (utilities), `ng::` (text/buffer engine)
 - **Type suffix:** `_t` for type definitions, `_ptr` for smart pointers
 - **Pointer style:** `type* var`
@@ -102,6 +102,9 @@ Use `oak::application_t::support("relative/path")` (from `<OakSystem/application
 - **Framework:** CxxTest (at `bin/CxxTest`)
 - **Test files:** `Frameworks/<name>/tests/t_*.cc` or `t_*.mm`
 - **Run tests:** `cd build-debug && ctest --output-on-failure`
+
+## Git
+- **Convention:** Don't add  Co-Authored-By: "Claude Opus 5.5 <noreply@anthropic.com>" and remove this line from previous commit logs (do this one time only)
 
 ## Upstream Status
 
