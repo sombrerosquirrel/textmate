@@ -102,7 +102,8 @@ upstream/master ─────────────────────�
 | `master` | Mirror of `textmate/textmate:master` | Never commit; fast-forward only |
 | `pr-1467` | Mirror of `tectiv3/develop` | Never commit; fast-forward when tectiv3 updates |
 | `main` | **Default branch.** `pr-1467` + our work | What we build and use daily; merge `pr-1467` in periodically |
-| `feature/*` | Our work, branched from `pr-1467` | Merged into `main` via PRs within our fork |
+| `fix/*` | Bug fixes, branched from `pr-1467` | Merged into `main`; each can be offered to tectiv3 on its own |
+| `feature/*` | New features, branched from `main` (needs the `fix/*` build fixes to compile) | Merged into `main`; ported to `master` later by cherry-picking |
 | `pr/agent` | Created later: feature commits ported onto `master` | Opened as PR to `textmate/textmate` |
 
 All branches are created with normal pushes — no force-pushes needed.
@@ -173,7 +174,7 @@ tectiv3's Copilot ghost text (inline completion via LSP) stays as-is. The agent 
 6. `git submodule update --init --recursive`; build `pr-1467` with CMake/Ninja on current macOS; record any fixes as separate commits on a `fix/*` branch.
 
 ### Part E — Agent harness
-7. Design doc in `docs/plan/`.
+7. Design doc: `docs/plan/agent-harness-design.md` (milestones M1–M5 replace steps 8–11 below).
 8. `AgentClient`: ACP transport + session model, tested against Copilot CLI and Claude Code adapter.
 9. `AgentUI`: chat panel, diff review, permissions.
 10. Agents preferences pane.
