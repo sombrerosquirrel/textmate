@@ -1,4 +1,5 @@
 #import <AgentClient/AgentEnvironment.h>
+#import <AgentClient/AgentRegistry.h>
 
 void test_executable_lookup ()
 {
@@ -22,4 +23,12 @@ void test_login_shell_environment ()
 	OAK_ASSERT(dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC)) == 0);
 	OAK_ASSERT([environment[@"PATH"] length] > 0);
 	OAK_ASSERT([environment[@"HOME"] isEqualToString:NSHomeDirectory()]);
+}
+
+void test_registry ()
+{
+	OAK_ASSERT_EQ(AgentRegistry.agents.count, 2);
+	OAK_ASSERT([[AgentRegistry agentWithIdentifier:@"copilot"].arguments isEqual:@[ @"--acp" ]]);
+	OAK_ASSERT([[AgentRegistry agentWithIdentifier:@"claude"].command isEqualToString:@"npx"]);
+	OAK_ASSERT([AgentRegistry agentWithIdentifier:@"nonexistent"] == nil);
 }

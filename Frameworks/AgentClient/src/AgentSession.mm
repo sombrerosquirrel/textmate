@@ -26,6 +26,9 @@ static NSString* ClientVersion ()
 @property (nonatomic, readwrite) NSDictionary* agentInfo;
 @property (nonatomic, readwrite) NSDictionary* agentCapabilities;
 @property (nonatomic, readwrite) NSArray<NSDictionary*>* authMethods;
+@property (nonatomic, readwrite) NSArray<NSDictionary*>* configOptions;
+@property (nonatomic, readwrite) NSDictionary* modes;
+@property (nonatomic, readwrite) NSArray<NSDictionary*>* availableCommands;
 @end
 
 @implementation AgentSession
@@ -136,6 +139,7 @@ static NSString* ClientVersion ()
 		}
 
 		self.sessionId = sessionId;
+		[self updateConfigurationFromDictionary:result];
 		self.state     = AgentSessionStateReady;
 		if(completion)
 			completion(nil);
@@ -188,6 +192,84 @@ static NSString* ClientVersion ()
 	}];
 }
 
+// =================
+// = Configuration =
+// =================
+
+// Accepts a session/new or session/set_config_option result, or the update of
+// a config_option_update / current_mode_update / available_commands_update.
+- (void)updateConfigurationFromDictionary:(NSDictionary*)dict
+{
+	BOOL changed = NO;
+	if([dict[@"configOptions"] isKindOfClass:[NSArray class]])
+	{
+		self.configOptions = dict[@"configOptions"];
+		changed = YES;
+	}
+	if([dict[@"modes"] isKindOfClass:[NSDictionary class]])
+	{
+		self.modes = dict[@"modes"];
+		changed = YES;
+	}
+	if([dict[@"currentModeId"] isKindOfClass:[NSString class]] && self.modes)
+	{
+		NSMutableDictionary* modes = [self.modes mutableCopy];
+		modes[@"currentModeId"] = dict[@"currentModeId"];
+		self.modes = modes;
+		changed = YES;
+	}
+	if([dict[@"availableCommands"] isKindOfClass:[NSArray class]])
+	{
+		self.availableCommands = dict[@"availableCommands"];
+		changed = YES;
+	}
+
+	if(changed && [self.delegate respondsToSelector:@selector(agentSessionDidChangeConfiguration:)])
+		[self.delegate agentSessionDidChangeConfiguration:self];
+}
+
+- (void)setConfigOption:(NSString*)configId value:(id)value completion:(void(^)(NSError* error))completion
+{
+	[self performOnQueue:^{
+		if(!self.sessionId || self.state == AgentSessionStateFailed || self.state == AgentSessionStateTerminated)
+		{
+			if(completion)
+				completion(SessionError(AgentSessionErrorInvalidState, @"Session is not ready"));
+			return;
+		}
+
+		NSMutableDictionary* params = [NSMutableDictionary dictionaryWithDictionary:@{ @"sessionId": self.sessionId, @"configId": configId, @"value": value }];
+		if([value isKindOfClass:[NSNumber class]] && CFGetTypeID((__bridge CFTypeRef)value) == CFBooleanGetTypeID())
+			params[@"type"] = @"boolean";
+
+		[_connection sendRequest:@"session/set_config_option" params:params completion:^(id result, NSError* error){
+			if(!error && [result isKindOfClass:[NSDictionary class]])
+				[self updateConfigurationFromDictionary:result];
+			if(completion)
+				completion(error);
+		}];
+	}];
+}
+
+- (void)setMode:(NSString*)modeId completion:(void(^)(NSError* error))completion
+{
+	[self performOnQueue:^{
+		if(!self.sessionId || self.state == AgentSessionStateFailed || self.state == AgentSessionStateTerminated)
+		{
+			if(completion)
+				completion(SessionError(AgentSessionErrorInvalidState, @"Session is not ready"));
+			return;
+		}
+
+		[_connection sendRequest:@"session/set_mode" params:@{ @"sessionId": self.sessionId, @"modeId": modeId } completion:^(id result, NSError* error){
+			if(!error)
+				[self updateConfigurationFromDictionary:@{ @"currentModeId": modeId }];
+			if(completion)
+				completion(error);
+		}];
+	}];
+}
+
 - (void)answerPendingPermissionRequestsAsCancelled
 {
 	NSArray<void(^)(NSDictionary*)>* replies = _pendingPermissionReplies.allValues;
@@ -207,6 +289,11 @@ static NSString* ClientVersion ()
 		NSDictionary* update = [params isKindOfClass:[NSDictionary class]] ? params[@"update"] : nil;
 		if(![update isKindOfClass:[NSDictionary class]] || ![params[@"sessionId"] isEqual:self.sessionId])
 			return;
+
+		NSString* kind = update[@"sessionUpdate"];
+		if([kind isEqualToString:@"config_option_update"] || [kind isEqualToString:@"current_mode_update"] || [kind isEqualToString:@"available_commands_update"])
+			[self updateConfigurationFromDictionary:update];
+
 		if([self.delegate respondsToSelector:@selector(agentSession:didReceiveUpdate:)])
 			[self.delegate agentSession:self didReceiveUpdate:update];
 	}

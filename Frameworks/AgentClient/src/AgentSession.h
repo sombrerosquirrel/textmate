@@ -32,6 +32,8 @@ typedef NS_ENUM(NSInteger, AgentSessionState) {
 @protocol AgentSessionDelegate <NSObject>
 @optional
 - (void)agentSessionDidChangeState:(AgentSession*)session;
+// configOptions, modes, or availableCommands changed.
+- (void)agentSessionDidChangeConfiguration:(AgentSession*)session;
 // The `update` object of a session/update notification for this session.
 - (void)agentSession:(AgentSession*)session didReceiveUpdate:(NSDictionary*)update;
 // Notifications other than session/update, e.g. vendor extensions.
@@ -64,12 +66,24 @@ typedef NS_ENUM(NSInteger, AgentSessionState) {
 @property (nonatomic, readonly) NSDictionary* agentCapabilities;
 @property (nonatomic, readonly) NSArray<NSDictionary*>* authMethods;
 
+// Agent-provided controls, kept current from session/new and session/update.
+// configOptions: ACP config options (mode, model, effort, …); modes: the older
+// `modes` object, for agents without configOptions; availableCommands: slash
+// commands ({ name, description, input: { hint } }).
+@property (nonatomic, readonly) NSArray<NSDictionary*>* configOptions;
+@property (nonatomic, readonly) NSDictionary* modes;
+@property (nonatomic, readonly) NSArray<NSDictionary*>* availableCommands;
+
 // Launches the agent, then initialize and session/new.
 - (void)startWithCompletion:(void(^)(NSError* error))completion;
 // `prompt` is an array of ACP content blocks, e.g. @[ @{ @"type": @"text", @"text": … } ].
 - (void)sendPrompt:(NSArray<NSDictionary*>*)prompt completion:(void(^)(NSString* stopReason, NSError* error))completion;
 // Cancels the current prompt turn; its completion reports stop reason “cancelled”.
 - (void)cancel;
+// session/set_config_option; on success configOptions holds the agent’s new state.
+- (void)setConfigOption:(NSString*)configId value:(id)value completion:(void(^)(NSError* error))completion;
+// session/set_mode, for agents that only provide `modes`.
+- (void)setMode:(NSString*)modeId completion:(void(^)(NSError* error))completion;
 // Terminates the agent.
 - (void)close;
 @end

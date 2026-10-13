@@ -46,6 +46,7 @@ static NSArray<NSDictionary*>* TextPrompt (NSString* text)
 @property (nonatomic) dispatch_semaphore_t terminated;
 @property (nonatomic) dispatch_semaphore_t updateReceived;
 @property (nonatomic) dispatch_semaphore_t notificationReceived;
+@property (nonatomic) dispatch_semaphore_t configurationChanged;
 // When set, permission requests are answered with this outcome; when nil the
 // recorder doesn’t implement the permission delegate method at all.
 @property (nonatomic) NSDictionary* permissionOutcome;
@@ -62,6 +63,7 @@ static NSArray<NSDictionary*>* TextPrompt (NSString* text)
 		_terminated           = dispatch_semaphore_create(0);
 		_updateReceived       = dispatch_semaphore_create(0);
 		_notificationReceived = dispatch_semaphore_create(0);
+		_configurationChanged = dispatch_semaphore_create(0);
 	}
 	return self;
 }
@@ -92,8 +94,15 @@ static NSArray<NSDictionary*>* TextPrompt (NSString* text)
 - (void)agentSession:(AgentSession*)session didReceiveUpdate:(NSDictionary*)update
 {
 	if([update[@"sessionUpdate"] isEqualToString:@"agent_message_chunk"] && [update[@"content"][@"type"] isEqualToString:@"text"])
+	{
 		[_messageText appendString:update[@"content"][@"text"]];
-	dispatch_semaphore_signal(_updateReceived);
+		dispatch_semaphore_signal(_updateReceived);
+	}
+}
+
+- (void)agentSessionDidChangeConfiguration:(AgentSession*)session
+{
+	dispatch_semaphore_signal(_configurationChanged);
 }
 
 - (void)agentSession:(AgentSession*)session didReceiveNotification:(NSString*)method params:(id)params

@@ -41,7 +41,13 @@ def text_chunk(text)
 	{ 'sessionUpdate' => 'agent_message_chunk', 'content' => { 'type' => 'text', 'text' => text } }
 end
 
+def config_options(mode)
+	[{ 'id' => 'mode', 'name' => 'Mode', 'category' => 'mode', 'type' => 'select', 'currentValue' => mode,
+	   'options' => [{ 'value' => 'ask', 'name' => 'Ask' }, { 'value' => 'code', 'name' => 'Code' }] }]
+end
+
 next_id         = 1000
+current_mode    = 'ask'
 waiting_prompt  = nil  # id of a prompt waiting for session/cancel
 pending_replies = {}   # our request id → proc handling the client’s response
 
@@ -72,8 +78,30 @@ $stdin.each_line do |line|
 		if fail_new
 			send_message('id' => id, 'error' => { 'code' => -32000, 'message' => 'Authentication required' })
 		else
-			send_message('id' => id, 'result' => { 'sessionId' => "sess-#{params['cwd']}" })
+			session_id = "sess-#{params['cwd']}"
+			send_message('id' => id, 'result' => {
+				'sessionId'     => session_id,
+				'configOptions' => config_options(current_mode),
+				'modes'         => { 'currentModeId' => current_mode, 'availableModes' => [{ 'id' => 'ask', 'name' => 'Ask' }, { 'id' => 'code', 'name' => 'Code' }] },
+			})
+			update(session_id, 'sessionUpdate' => 'available_commands_update', 'availableCommands' => [
+				{ 'name' => 'plan', 'description' => 'Make a plan', 'input' => { 'hint' => 'what to plan' } },
+				{ 'name' => 'review', 'description' => 'Review changes' },
+			])
 		end
+
+	when 'session/set_config_option'
+		if params['configId'] == 'mode' && %w[ask code].include?(params['value'])
+			current_mode = params['value']
+			send_message('id' => id, 'result' => { 'configOptions' => config_options(current_mode) })
+		else
+			send_message('id' => id, 'error' => { 'code' => -32602, 'message' => 'Invalid config option' })
+		end
+
+	when 'session/set_mode'
+		current_mode = params['modeId']
+		send_message('id' => id, 'result' => {})
+		update(params['sessionId'], 'sessionUpdate' => 'current_mode_update', 'currentModeId' => current_mode)
 
 	when 'session/prompt'
 		session_id = params['sessionId']

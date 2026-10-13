@@ -15,6 +15,37 @@ struct test_session_t
 		[session close];
 	}
 
+	// Blocks capture C++ objects by copy, and a copy’s destructor would close the
+	// session. Use member functions (which capture `this`) instead.
+	test_session_t (test_session_t const&) = delete;
+	test_session_t& operator= (test_session_t const&) = delete;
+
+	NSString* currentMode ()
+	{
+		__block NSString* res;
+		dispatch_sync(queue, ^{ res = session.configOptions.firstObject[@"currentValue"]; });
+		return res;
+	}
+
+	NSArray* commandNames ()
+	{
+		__block NSArray* res;
+		dispatch_sync(queue, ^{ res = [session.availableCommands valueForKey:@"name"]; });
+		return res;
+	}
+
+	NSError* setConfigOption (NSString* configId, id value)
+	{
+		dispatch_semaphore_t done = dispatch_semaphore_create(0);
+		__block NSError* res;
+		[session setConfigOption:configId value:value completion:^(NSError* error){
+			res = error;
+			dispatch_semaphore_signal(done);
+		}];
+		OAK_ASSERT(Wait(done));
+		return res;
+	}
+
 	NSError* start ()
 	{
 		dispatch_semaphore_t done = dispatch_semaphore_create(0);
@@ -208,6 +239,42 @@ void test_launch_failure ()
 	__block AgentSessionState state;
 	dispatch_sync(queue, ^{ state = session.state; });
 	OAK_ASSERT_EQ((NSInteger)state, (NSInteger)AgentSessionStateFailed);
+}
+
+void test_configuration ()
+{
+	test_session_t t;
+	OAK_ASSERT(t.start() == nil);
+
+	// Config options and modes arrive with session/new, commands right after
+	OAK_ASSERT([t.currentMode() isEqualToString:@"ask"]);
+	OAK_ASSERT([t.session.modes[@"currentModeId"] isEqualToString:@"ask"]);
+	for(size_t i = 0; i < 3 && !t.commandNames(); ++i)
+		OAK_ASSERT(Wait(t.recorder.configurationChanged));
+	OAK_ASSERT([t.commandNames() isEqual:(@[ @"plan", @"review" ])]);
+
+	OAK_ASSERT(t.setConfigOption(@"mode", @"code") == nil);
+	OAK_ASSERT([t.currentMode() isEqualToString:@"code"]);
+
+	NSError* error = t.setConfigOption(@"mode", @"bogus");
+	OAK_ASSERT_EQ((NSInteger)error.code, (NSInteger)AgentJSONRPCErrorInvalidParams);
+	OAK_ASSERT([t.currentMode() isEqualToString:@"code"]);
+}
+
+void test_set_mode ()
+{
+	test_session_t t;
+	OAK_ASSERT(t.start() == nil);
+
+	dispatch_semaphore_t done = dispatch_semaphore_create(0);
+	__block NSError* error;
+	[t.session setMode:@"code" completion:^(NSError* err){
+		error = err;
+		dispatch_semaphore_signal(done);
+	}];
+	OAK_ASSERT(Wait(done));
+	OAK_ASSERT(error == nil);
+	OAK_ASSERT([t.session.modes[@"currentModeId"] isEqualToString:@"code"]);
 }
 
 void test_close ()
