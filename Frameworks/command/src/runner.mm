@@ -160,7 +160,9 @@ namespace command
 	{
 		NSData* data = [NSData dataWithBytesNoCopy:(void*)command.data() length:command.size() freeWhenDone:NO];
 
-		NSString* scriptPath = [NSString pathWithComponents:@[ NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES).firstObject, NSBundle.mainBundle.bundleIdentifier, @"Scripts", hash(data) ]];
+		// bundleIdentifier is nil for non-bundled executables such as the test runners
+		NSString* identifier = NSBundle.mainBundle.bundleIdentifier ?: NSProcessInfo.processInfo.processName;
+		NSString* scriptPath = [NSString pathWithComponents:@[ NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES).firstObject, identifier, @"Scripts", hash(data) ]];
 		if(![NSFileManager.defaultManager isExecutableFileAtPath:scriptPath])
 		{
 			[NSFileManager.defaultManager createDirectoryAtPath:scriptPath.stringByDeletingLastPathComponent withIntermediateDirectories:YES attributes:nil error:nullptr];
