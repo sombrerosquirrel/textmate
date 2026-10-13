@@ -7,6 +7,7 @@
 #include <regexp/format_string.h>
 #include <oak/compat.h>
 #include <oak/datatypes.h>
+#include <atomic>
 
 static std::string trim_right (std::string const& str, std::string const& trimChars = " \t\n")
 {
@@ -272,16 +273,22 @@ namespace command
 
 		if(_did_detach)
 		{
-			__block bool shouldWait = true;
+			// CFRunLoopStop() is lost if it arrives before the run loop starts
+			// running, so run in short slices and re-check the flag.
+			auto done = std::make_shared<std::atomic<bool>>(false);
 			CFRunLoopRef runLoop = CFRunLoopGetCurrent();
 
 			dispatch_group_notify(_dispatch_group, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-				shouldWait = false;
+				done->store(true);
 				CFRunLoopStop(runLoop);
 			});
 
-			while(shouldWait)
-				CFRunLoopRun();
+			while(!done->load())
+			{
+				// Without run loop sources CFRunLoopRunInMode() returns at once; don’t spin
+				if(CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.1, true) == kCFRunLoopRunFinished)
+					usleep(10000);
+			}
 		}
 		else
 		{
