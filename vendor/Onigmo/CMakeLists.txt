@@ -1,6 +1,12 @@
 add_library(Onigmo STATIC)
 
-file(GLOB _src src/*.c)
+# src/setup.c only contains a constructor (Unicode-aware \w, \b, [[:alpha:]],
+# etc.), so nothing references it and the linker would drop it from the
+# static archive. Put the object file directly on every consumer's link line.
+add_library(Onigmo_setup OBJECT src/setup.c)
+target_link_libraries(Onigmo INTERFACE $<TARGET_OBJECTS:Onigmo_setup>)
+add_dependencies(Onigmo Onigmo_setup)
+
 file(GLOB _enc
   vendor/enc/ascii.c
   vendor/enc/euc_jp.c
@@ -10,7 +16,7 @@ file(GLOB _enc
   vendor/enc/utf*.c)
 file(GLOB _vendor vendor/reg*.c vendor/st.c)
 
-target_sources(Onigmo PRIVATE ${_src} ${_enc} ${_vendor})
+target_sources(Onigmo PRIVATE ${_enc} ${_vendor})
 
 # Create symlink so <Onigmo/oniguruma.h> resolves
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/include")
