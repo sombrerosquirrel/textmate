@@ -92,6 +92,8 @@ set(TEXTMATE_DEBUG_LIBS OakDebug)
 find_library(OakSwiftUI_LIB NAMES OakSwiftUI
   PATHS "${CMAKE_BINARY_DIR}/lib" NO_DEFAULT_PATH)
 if(OakSwiftUI_LIB)
+  # Generated Swift header, copied here by Frameworks/OakSwiftUI/build.sh
+  set(OakSwiftUI_INCLUDE_DIR "${CMAKE_BINARY_DIR}/swift-include")
   message(STATUS "Found OakSwiftUI: ${OakSwiftUI_LIB}")
 else()
   message(STATUS "OakSwiftUI not found — SwiftUI features disabled")

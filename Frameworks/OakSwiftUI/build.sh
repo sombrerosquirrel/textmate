@@ -44,4 +44,18 @@ cp "$DYLIB_PATH" "$LIB_DIR/"
 # Set install name for @rpath resolution at runtime
 install_name_tool -id "@rpath/libOakSwiftUI.dylib" "$LIB_DIR/libOakSwiftUI.dylib"
 
-echo "OakSwiftUI built: $LIB_DIR/libOakSwiftUI.dylib"
+# Copy the generated Objective-C header to a stable location. Its path inside
+# .build differs between SwiftPM's native build system (Swift ≤ 6.x default)
+# and the swiftbuild backend (.build/out/Intermediates.noindex/…). The most
+# recently written copy belongs to the configuration just built.
+INCLUDE_DIR="${BUILD_DIR}/swift-include"
+HEADER_PATH="$(find .build -name 'OakSwiftUI-Swift.h' -print0 2>/dev/null | xargs -0 ls -t 2>/dev/null | head -n 1)"
+if [ -z "$HEADER_PATH" ]; then
+    echo "Error: OakSwiftUI-Swift.h not found after build"
+    exit 1
+fi
+
+mkdir -p "$INCLUDE_DIR"
+cp "$HEADER_PATH" "$INCLUDE_DIR/"
+
+echo "OakSwiftUI built: $LIB_DIR/libOakSwiftUI.dylib ($INCLUDE_DIR/OakSwiftUI-Swift.h)"
