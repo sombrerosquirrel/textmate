@@ -87,7 +87,7 @@ Use `oak::application_t::support("relative/path")` (from `<OakSystem/application
 
 ## Code Conventions
 
-- **Tab size:** use same convention as original textmate/textmate code. Reformat any code that's been added to this repo's code since it was created to follow that convention (ignore tectiv3's files and vendor files).
+- **Tab size:** tabSize=3, softTabs=false
 - **Namespaces:** `oak::` (utilities), `ng::` (text/buffer engine)
 - **Type suffix:** `_t` for type definitions, `_ptr` for smart pointers
 - **Pointer style:** `type* var`
@@ -104,7 +104,7 @@ Use `oak::application_t::support("relative/path")` (from `<OakSystem/application
 - **Run tests:** `cd build-debug && ctest --output-on-failure`
 
 ## Git
-- **Convention:** Don't add  Co-Authored-By: "Claude Opus 5.5 <noreply@anthropic.com>" and remove this line from previous commit logs (do this one time only)
+- **Convention:** Don't add  Co-Authored-By: "Claude Opus 5.5 <noreply@anthropic.com>"
 
 ## Upstream Status
 
