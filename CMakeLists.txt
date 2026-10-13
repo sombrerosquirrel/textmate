@@ -138,6 +138,7 @@ add_subdirectory(Frameworks/file)
 add_subdirectory(Frameworks/command)
 add_subdirectory(Frameworks/layout)
 add_subdirectory(Frameworks/lsp)
+add_subdirectory(Frameworks/AgentClient)
 
 # === GUI frameworks ===
 add_subdirectory(Frameworks/OakAppKit)
