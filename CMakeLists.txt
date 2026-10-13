@@ -1,4 +1,11 @@
 cmake_minimum_required(VERSION 3.21)
+
+# Let CMake drop repeated static libraries from link lines when the linker
+# doesn't need them (Apple's ld warns “ignoring duplicate libraries”)
+if(POLICY CMP0156)
+  cmake_policy(SET CMP0156 NEW)
+endif()
+
 project(TextMate LANGUAGES C CXX OBJC OBJCXX)
 
 set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0")
