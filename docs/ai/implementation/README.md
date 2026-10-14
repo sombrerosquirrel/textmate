@@ -10,6 +10,7 @@ Each phase of work has its own document, created when the phase starts and updat
 
 - [textmate-ai-plan.md](../plans/textmate-ai-plan.md): goals, repository organisation, overall approach
 - [agent-harness-design.md](../plans/agent-harness-design.md): agent harness design and milestones M1–M5
+- [markdown-preview-plan.md](../plans/markdown-preview-plan.md): existing Markdown support and the native preview pane (P1–P5)
 
 ## Phases
 
@@ -22,6 +23,7 @@ Each phase of work has its own document, created when the phase starts and updat
 | M3. Tools: files, permissions, diff review, terminal | — | ⏳ Not started |
 | M4. Preferences, Keychain, session history, MCP | — | ⏳ Not started |
 | M5. Polish, inline chat, docs, `pr/agent` port | — | ⏳ Not started |
+| Markdown preview pane (P1–P5) | — ([plan](../plans/markdown-preview-plan.md)) | ⏳ Not started |
 
 ## Current state (2026-10-14)
 
