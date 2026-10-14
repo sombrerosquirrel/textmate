@@ -73,7 +73,7 @@ Known limits of the built-in renderer: no raw HTML, footnotes or exact GitHub st
 - **Scroll sync v1:** proportional (editor visible fraction ↔ preview). Precise sync comes with the GitHub renderer (P4), and later for built-in.
 - **Appearance:** from the window, which follows the editor theme (`fix/window-follows-theme`).
 - **Menus:**
-  - View ▸ Show/Hide Markdown Preview. The shortcut must not clash with the bundle's ⌃⌥⌘P; ⌃⇧⌘P is proposed (check that it's free).
+  - View ▸ Show/Hide Markdown Preview, **⌃⇧⌘M** (user decision). ⌃⌥⌘P is the bundles' Show Preview and ⌃⇧⌘P is Bundle Development's Show Scope; no bundle or menu item uses ⌃⇧⌘M.
   - View ▸ Markdown Preview Position ▸ Automatic (opposite the agent panel) / Left / Right / Top / Bottom.
 - **Defaults:** `markdownPreviewPlacement` (`auto`), `markdownPreviewWidth` / `markdownPreviewHeight` (saved by OakEditorPanels), `markdownPreviewRenderer` (`builtin`).
 - **Hooks:** a `DocumentWindowController+MarkdownPreview.{h,mm}` category, plus one-line hooks in `DocumentWindowController.mm` (setup, placement, shutdown, menu validation), as for the agent panel.
@@ -110,7 +110,6 @@ Known limits of the built-in renderer: no raw HTML, footnotes or exact GitHub st
 `feature/markdown-preview`, branched from `feature/agent` (P1 reworks the agent panel container). Merged into `main` with the agent work. Each phase ends with a checkpoint for the user to test.
 
 ## 5. Open questions
-- Exact shortcut (⌃⇧⌘P proposed).
 - Later: whether the bundle's Markdown Preview command should open the native pane when it's enabled.
 
 ## 6. Critical files

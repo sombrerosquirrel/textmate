@@ -18,6 +18,7 @@ A native Markdown preview docked beside the editor on any edge, with a built-in 
 ## Decisions (user)
 - Both renderers; the GitHub renderer is optional and installable from the UI.
 - By default the preview goes opposite the agent panel; a setting moves it to the left, right, top or bottom.
+- Shortcuts: ⌃⇧⌘M for the preview; the agent panel moves from ⌃⌘I to ⌃⇧⌘I (2026-10-14). ⌃⌘I belongs to the HTML bundle's Add Persistent Include in HTML and Markdown files, and ⌃⇧⌘P (first proposed for the preview) to Bundle Development's Show Scope.
 
 ## Phases
 
@@ -44,7 +45,7 @@ The agent panel now uses it (`DocumentWindowController+Agent.mm`). Its width is 
 
 Tests run on the main thread (`RunOnMainThread` in `t_editor_panels.mm`), because the test runner runs tests on background threads and AppKit layout must happen on the main thread.
 
-**To test (user):** show the agent panel (⌃⌘I), drag its divider, move it left and right, close and reopen it; it should behave as before.
+**To test (user):** show the agent panel (⌃⇧⌘I), drag its divider, move it left and right, close and reopen it; it should behave as before.
 
 ### Commits
 dca8eb08 OakEditorPanels framework · c67c610d agent panel hosted in it
