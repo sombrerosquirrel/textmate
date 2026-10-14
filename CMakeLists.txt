@@ -150,6 +150,7 @@ add_subdirectory(Frameworks/AgentUI)
 
 # === GUI frameworks ===
 add_subdirectory(Frameworks/OakAppKit)
+add_subdirectory(Frameworks/OakEditorPanels)
 add_subdirectory(Frameworks/TMFileReference)
 add_subdirectory(Frameworks/Preferences)
 add_subdirectory(Frameworks/OakTabBarView)
