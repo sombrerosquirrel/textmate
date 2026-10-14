@@ -299,8 +299,10 @@ static void* kOakTabViewSelectedContext  = &kOakTabViewSelectedContext;
 		[self addConstraints:_overflowButtonConstraints];
 
 		[self addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"H:[overflow]|" options:0 metrics:nil views:views]];
-		[self addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"V:[close]-(4)-|" options:0 metrics:nil views:views]];
-		[self addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"V:[title]-(3)-|" options:0 metrics:nil views:views]];
+		[self addConstraints:@[
+			[self.closeButton.centerYAnchor constraintEqualToAnchor:_backgroundView.centerYAnchor],
+			[_textField.centerYAnchor constraintEqualToAnchor:_backgroundView.centerYAnchor],
+		]];
 		[self addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"V:|[overflow]|" options:0 metrics:nil views:views]];
 
 		[_textField setContentHuggingPriority:NSLayoutPriorityRequired forOrientation:NSLayoutConstraintOrientationHorizontal];
@@ -705,7 +707,8 @@ static void* kOakTabViewSelectedContext  = &kOakTabViewSelectedContext;
 
 - (NSSize)intrinsicContentSize
 {
-	return NSMakeSize(NSViewNoIntrinsicMetric, 23);
+	// Tabs are one point shorter (top border); 28pt matches the system’s window tabs
+	return NSMakeSize(NSViewNoIntrinsicMetric, 29);
 }
 
 - (BOOL)mouseDownCanMoveWindow
