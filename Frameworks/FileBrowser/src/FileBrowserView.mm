@@ -69,7 +69,11 @@
 		_scrollView.automaticallyAdjustsContentInsets = NO;
 		_scrollView.contentInsets = insets;
 
-		_outlineView.backgroundColor = NSColor.controlBackgroundColor; // dynamic (adapts to Light/Dark)
+		// The classic light grey sidebar (as with older SDKs) when light, the window background when dark
+		_outlineView.backgroundColor = [NSColor colorWithName:@"FileBrowserBackground" dynamicProvider:^NSColor*(NSAppearance* appearance){
+			BOOL dark = [[appearance bestMatchFromAppearancesWithNames:@[ NSAppearanceNameAqua, NSAppearanceNameDarkAqua ]] isEqualToString:NSAppearanceNameDarkAqua];
+			return dark ? NSColor.windowBackgroundColor : [NSColor colorWithSRGBRed:236/255.0 green:236/255.0 blue:236/255.0 alpha:1];
+		}];
 		_scrollView.drawsBackground  = YES; // ensure adaptive system color is actually drawn
 	}
 	return self;
