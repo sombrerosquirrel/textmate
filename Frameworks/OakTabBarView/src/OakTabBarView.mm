@@ -707,7 +707,7 @@ static void* kOakTabViewSelectedContext  = &kOakTabViewSelectedContext;
 
 - (NSSize)intrinsicContentSize
 {
-	// Tabs are one point shorter (top border); 28pt matches the system’s window tabs
+	// 28pt tabs (plus a one point top border) match the system’s window tabs
 	return NSMakeSize(NSViewNoIntrinsicMetric, 29);
 }
 
@@ -1338,7 +1338,8 @@ static void* kOakTabViewSelectedContext  = &kOakTabViewSelectedContext;
 	}
 
 	NSRect createNewTabButtonFrame = _createNewTabButton.frame;
-	CGFloat x = -1, y = NSMinY(self.bounds)+1, height = NSHeight(self.bounds)-1;
+	// Fill the full height: a gap at the bottom shows the title bar as a light line above the editor
+	CGFloat x = -1, y = NSMinY(self.bounds), height = NSHeight(self.bounds);
 
 	for(OakTabFrame* tabFrame in _currentLayout)
 	{
