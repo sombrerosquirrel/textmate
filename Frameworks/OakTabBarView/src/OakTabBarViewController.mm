@@ -37,7 +37,7 @@
 - (void)loadView
 {
 	// AppKit otherwise forces the accessory to its standard 36pt height on macOS 26+
-	// instead of the tab bar's 23pt intrinsic height.
+	// instead of the tab bar's intrinsic height.
 	self.automaticallyAdjustsSize = NO;
 	self.tabBarView.frameSize = self.tabBarView.intrinsicContentSize;
 	self.fullScreenMinHeight = self.tabBarView.intrinsicContentSize.height;
