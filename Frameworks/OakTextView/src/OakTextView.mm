@@ -259,6 +259,8 @@ static std::string shell_quote (std::vector<std::string> paths)
 	return text::join(paths, " ");
 }
 
+static void* kSystemAppearanceContext = &kSystemAppearanceContext;
+
 // =============================
 // = OakTextView’s Find Server =
 // =============================
@@ -410,8 +412,9 @@ static std::string shell_quote (std::vector<std::string> paths)
 	NSString* appearance = [NSUserDefaults.standardUserDefaults stringForKey:@"themeAppearance"];
 	BOOL darkMode = [appearance isEqualToString:@"dark"];
 	// Auto appearance detection is always available on macOS 14.0+
+	// Ask the application, not the view: document windows take their appearance from the theme
 	if(!darkMode && ![appearance isEqualToString:@"light"]) // If it is not 'light' then assume 'auto'
-		darkMode = [[self.effectiveAppearance bestMatchFromAppearancesWithNames:@[ NSAppearanceNameAqua, NSAppearanceNameDarkAqua ]] isEqualToString:NSAppearanceNameDarkAqua];
+		darkMode = [[NSApp.effectiveAppearance bestMatchFromAppearancesWithNames:@[ NSAppearanceNameAqua, NSAppearanceNameDarkAqua ]] isEqualToString:NSAppearanceNameDarkAqua];
 
 	return [NSUserDefaults.standardUserDefaults stringForKey:darkMode ? @"darkModeThemeUUID" : @"universalThemeUUID"];
 }
@@ -576,6 +579,7 @@ static std::string shell_quote (std::vector<std::string> paths)
 		[self registerForDraggedTypes:[[self class] dropTypes]];
 
 		[self bind:@"scmStatus" toObject:self withKeyPath:@"document.scmStatus" options:nil];
+		[NSApp addObserver:self forKeyPath:@"effectiveAppearance" options:0 context:kSystemAppearanceContext];
 		OakObserveUserDefaults(self);
 
 		_diagnosticBannersVisible = [NSUserDefaults.standardUserDefaults boolForKey:kUserDefaultsLSPShowInlineDiagnosticsKey];
@@ -701,6 +705,7 @@ static size_t const kSCMDiffGutterMaxBytes = 2 * 1024 * 1024;
 	[NSWorkspace.sharedWorkspace.notificationCenter removeObserver:self];
 	[_scmDiffGutterTimer invalidate];
 	[self unbind:@"scmStatus"];
+	[NSApp removeObserver:self forKeyPath:@"effectiveAppearance" context:kSystemAppearanceContext];
 	[self dismissLSPHoverPanel];
 	[self setDocument:nil];
 }
@@ -3964,6 +3969,14 @@ static char const* kOakMenuItemTitle = "OakMenuItemTitle";
 - (void)viewDidChangeEffectiveAppearance
 {
 	self.themeUUID = self.effectiveThemeUUID;
+}
+
+- (void)observeValueForKeyPath:(NSString*)keyPath ofObject:(id)object change:(NSDictionary*)change context:(void*)context
+{
+	if(context == kSystemAppearanceContext)
+		self.themeUUID = self.effectiveThemeUUID;
+	else
+		[super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
 }
 
 // =================
