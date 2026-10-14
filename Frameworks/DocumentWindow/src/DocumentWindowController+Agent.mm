@@ -1,7 +1,7 @@
 #import "DocumentWindowController+Agent.h"
 #import "ProjectLayoutView.h"
-#import <AgentUI/AgentEditorSplitView.h>
 #import <AgentUI/AgentPanelViewController.h>
+#import <OakEditorPanels/OakEditorPanelsView.h>
 #import <OakTextView/OakDocumentView.h>
 #import <document/OakDocument.h>
 #import <document/OakDocumentController.h>
@@ -22,7 +22,15 @@
 - (void)insertSnippetWithOptions:(NSDictionary*)someOptions;
 @end
 
-static void* kAgentPanelKey = &kAgentPanelKey;
+static NSString* const kUserDefaultsAgentPanelPlacementKey = @"agentPanelPlacement"; // @"left" or @"right" (default)
+
+static void* kAgentPanelKey       = &kAgentPanelKey;
+static void* kAgentEditorPanelKey = &kAgentEditorPanelKey;
+
+static OakEditorPanelEdge AgentPanelEdge ()
+{
+	return [[NSUserDefaults.standardUserDefaults stringForKey:kUserDefaultsAgentPanelPlacementKey] isEqualToString:@"left"] ? OakEditorPanelEdgeLeft : OakEditorPanelEdgeRight;
+}
 
 // Snippet syntax treats \, $ and ` specially; escape them to insert text literally
 static NSString* EscapeSnippetText (NSString* text)
@@ -55,9 +63,9 @@ static NSUInteger LineNumberAtIndex (NSString* text, NSUInteger index)
 
 @implementation DocumentWindowController (Agent)
 
-- (AgentEditorSplitView*)editorSplitView
+- (OakEditorPanelsView*)editorPanelsView
 {
-	return [self.layoutView.documentView isKindOfClass:[AgentEditorSplitView class]] ? (AgentEditorSplitView*)self.layoutView.documentView : nil;
+	return [self.layoutView.documentView isKindOfClass:[OakEditorPanelsView class]] ? (OakEditorPanelsView*)self.layoutView.documentView : nil;
 }
 
 - (AgentPanelViewController*)agentPanel
@@ -77,15 +85,30 @@ static NSUInteger LineNumberAtIndex (NSString* text, NSUInteger index)
 	return panel;
 }
 
+// The agent panel as docked beside the editor
+- (OakEditorPanel*)agentEditorPanel
+{
+	OakEditorPanel* editorPanel = objc_getAssociatedObject(self, kAgentEditorPanelKey);
+	if(!editorPanel)
+	{
+		editorPanel = [[OakEditorPanel alloc] initWithView:[self agentPanelCreatingIfNeeded].view edge:AgentPanelEdge()];
+		editorPanel.autosaveName = @"agentPanel"; // agentPanelWidth
+		objc_setAssociatedObject(self, kAgentEditorPanelKey, editorPanel, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+	}
+	return editorPanel;
+}
+
 - (void)setupAgentPanelSupport
 {
-	// The editor goes inside a split view so the panel can sit beside it
-	self.layoutView.documentView = [[AgentEditorSplitView alloc] initWithEditorView:self.documentView];
+	// The editor goes inside a panels container so the panel can sit beside it
+	if(!self.editorPanelsView)
+		self.layoutView.documentView = [[OakEditorPanelsView alloc] initWithEditorView:self.documentView];
 }
 
 - (void)updateAgentPanelPlacement
 {
-	self.editorSplitView.panelOnRight = ![[NSUserDefaults.standardUserDefaults stringForKey:kUserDefaultsAgentPanelPlacementKey] isEqualToString:@"left"];
+	if(OakEditorPanel* editorPanel = objc_getAssociatedObject(self, kAgentEditorPanelKey))
+		editorPanel.edge = AgentPanelEdge();
 }
 
 - (void)shutdownAgentPanel
@@ -95,7 +118,8 @@ static NSUInteger LineNumberAtIndex (NSString* text, NSUInteger index)
 
 - (BOOL)agentPanelVisible
 {
-	return self.editorSplitView.panelView != nil;
+	OakEditorPanel* editorPanel = objc_getAssociatedObject(self, kAgentEditorPanelKey);
+	return editorPanel && [self.editorPanelsView.panels containsObject:editorPanel];
 }
 
 - (void)setAgentPanelVisible:(BOOL)flag
@@ -106,7 +130,7 @@ static NSUInteger LineNumberAtIndex (NSString* text, NSUInteger index)
 	if(flag)
 	{
 		AgentPanelViewController* panel = [self agentPanelCreatingIfNeeded];
-		self.editorSplitView.panelView = panel.view;
+		[self.editorPanelsView addPanel:self.agentEditorPanel];
 		[panel startSessionIfNeeded];
 		[panel focusPrompt];
 	}
@@ -114,7 +138,7 @@ static NSUInteger LineNumberAtIndex (NSString* text, NSUInteger index)
 	{
 		if([self.window.firstResponder isKindOfClass:[NSView class]] && [(NSView*)self.window.firstResponder isDescendantOf:self.agentPanel.view])
 			[self.window makeFirstResponder:self.textView];
-		self.editorSplitView.panelView = nil;
+		[self.editorPanelsView removePanel:self.agentEditorPanel];
 	}
 }
 
@@ -129,7 +153,7 @@ static NSUInteger LineNumberAtIndex (NSString* text, NSUInteger index)
 
 - (IBAction)toggleAgentPanelPlacement:(id)sender
 {
-	BOOL onRight = ![[NSUserDefaults.standardUserDefaults stringForKey:kUserDefaultsAgentPanelPlacementKey] isEqualToString:@"left"];
+	BOOL onRight = AgentPanelEdge() == OakEditorPanelEdgeRight;
 	[NSUserDefaults.standardUserDefaults setObject:(onRight ? @"left" : @"right") forKey:kUserDefaultsAgentPanelPlacementKey];
 	[self updateAgentPanelPlacement];
 }
@@ -151,7 +175,7 @@ static NSUInteger LineNumberAtIndex (NSString* text, NSUInteger index)
 	if(menuItem.action == @selector(toggleAgentPanel:))
 		menuItem.title = self.agentPanelVisible ? @"Hide Agent Panel" : @"Show Agent Panel";
 	else if(menuItem.action == @selector(toggleAgentPanelPlacement:))
-		menuItem.title = self.editorSplitView.panelOnRight ? @"Move Agent Panel to Left Side" : @"Move Agent Panel to Right Side";
+		menuItem.title = AgentPanelEdge() == OakEditorPanelEdgeRight ? @"Move Agent Panel to Left Side" : @"Move Agent Panel to Right Side";
 	return YES;
 }
 @end
