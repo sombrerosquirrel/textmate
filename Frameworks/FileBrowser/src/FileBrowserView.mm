@@ -2,6 +2,7 @@
 #import "FileBrowserOutlineView.h"
 #import "OFB/OFBHeaderView.h"
 #import "OFB/OFBActionsView.h"
+#import <OakAppKit/NSColor Additions.h>
 #import <OakAppKit/OakUIConstructionFunctions.h>
 
 @interface FileBrowserView () <NSAccessibilityGroup>
@@ -69,11 +70,7 @@
 		_scrollView.automaticallyAdjustsContentInsets = NO;
 		_scrollView.contentInsets = insets;
 
-		// The classic light grey sidebar (as with older SDKs) when light, the window background when dark
-		_outlineView.backgroundColor = [NSColor colorWithName:@"FileBrowserBackground" dynamicProvider:^NSColor*(NSAppearance* appearance){
-			BOOL dark = [[appearance bestMatchFromAppearancesWithNames:@[ NSAppearanceNameAqua, NSAppearanceNameDarkAqua ]] isEqualToString:NSAppearanceNameDarkAqua];
-			return dark ? NSColor.windowBackgroundColor : [NSColor colorWithSRGBRed:236/255.0 green:236/255.0 blue:236/255.0 alpha:1];
-		}];
+		_outlineView.backgroundColor = NSColor.tmSidebarBackgroundColor;
 		_scrollView.drawsBackground  = YES; // ensure adaptive system color is actually drawn
 	}
 	return self;

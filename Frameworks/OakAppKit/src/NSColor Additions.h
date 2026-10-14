@@ -5,4 +5,5 @@ id TMMakeAttributedStringWithBackgroundStyle (id objectValue, NSBackgroundStyle 
 + (NSColor*)tmMatchedTextUnderlineColor;
 + (NSColor*)tmMatchedTextSelectedBackgroundColor;
 + (NSColor*)tmMatchedTextSelectedUnderlineColor;
++ (NSColor*)tmSidebarBackgroundColor; // file browser and editor side panels
 @end

@@ -2,6 +2,7 @@
 #import "AgentPromptView.h"
 #import "AgentTranscriptView.h"
 #import <AgentClient/AgentRegistry.h>
+#import <OakAppKit/NSColor Additions.h>
 
 NSString* const kUserDefaultsAgentPanelAgentKey = @"agentPanelAgent";
 
@@ -23,8 +24,8 @@ static NSString* StopReasonNotice (NSString* stopReason)
 	return nil;
 }
 
-// Header, prompt area and footer use the window background (like the file
-// browser and status bar); the transcript draws its own text background.
+// The whole panel uses the file browser’s background; only the prompt’s
+// input field has a text background.
 @interface AgentPanelBackgroundView : NSView
 @end
 
@@ -33,7 +34,7 @@ static NSString* StopReasonNotice (NSString* stopReason)
 
 - (void)drawRect:(NSRect)rect
 {
-	[NSColor.windowBackgroundColor setFill];
+	[NSColor.tmSidebarBackgroundColor setFill];
 	NSRectFill(rect);
 }
 @end

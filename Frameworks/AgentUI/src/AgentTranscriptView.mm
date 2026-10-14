@@ -1,5 +1,6 @@
 #import "AgentTranscriptView.h"
 #import "AgentMarkdown.h"
+#import <OakAppKit/NSColor Additions.h>
 
 static NSString* const kActionScheme      = @"textmate-agent";
 static NSTimeInterval const kCoalesceDelay = 0.05;
@@ -54,7 +55,7 @@ static NSString* PathFromURI (NSString* uri)
 	scrollView.hasHorizontalScroller = NO;
 	scrollView.borderType            = NSNoBorder;
 	scrollView.drawsBackground       = YES; // fills below short transcripts, where the text view ends
-	scrollView.backgroundColor       = NSColor.textBackgroundColor;
+	scrollView.backgroundColor       = NSColor.tmSidebarBackgroundColor;
 
 	NSTextStorage* textStorage     = [[NSTextStorage alloc] init];
 	NSLayoutManager* layoutManager = [[NSLayoutManager alloc] init];
@@ -89,7 +90,7 @@ static NSString* PathFromURI (NSString* uri)
 		self.selectable         = YES;
 		self.richText           = YES;
 		self.drawsBackground    = YES;
-		self.backgroundColor    = NSColor.textBackgroundColor;
+		self.backgroundColor    = NSColor.tmSidebarBackgroundColor;
 		self.textContainerInset = NSMakeSize(10, 10);
 		self.delegate           = self;
 		self.linkTextAttributes = @{ NSForegroundColorAttributeName: NSColor.linkColor, NSCursorAttributeName: NSCursor.pointingHandCursor };

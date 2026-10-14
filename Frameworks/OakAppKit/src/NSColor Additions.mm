@@ -23,4 +23,14 @@ id TMMakeAttributedStringWithBackgroundStyle (id objectValue, NSBackgroundStyle 
 + (NSColor*)tmMatchedTextUnderlineColor          { return [NSColor colorWithCalibratedRed:0.89 green:0.72 blue:0.0 alpha:1.0]; }
 + (NSColor*)tmMatchedTextSelectedBackgroundColor { return [NSColor colorWithCalibratedWhite:1.0 alpha:0.30]; }
 + (NSColor*)tmMatchedTextSelectedUnderlineColor  { return [NSColor whiteColor]; }
+
+// The classic light grey sidebar (as with older SDKs) when light, the window background when dark
++ (NSColor*)tmSidebarBackgroundColor
+{
+	static NSColor* color = [NSColor colorWithName:@"TMSidebarBackground" dynamicProvider:^NSColor*(NSAppearance* appearance){
+		BOOL dark = [[appearance bestMatchFromAppearancesWithNames:@[ NSAppearanceNameAqua, NSAppearanceNameDarkAqua ]] isEqualToString:NSAppearanceNameDarkAqua];
+		return dark ? NSColor.windowBackgroundColor : [NSColor colorWithSRGBRed:236/255.0 green:236/255.0 blue:236/255.0 alpha:1];
+	}];
+	return color;
+}
 @end
