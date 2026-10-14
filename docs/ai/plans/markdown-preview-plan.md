@@ -1,7 +1,7 @@
 ---
 title: Markdown Support and Native Preview Pane — Plan
 created: 2026-10-14
-status: approved — not started
+status: approved — in progress
 tags: [textmate, plan, markdown, preview]
 ---
 
@@ -46,7 +46,7 @@ How to use what's there today:
   - Preferred size at priority 490, so the editor's minimum always wins and the window doesn't grow.
   - Editor adopted in `viewDidMoveToSuperview` (`ProjectLayoutView` removes it otherwise).
   - Plain divider view with no intrinsic size.
-- Move it into a small neutral framework (e.g. `Frameworks/OakEditorPanels`), so the agent panel and preview don't depend on each other.
+- Move it into a small neutral framework (`Frameworks/OakEditorPanels`, done), so the agent panel and preview don't depend on each other.
 - Re-host the agent panel on it. The `DocumentWindowController+Agent.mm` hooks stay one-liners.
 - Nesting: top/bottom panels span the editor column only. For example, `file browser | [preview | editor | chat]`, or `file browser | [editor over preview | chat]`.
 
@@ -75,7 +75,7 @@ Known limits of the built-in renderer: no raw HTML, footnotes or exact GitHub st
 - **Menus:**
   - View ▸ Show/Hide Markdown Preview. The shortcut must not clash with the bundle's ⌃⌥⌘P; ⌃⇧⌘P is proposed (check that it's free).
   - View ▸ Markdown Preview Position ▸ Automatic (opposite the agent panel) / Left / Right / Top / Bottom.
-- **Defaults:** `markdownPreviewPlacement` (`auto`), `markdownPreviewSize`, `markdownPreviewRenderer` (`builtin`).
+- **Defaults:** `markdownPreviewPlacement` (`auto`), `markdownPreviewWidth` / `markdownPreviewHeight` (saved by OakEditorPanels), `markdownPreviewRenderer` (`builtin`).
 - **Hooks:** a `DocumentWindowController+MarkdownPreview.{h,mm}` category, plus one-line hooks in `DocumentWindowController.mm` (setup, placement, shutdown, menu validation), as for the agent panel.
 
 ### P4 — Optional GitHub renderer (cmark-gfm + WKWebView)
