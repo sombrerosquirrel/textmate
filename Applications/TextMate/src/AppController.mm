@@ -243,7 +243,7 @@ BOOL HasDocumentWindow (NSArray* windows)
 				},
 				{ @"Show File Browser",      @selector(toggleFileBrowser:),    @"d", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagOption|NSEventModifierFlagControl },
 				{ @"Show HTML Output",       @selector(toggleHTMLOutput:),     @"h", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagOption|NSEventModifierFlagControl },
-				{ @"Show Agent Panel",       @selector(toggleAgentPanel:),     @"i", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagControl },
+				{ @"Show Agent Panel",       @selector(toggleAgentPanel:),     @"I", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagControl|NSEventModifierFlagShift },
 				{ @"Move Agent Panel to Left Side", @selector(toggleAgentPanelPlacement:) },
 				{ @"Show Line Numbers",      @selector(toggleLineNumbers:),    @"l", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagOption },
 				{ /* -------- */ },
