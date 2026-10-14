@@ -22,48 +22,7 @@
 - (void)insertSnippetWithOptions:(NSDictionary*)someOptions;
 @end
 
-static void* kAgentPanelKey         = &kAgentPanelKey;
-static void* kAgentThemeObserverKey = &kAgentThemeObserverKey;
-
-// Calls a block when the editor’s theme changes (KVO on OakTextView.themeUUID,
-// as OakDocumentView does). Must be stopped before the text view goes away.
-@interface AgentThemeObserver : NSObject
-- (instancetype)initWithTextView:(OakTextView*)textView handler:(void(^)())handler;
-- (void)stop;
-@end
-
-@implementation AgentThemeObserver
-{
-	OakTextView* _textView;
-	void(^_handler)();
-}
-
-- (instancetype)initWithTextView:(OakTextView*)textView handler:(void(^)())handler
-{
-	if(self = [super init])
-	{
-		_textView = textView;
-		_handler  = handler;
-		[_textView addObserver:self forKeyPath:@"themeUUID" options:0 context:kAgentThemeObserverKey];
-	}
-	return self;
-}
-
-- (void)stop
-{
-	[_textView removeObserver:self forKeyPath:@"themeUUID" context:kAgentThemeObserverKey];
-	_textView = nil;
-	_handler  = nil;
-}
-
-- (void)observeValueForKeyPath:(NSString*)keyPath ofObject:(id)object change:(NSDictionary*)change context:(void*)context
-{
-	if(context != kAgentThemeObserverKey)
-		return [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
-	if(_handler)
-		_handler();
-}
-@end
+static void* kAgentPanelKey = &kAgentPanelKey;
 
 // Snippet syntax treats \, $ and ` specially; escape them to insert text literally
 static NSString* EscapeSnippetText (NSString* text)
@@ -114,23 +73,8 @@ static NSUInteger LineNumberAtIndex (NSString* text, NSUInteger index)
 		panel = [[AgentPanelViewController alloc] init];
 		panel.delegate = self;
 		objc_setAssociatedObject(self, kAgentPanelKey, panel, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-
-		__weak DocumentWindowController* weakSelf = self;
-		AgentThemeObserver* observer = [[AgentThemeObserver alloc] initWithTextView:self.textView handler:^{
-			[weakSelf updateAgentPanelAppearance];
-		}];
-		objc_setAssociatedObject(self, kAgentThemeObserverKey, observer, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-		[self updateAgentPanelAppearance];
 	}
 	return panel;
-}
-
-// The panel matches the editor’s theme (light or dark) rather than the
-// system appearance, so it looks like part of the editor
-- (void)updateAgentPanelAppearance
-{
-	theme_ptr theme = self.textView.theme;
-	self.agentPanel.view.appearance = theme ? [NSAppearance appearanceNamed:(theme->is_dark() ? NSAppearanceNameDarkAqua : NSAppearanceNameAqua)] : nil;
 }
 
 - (void)setupAgentPanelSupport
@@ -146,8 +90,6 @@ static NSUInteger LineNumberAtIndex (NSString* text, NSUInteger index)
 
 - (void)shutdownAgentPanel
 {
-	[(AgentThemeObserver*)objc_getAssociatedObject(self, kAgentThemeObserverKey) stop];
-	objc_setAssociatedObject(self, kAgentThemeObserverKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 	[self.agentPanel shutdown];
 }
 
