@@ -34,6 +34,8 @@
 #import <regexp/glob.h>
 #import <settings/settings.h>
 #import <ns/ns.h>
+#import <bundles/bundles.h>
+#import <theme/theme.h>
 #import <kvdb/kvdb.h>
 #import <crash/info.h>
 
@@ -166,7 +168,7 @@ namespace
 	}
 }
 
-static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.path", @"arrayController.arrangedObjects.displayName", @"arrayController.arrangedObjects.documentEdited", @"selectedDocument.path", @"selectedDocument.displayName", @"selectedDocument.icon", @"selectedDocument.onDisk" , @"selectedDocument.documentEdited" ];
+static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.path", @"arrayController.arrangedObjects.displayName", @"arrayController.arrangedObjects.documentEdited", @"selectedDocument.path", @"selectedDocument.displayName", @"selectedDocument.icon", @"selectedDocument.onDisk" , @"selectedDocument.documentEdited", @"textView.themeUUID" ];
 
 @implementation DocumentWindowController
 + (KVDB*)sharedProjectStateDB
@@ -791,6 +793,13 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 		self.window.representedFilename = document.isOnDisk ? document.path : @"";
 	if([keyPath isEqualToString:@"selectedDocument.onDisk"] || [keyPath isEqualToString:@"selectedDocument.icon"])
 		[self.window standardWindowButton:NSWindowDocumentIconButton].image = document.isOnDisk ? document.icon : nil;
+
+	// The window (file browser, tab bar, status bar) matches the editor’s theme rather than the system appearance
+	if([keyPath isEqualToString:@"textView.themeUUID"])
+	{
+		theme_ptr theme = self.textView.themeUUID ? parse_theme(bundles::lookup(to_s(self.textView.themeUUID))) : theme_ptr();
+		self.window.appearance = theme ? [NSAppearance appearanceNamed:(theme->is_dark() ? NSAppearanceNameDarkAqua : NSAppearanceNameAqua)] : nil;
+	}
 
 	if([keyPath hasSuffix:@"arrangedObjects.path"] || [keyPath hasSuffix:@"arrangedObjects.displayName"] || [keyPath hasSuffix:@"arrangedObjects.documentEdited"])
 	{
