@@ -169,7 +169,7 @@ The chat panel aims to match VS Code's chat view where ACP makes it possible. Ma
 
 | VS Code chat feature | TextMate | Milestone |
 |---|---|---|
-| Chat docked beside the editor, toggle shortcut | Docked panel, left or right (setting), stacked next to the editor (file browser outside), **⌃⌘I**, resizable, width remembered | M2 |
+| Chat docked beside the editor, toggle shortcut | Docked panel, left or right (setting), stacked next to the editor (file browser outside), **⌃⇧⌘I** (⌃⌘I is taken by the HTML bundle), resizable, width remembered | M2 |
 | Agent / mode / model pickers | Agent popup + generic config-option popups | M2 |
 | New chat | New Chat button (new session) | M2 |
 | Markdown replies with code blocks | Markdown renderer (headings, lists, code, quotes, tables, links) | M2 |
