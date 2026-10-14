@@ -1,0 +1,62 @@
+---
+title: M2 — Chat Panel
+status: in progress
+started: 2026-10-13
+updated: 2026-10-14
+tags: [textmate, implementation, agent, ui]
+---
+
+# M2 — Chat Panel
+
+**Status:** 🔄 In progress. Implemented and pushed; the user is testing it. Marked complete after the user confirms.
+**Branch:** `feature/agent`
+**Design:** [agent-harness-design.md §4.2, §6, §6a](../plans/agent-harness-design.md)
+
+## Goal
+Chat with Copilot and Claude in a panel docked beside the editor, with the VS Code chat features that ACP supports (design §6a).
+
+## Decisions (user)
+- AppKit UI, not SwiftUI.
+- Panel can sit on the left or right; it is stacked next to the editor, with the file browser outside.
+- Include VS Code–style chat features (§6a).
+- Shortcut ⌃⌘I (free in TextMate; matches VS Code).
+
+## Done
+
+`Frameworks/AgentUI` (21 tests):
+
+| Component | Responsibility |
+|---|---|
+| `AgentMarkdown` | Markdown renderer on `NSPresentationIntent`: headings, lists, code blocks with Copy / Insert footers, quotes, tables, links. |
+| `AgentTranscript` | Transcript model: messages, thinking, tool calls, plan. |
+| `AgentAttachment` | File, selection and image content blocks; unsaved document text is sent as shown. |
+| `AgentTranscriptView` | TextKit 1 view with coalesced updates and `textmate-agent:` action links (Copy, Insert at Cursor, toggle thinking, open file). |
+| `AgentPromptView` | ↩ sends, ⇧↩/⌥↩ newline, Esc stops, ↑/↓ history, `/` command completion, attachment chips, drag files in, paste images. |
+| `AgentEditorSplitView` | Auto Layout container `[editor | panel]` or `[panel | editor]` with a draggable divider. Not NSSplitView, because OakDocumentView needs constraint-based minimum widths. The panel width is a preference at priority 490. |
+| `AgentPanelViewController` | Header (agent picker, New Chat), transcript, prompt, config-option popups (mode, model, effort…) and status/usage footer. |
+
+TextMate integration (`Frameworks/DocumentWindow/src/DocumentWindowController+Agent.{h,mm}`): panel toggle, placement, Ask About Selection, insert as escaped snippet, open file at line. The main `DocumentWindowController` has four one-line hooks.
+
+Menus: View ▸ Show/Hide Agent Panel (⌃⌘I; focuses the panel if it's open but not focused), View ▸ Move Agent Panel to Left/Right Side, Text ▸ Ask Agent About Selection.
+
+Defaults: `agentPanelPlacement` (right), `agentPanelWidth` (380), `agentPanelAgent` (copilot).
+
+## Issues found in testing and fixed
+
+| Report | Cause | Fix |
+|---|---|---|
+| Crash on Ask Agent; no status bar; black editor | Split view adopted the editor in `init`, then `ProjectLayoutView` removed it. NSSplitView frames conflicted with OakDocumentView constraints. A zero-frame NSBox separator collapsed the window. | Adopt in `viewDidMoveToSuperview`; constraint-based container; `AgentDividerView` (1418d472). |
+| Panel dark in a light theme | macOS is in dark mode; the panel followed the system appearance; some areas had no background. Placeholder property name collided with a private NSTextView property (text drawn twice). | Backgrounds filled; renamed properties (9b5adbd9). Whole window now follows the theme (`fix/window-follows-theme`); panel inherits it (6da8258f). |
+| Tabs too short; white line under tabs; white file browser | See [01-build-and-bug-fixes.md](01-build-and-bug-fixes.md#ui-fixes-added-2026-10-13-found-while-testing-m2) | `fix/tab-bar-height`, `fix/file-browser-background` |
+
+## Commits
+8ecd469e §6a plan · ffc740ac AgentUI + Markdown · 4d8c4a0d transcript model · 72b93fd9 attachments · 7723847e chat panel · d6d22909 project window integration · 1418d472 layout fix · 9b5adbd9 theme/backgrounds · 6da8258f inherit window appearance
+
+## Remaining before M2 is complete
+- [ ] User confirmation after testing.
+- [ ] Not yet checked in the GUI: dragging the divider, `/` completion, Insert at Cursor, open-file links, switching between light and dark themes with the panel open.
+- [ ] Update the design doc status to "M2 done" and sync Obsidian.
+
+## Future work
+- [ ] Commit 7723847e alone doesn't build (it removes the debug window files that AppController references until d6d22909). Regrouping needs a force-push of `feature/agent`; awaiting the user's decision.
+- [ ] Exact theme colours and syntax-highlighted code blocks (M5).

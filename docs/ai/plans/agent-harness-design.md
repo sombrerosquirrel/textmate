@@ -8,6 +8,8 @@ related: textmate-ai-plan.md
 
 # TextMate Agent Harness — Design
 
+> Implementation status: [docs/ai/implementation/](../implementation/README.md)
+
 Lets AI coding agents — **GitHub Copilot** and **Claude Code** first, any other ACP agent later — *drive coding* inside TextMate: chat, read and edit files, run commands, with the user approving actions and reviewing diffs.
 
 ## 1. Decisions in one place

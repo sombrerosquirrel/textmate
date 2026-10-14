@@ -7,6 +7,8 @@ tags: [textmate, plan, acp, copilot, claude-code, lsp]
 
 # TextMate AI — Project Plan
 
+> Implementation status: [docs/ai/implementation/](../implementation/README.md)
+
 ## 1. Goals
 
 In priority order:
@@ -174,7 +176,7 @@ tectiv3's Copilot ghost text (inline completion via LSP) stays as-is. The agent 
 6. `git submodule update --init --recursive`; build `pr-1467` with CMake/Ninja on current macOS; record any fixes as separate commits on a `fix/*` branch.
 
 ### Part E — Agent harness
-7. Design doc: `docs/plan/agent-harness-design.md` (milestones M1–M5 replace steps 8–11 below).
+7. Design doc: `docs/ai/plans/agent-harness-design.md` (milestones M1–M5 replace steps 8–11 below).
 8. `AgentClient`: ACP transport + session model, tested against Copilot CLI and Claude Code adapter.
 9. `AgentUI`: chat panel, diff review, permissions.
 10. Agents preferences pane.

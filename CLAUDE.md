@@ -106,6 +106,11 @@ Use `oak::application_t::support("relative/path")` (from `<OakSystem/application
 ## Git
 - **Convention:** Don't add  Co-Authored-By: "Claude Opus 5.5 <noreply@anthropic.com>"
 
+## Docs
+- **Purpose:** Provide details of planning, implementation and future work for developing AI agents, harness and supporting features.
+- **Plans:** exist in /docs/ai/plans/
+- **Implementation:** /docs/ai/implemenation. Files will be created as phases of work is started, updated, completed and future work will be added at the bottom and updated when completed.
+
 ## Upstream Status
 
 This fork (`tectiv3/textmate`) is based on `textmate/textmate` at the latest upstream commit. Upstream is unmaintained. Active community fork: `tagliala/textmate`.
