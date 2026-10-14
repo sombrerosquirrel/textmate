@@ -165,7 +165,22 @@ static void autosave_name ()
 	[defaults removeObjectForKey:[name stringByAppendingString:@"Width"]];
 }
 
+static void saved_size_keeps_editor_visible ()
+{
+	// E.g. a width saved after dragging the divider across the whole window
+	host_t h;
+	OakEditorPanel* panel = h.add(OakEditorPanelEdgeRight, 942);
+	h.layout();
+	OAK_ASSERT(Equal(h.editor.frame,   NSMakeRect(0, 0, 320, 600)));
+	OAK_ASSERT(Equal(panel.view.frame, NSMakeRect(321, 0, 679, 600)));
+
+	panel.edge = OakEditorPanelEdgeBottom;
+	h.layout();
+	OAK_ASSERT(Equal(h.editor.frame,   NSMakeRect(0, 450, 1000, 150)));
+}
+
 void test_editor_alone () { RunOnMainThread(editor_alone); }
+void test_saved_size_keeps_editor_visible () { RunOnMainThread(saved_size_keeps_editor_visible); }
 void test_right_panel () { RunOnMainThread(right_panel); }
 void test_top_and_bottom_panels () { RunOnMainThread(top_and_bottom_panels); }
 void test_bottom_panel_spans_editor_column () { RunOnMainThread(bottom_panel_spans_editor_column); }

@@ -40,6 +40,11 @@ typedef NS_ENUM(NSUInteger, OakEditorPanelEdge) {
 @property (nonatomic, readonly) NSView* editorView;
 @property (nonatomic, readonly) NSArray<OakEditorPanel*>* panels;
 
+// Panels never shrink the editor below this (default 320 × 150), whatever
+// their preferred or saved size. Like the panel sizes, it never makes the
+// window grow.
+@property (nonatomic) NSSize minimumEditorSize;
+
 - (void)addPanel:(OakEditorPanel*)panel;      // placed inside earlier panels on the same edge
 - (void)removePanel:(OakEditorPanel*)panel;
 @end

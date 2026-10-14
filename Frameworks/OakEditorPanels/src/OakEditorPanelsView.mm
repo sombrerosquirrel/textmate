@@ -137,6 +137,7 @@ static BOOL IsHorizontal (OakEditorPanelEdge edge)
 	if(self = [super initWithFrame:NSZeroRect])
 	{
 		_editorView        = editorView;
+		_minimumEditorSize = NSMakeSize(320, 150);
 		_panels            = [NSMutableArray array];
 		_layoutConstraints = [NSMutableArray array];
 	}
@@ -193,6 +194,12 @@ static BOOL IsHorizontal (OakEditorPanelEdge edge)
 	[panel.view removeFromSuperview];
 	[panel.divider removeFromSuperview];
 	[self panelLayoutDidChange:panel];
+}
+
+- (void)setMinimumEditorSize:(NSSize)size
+{
+	_minimumEditorSize = size;
+	self.needsUpdateConstraints = YES;
 }
 
 - (void)panelLayoutDidChange:(OakEditorPanel*)panel
@@ -270,6 +277,14 @@ static BOOL IsHorizontal (OakEditorPanelEdge edge)
 		[editor.topAnchor constraintEqualToAnchor:editorTop],
 		[editor.bottomAnchor constraintEqualToAnchor:editorBottom],
 	]];
+
+	// Stronger than the panels’ preferred and minimum sizes, so a large saved
+	// size or a long drag can’t squeeze the editor out of view
+	NSLayoutConstraint* minEditorWidth  = [editor.widthAnchor constraintGreaterThanOrEqualToConstant:_minimumEditorSize.width];
+	NSLayoutConstraint* minEditorHeight = [editor.heightAnchor constraintGreaterThanOrEqualToConstant:_minimumEditorSize.height];
+	minEditorWidth.priority  = NSLayoutPriorityDragThatCannotResizeWindow + 1;
+	minEditorHeight.priority = NSLayoutPriorityDragThatCannotResizeWindow + 1;
+	[_layoutConstraints addObjectsFromArray:@[ minEditorWidth, minEditorHeight ]];
 
 	for(OakEditorPanel* panel in _panels)
 	{
