@@ -69,6 +69,33 @@ static void keeps_scroll_position ()
 	OAK_ASSERT_EQ(preview.scrollFraction, 1);
 }
 
+static void switches_between_renderers ()
+{
+	MarkdownPreviewViewController* preview = MakePreview();
+	[preview showHTML:@"<p>HTML</p>" documentURL:nil readAccessURL:nil];
+	OAK_ASSERT(preview.showsHTML);
+
+	[preview showMarkdown:@"Text" baseURL:nil];
+	OAK_ASSERT(!preview.showsHTML);
+	OAK_ASSERT_EQ(S(preview.renderedText), "Text");
+
+	[preview showHTML:@"<p>HTML</p>" documentURL:nil readAccessURL:nil];
+	[preview showPlaceholder:@"Not a Markdown document"];
+	OAK_ASSERT(!preview.showsHTML);
+}
+
+static void notice ()
+{
+	MarkdownPreviewViewController* preview = MakePreview();
+	OAK_ASSERT(preview.notice == nil);
+	[preview showNotice:@"cmark-gfm isn’t installed." actionTitle:@"Install…"];
+	OAK_ASSERT_EQ(S(preview.notice), "cmark-gfm isn’t installed.");
+	[preview showNotice:nil actionTitle:nil];
+	OAK_ASSERT(preview.notice == nil);
+}
+
 void test_renders_markdown () { RunOnMainThread(renders_markdown); }
+void test_switches_between_renderers () { RunOnMainThread(switches_between_renderers); }
+void test_notice () { RunOnMainThread(notice); }
 void test_placeholder () { RunOnMainThread(placeholder); }
 void test_keeps_scroll_position () { RunOnMainThread(keeps_scroll_position); }

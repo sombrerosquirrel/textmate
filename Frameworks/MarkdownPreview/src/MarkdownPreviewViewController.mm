@@ -1,14 +1,24 @@
 #import "MarkdownPreviewViewController.h"
+#import "MarkdownPreviewHTMLView.h"
 #import <OakMarkdown/OakMarkdown.h>
+#import <OakFoundation/OakStringListTransformer.h>
+#import <Preferences/Keys.h>
 
 static CGFloat const kTextInset = 16;
+static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSettingsTransformer";
 
-@interface MarkdownPreviewViewController () <NSTextViewDelegate>
+@interface MarkdownPreviewViewController () <NSTextViewDelegate, MarkdownPreviewHTMLViewDelegate>
 {
+	NSView* _contentView; // below the header
 	NSScrollView* _scrollView;
 	NSTextView* _textView;
+	MarkdownPreviewHTMLView* _htmlView;
 	NSTextField* _placeholder;
 	OakMarkdownStyle* _style;
+
+	NSPopUpButton* _rendererPopUp;
+	NSTextField* _noticeLabel;
+	NSButton* _noticeButton;
 
 	NSString* _markdown;
 	NSURL* _baseURL;
@@ -17,6 +27,61 @@ static CGFloat const kTextInset = 16;
 @end
 
 @implementation MarkdownPreviewViewController
++ (void)initialize
+{
+	[OakStringListTransformer createTransformerWithName:kRendererTransformerName andObjectsArray:@[ @"builtin", @"github" ]];
+}
+
+- (NSView*)makeHeaderView
+{
+	_rendererPopUp = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
+	_rendererPopUp.bordered    = NO;
+	_rendererPopUp.controlSize = NSControlSizeSmall;
+	_rendererPopUp.font        = [NSFont systemFontOfSize:NSFont.smallSystemFontSize];
+	_rendererPopUp.toolTip     = @"Renderer: built-in, or GitHub’s parser (cmark-gfm)";
+	[_rendererPopUp addItemsWithTitles:@[ @"Built-in", @"GitHub" ]];
+	_rendererPopUp.itemArray[0].tag = 0;
+	_rendererPopUp.itemArray[1].tag = 1;
+	[_rendererPopUp bind:NSSelectedTagBinding toObject:NSUserDefaultsController.sharedUserDefaultsController withKeyPath:[@"values." stringByAppendingString:kUserDefaultsMarkdownPreviewRendererKey] options:@{ NSValueTransformerNameBindingOption: kRendererTransformerName }];
+
+	_noticeLabel = [NSTextField labelWithString:@""];
+	_noticeLabel.font          = [NSFont systemFontOfSize:NSFont.smallSystemFontSize];
+	_noticeLabel.textColor     = NSColor.secondaryLabelColor;
+	_noticeLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+	[_noticeLabel setContentCompressionResistancePriority:NSLayoutPriorityDefaultLow forOrientation:NSLayoutConstraintOrientationHorizontal];
+
+	_noticeButton = [NSButton buttonWithTitle:@"" target:self action:@selector(performNoticeAction:)];
+	_noticeButton.controlSize = NSControlSizeSmall;
+	_noticeButton.font        = [NSFont systemFontOfSize:NSFont.smallSystemFontSize];
+
+	NSStackView* noticeStack = [NSStackView stackViewWithViews:@[ _noticeLabel, _noticeButton ]];
+	noticeStack.spacing = 6;
+	noticeStack.detachesHiddenViews = YES;
+	noticeStack.hidden = YES;
+
+	NSBox* divider = [[NSBox alloc] initWithFrame:NSZeroRect];
+	divider.boxType = NSBoxSeparator;
+
+	NSView* header = [[NSView alloc] initWithFrame:NSZeroRect];
+	for(NSView* view in @[ noticeStack, _rendererPopUp, divider ])
+	{
+		view.translatesAutoresizingMaskIntoConstraints = NO;
+		[header addSubview:view];
+	}
+	[NSLayoutConstraint activateConstraints:@[
+		[header.heightAnchor constraintEqualToConstant:26],
+		[noticeStack.leadingAnchor constraintEqualToAnchor:header.leadingAnchor constant:10],
+		[noticeStack.centerYAnchor constraintEqualToAnchor:header.centerYAnchor],
+		[noticeStack.trailingAnchor constraintLessThanOrEqualToAnchor:_rendererPopUp.leadingAnchor constant:-8],
+		[_rendererPopUp.trailingAnchor constraintEqualToAnchor:header.trailingAnchor constant:-6],
+		[_rendererPopUp.centerYAnchor constraintEqualToAnchor:header.centerYAnchor],
+		[divider.leadingAnchor constraintEqualToAnchor:header.leadingAnchor],
+		[divider.trailingAnchor constraintEqualToAnchor:header.trailingAnchor],
+		[divider.bottomAnchor constraintEqualToAnchor:header.bottomAnchor],
+	]];
+	return header;
+}
+
 - (void)loadView
 {
 	_style = [OakMarkdownStyle defaultStyle];
@@ -64,21 +129,72 @@ static CGFloat const kTextInset = 16;
 	_placeholder.translatesAutoresizingMaskIntoConstraints = NO;
 	_placeholder.hidden = YES;
 
+	_contentView = [[NSView alloc] initWithFrame:_scrollView.frame];
+	_contentView.translatesAutoresizingMaskIntoConstraints = NO;
+	[_contentView addSubview:_scrollView];
+	[_contentView addSubview:_placeholder];
+
+	NSView* header = [self makeHeaderView];
+	header.translatesAutoresizingMaskIntoConstraints = NO;
+
 	NSView* view = [[NSView alloc] initWithFrame:_scrollView.frame];
-	[view addSubview:_scrollView];
-	[view addSubview:_placeholder];
+	[view addSubview:header];
+	[view addSubview:_contentView];
 	[NSLayoutConstraint activateConstraints:@[
-		[_placeholder.centerXAnchor constraintEqualToAnchor:view.centerXAnchor],
-		[_placeholder.centerYAnchor constraintEqualToAnchor:view.centerYAnchor],
-		[_placeholder.widthAnchor constraintLessThanOrEqualToAnchor:view.widthAnchor constant:-2*kTextInset],
+		[header.topAnchor constraintEqualToAnchor:view.topAnchor],
+		[header.leadingAnchor constraintEqualToAnchor:view.leadingAnchor],
+		[header.trailingAnchor constraintEqualToAnchor:view.trailingAnchor],
+		[_contentView.topAnchor constraintEqualToAnchor:header.bottomAnchor],
+		[_contentView.leadingAnchor constraintEqualToAnchor:view.leadingAnchor],
+		[_contentView.trailingAnchor constraintEqualToAnchor:view.trailingAnchor],
+		[_contentView.bottomAnchor constraintEqualToAnchor:view.bottomAnchor],
+		[_placeholder.centerXAnchor constraintEqualToAnchor:_contentView.centerXAnchor],
+		[_placeholder.centerYAnchor constraintEqualToAnchor:_contentView.centerYAnchor],
+		[_placeholder.widthAnchor constraintLessThanOrEqualToAnchor:_contentView.widthAnchor constant:-2*kTextInset],
 	]];
 	self.view = view;
+}
+
+- (void)dealloc
+{
+	[_rendererPopUp unbind:NSSelectedTagBinding];
 }
 
 - (NSString*)renderedText
 {
 	[self view];
 	return _placeholder.hidden ? _textView.string : _placeholder.stringValue;
+}
+
+- (NSString*)notice
+{
+	[self view];
+	return _noticeLabel.superview.hidden ? nil : _noticeLabel.stringValue;
+}
+
+- (BOOL)showsHTML
+{
+	return _htmlView && !_htmlView.hidden;
+}
+
+// ==========
+// = Header =
+// ==========
+
+- (void)showNotice:(NSString*)notice actionTitle:(NSString*)actionTitle
+{
+	[self view];
+	_noticeLabel.stringValue  = notice ?: @"";
+	_noticeLabel.toolTip      = notice;
+	_noticeButton.title       = actionTitle ?: @"";
+	_noticeButton.hidden      = !actionTitle;
+	_noticeLabel.superview.hidden = !notice;
+}
+
+- (void)performNoticeAction:(id)sender
+{
+	if([self.delegate respondsToSelector:@selector(markdownPreviewPerformNoticeAction:)])
+		[self.delegate markdownPreviewPerformNoticeAction:self];
 }
 
 // =============
@@ -93,6 +209,27 @@ static CGFloat const kTextInset = 16;
 	[self render];
 }
 
+- (void)showHTML:(NSString*)html documentURL:(NSURL*)documentURL readAccessURL:(NSURL*)readAccessURL
+{
+	[self view];
+	_markdown = nil;
+	_baseURL  = nil;
+	[_textView.textStorage setAttributedString:[[NSAttributedString alloc] init]];
+
+	if(!_htmlView)
+	{
+		_htmlView = [[MarkdownPreviewHTMLView alloc] initWithFrame:_contentView.bounds];
+		_htmlView.autoresizingMask = NSViewWidthSizable|NSViewHeightSizable;
+		_htmlView.delegate = self;
+		[_contentView addSubview:_htmlView positioned:NSWindowBelow relativeTo:_placeholder];
+	}
+
+	_placeholder.hidden = YES;
+	_scrollView.hidden  = YES;
+	_htmlView.hidden    = NO;
+	[_htmlView showHTML:html documentURL:documentURL readAccessURL:readAccessURL];
+}
+
 - (void)showPlaceholder:(NSString*)message
 {
 	[self view];
@@ -101,6 +238,7 @@ static CGFloat const kTextInset = 16;
 	_placeholder.stringValue = message;
 	_placeholder.hidden = NO;
 	_scrollView.hidden  = YES;
+	_htmlView.hidden    = YES;
 	[_textView.textStorage setAttributedString:[[NSAttributedString alloc] init]];
 }
 
@@ -116,6 +254,7 @@ static CGFloat const kTextInset = 16;
 
 	_placeholder.hidden = YES;
 	_scrollView.hidden  = NO;
+	_htmlView.hidden    = YES;
 
 	_renderedWidth = [self availableWidth];
 	_style.maximumImageWidth = _renderedWidth;
@@ -157,6 +296,14 @@ static CGFloat const kTextInset = 16;
 	return height > 0 ? MIN(MAX(NSMinY(_scrollView.contentView.bounds) / height, 0), 1) : 0;
 }
 
+- (void)scrollToSourceLine:(CGFloat)line fraction:(CGFloat)fraction
+{
+	if(self.showsHTML)
+		[_htmlView scrollToSourceLine:line fraction:fraction];
+	else
+		self.scrollFraction = fraction;
+}
+
 - (void)setScrollFraction:(CGFloat)fraction
 {
 	[self view];
@@ -168,6 +315,11 @@ static CGFloat const kTextInset = 16;
 // =========
 // = Links =
 // =========
+
+- (void)HTMLView:(MarkdownPreviewHTMLView*)view openURL:(NSURL*)url
+{
+	[self.delegate markdownPreview:self openURL:url];
+}
 
 - (BOOL)textView:(NSTextView*)textView clickedOnLink:(id)link atIndex:(NSUInteger)charIndex
 {
