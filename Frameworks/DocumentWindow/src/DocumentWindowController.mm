@@ -1,5 +1,6 @@
 #import "DocumentWindowController.h"
 #import "DocumentWindowController+Agent.h"
+#import "DocumentWindowController+EditorPanels.h"
 #import "ProjectLayoutView.h"
 #import "SelectGrammarViewController.h"
 #import "OakRunCommandWindowController.h"
@@ -193,7 +194,7 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 
 		self.layoutView = [[ProjectLayoutView alloc] initWithFrame:NSZeroRect];
 		self.layoutView.documentView = self.documentView;
-		[self setupAgentPanelSupport];
+		[self setupEditorPanels];
 
 		NSUInteger windowStyle = (NSWindowStyleMaskTitled|NSWindowStyleMaskClosable|NSWindowStyleMaskResizable|NSWindowStyleMaskMiniaturizable);
 		self.window = [[NSWindow alloc] initWithContentRect:[NSWindow contentRectForFrameRect:[self frameRectForNewWindow] styleMask:windowStyle] styleMask:windowStyle backing:NSBackingStoreBuffered defer:NO];

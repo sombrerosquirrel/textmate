@@ -1,5 +1,5 @@
 #import "DocumentWindowController+Agent.h"
-#import "ProjectLayoutView.h"
+#import "DocumentWindowController+EditorPanels.h"
 #import <AgentUI/AgentPanelViewController.h>
 #import <OakEditorPanels/OakEditorPanelsView.h>
 #import <OakTextView/OakDocumentView.h>
@@ -10,8 +10,6 @@
 
 // Private properties of DocumentWindowController, defined in its main file
 @interface DocumentWindowController (AgentPrivate)
-@property (nonatomic) ProjectLayoutView* layoutView;
-@property (nonatomic) OakDocumentView* documentView;
 @property (nonatomic) OakTextView* textView;
 @end
 
@@ -22,7 +20,7 @@
 - (void)insertSnippetWithOptions:(NSDictionary*)someOptions;
 @end
 
-static NSString* const kUserDefaultsAgentPanelPlacementKey = @"agentPanelPlacement"; // @"left" or @"right" (default)
+NSString* const kUserDefaultsAgentPanelPlacementKey = @"agentPanelPlacement";
 
 static void* kAgentPanelKey       = &kAgentPanelKey;
 static void* kAgentEditorPanelKey = &kAgentEditorPanelKey;
@@ -63,11 +61,6 @@ static NSUInteger LineNumberAtIndex (NSString* text, NSUInteger index)
 
 @implementation DocumentWindowController (Agent)
 
-- (OakEditorPanelsView*)editorPanelsView
-{
-	return [self.layoutView.documentView isKindOfClass:[OakEditorPanelsView class]] ? (OakEditorPanelsView*)self.layoutView.documentView : nil;
-}
-
 - (AgentPanelViewController*)agentPanel
 {
 	return objc_getAssociatedObject(self, kAgentPanelKey);
@@ -96,13 +89,6 @@ static NSUInteger LineNumberAtIndex (NSString* text, NSUInteger index)
 		objc_setAssociatedObject(self, kAgentEditorPanelKey, editorPanel, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 	}
 	return editorPanel;
-}
-
-- (void)setupAgentPanelSupport
-{
-	// The editor goes inside a panels container so the panel can sit beside it
-	if(!self.editorPanelsView)
-		self.layoutView.documentView = [[OakEditorPanelsView alloc] initWithEditorView:self.documentView];
 }
 
 - (void)updateAgentPanelPlacement

@@ -4,10 +4,11 @@
 // right), with the editor’s context (current file, selection, open files)
 // available to attach to prompts.
 
+extern NSString* const kUserDefaultsAgentPanelPlacementKey; // @"left" or @"right" (default)
+
 @interface DocumentWindowController (Agent)
 @property (nonatomic) BOOL agentPanelVisible;
 
-- (void)setupAgentPanelSupport;      // once, after the layout view exists
 - (void)updateAgentPanelPlacement;   // after user defaults change
 - (void)shutdownAgentPanel;          // when the window closes
 - (BOOL)isAgentPanelMenuItem:(NSMenuItem*)menuItem;
