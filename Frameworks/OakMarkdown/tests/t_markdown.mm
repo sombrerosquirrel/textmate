@@ -139,3 +139,104 @@ void test_block_quote ()
 	OAK_ASSERT_EQ(ParagraphStyleAt(str, @"quoted").textBlocks.count, 1);
 	OAK_ASSERT_EQ(ParagraphStyleAt(str, @"normal").textBlocks.count, 0);
 }
+
+// =====================
+// = Document Preview =
+// =====================
+
+static NSAttributedString* RenderDocument (NSString* markdown, NSURL* baseURL, CGFloat maximumImageWidth = 0)
+{
+	OakMarkdownStyle* style = [OakMarkdownStyle defaultStyle];
+	style.maximumImageWidth = maximumImageWidth;
+	return [OakMarkdownRenderer attributedStringFromMarkdown:markdown style:style baseURL:baseURL codeBlocks:nullptr codeBlockFooter:nil];
+}
+
+// A folder with a 200 × 100 PNG named pic.png
+static NSURL* MakeImageFolder ()
+{
+	NSURL* folder = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"oak-markdown-%@", NSUUID.UUID.UUIDString]] isDirectory:YES];
+	[NSFileManager.defaultManager createDirectoryAtURL:folder withIntermediateDirectories:YES attributes:nil error:nil];
+
+	NSBitmapImageRep* rep = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:nullptr pixelsWide:200 pixelsHigh:100 bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO colorSpaceName:NSDeviceRGBColorSpace bytesPerRow:0 bitsPerPixel:0];
+	[[rep representationUsingType:NSBitmapImageFileTypePNG properties:@{ }] writeToURL:[folder URLByAppendingPathComponent:@"pic.png"] atomically:YES];
+	return folder;
+}
+
+static NSTextAttachment* FirstAttachment (NSAttributedString* str)
+{
+	__block NSTextAttachment* res = nil;
+	[str enumerateAttribute:NSAttachmentAttributeName inRange:NSMakeRange(0, str.length) options:0 usingBlock:^(id value, NSRange, BOOL* stop){
+		if((res = value))
+			*stop = YES;
+	}];
+	return res;
+}
+
+void test_local_image ()
+{
+	NSURL* folder = MakeImageFolder();
+	NSURL* document = [folder URLByAppendingPathComponent:@"README.md"];
+
+	NSTextAttachment* attachment = FirstAttachment(RenderDocument(@"Look: ![a picture](pic.png)", document));
+	OAK_ASSERT(attachment != nil);
+	OAK_ASSERT_EQ(NSWidth(attachment.bounds), 200);
+	OAK_ASSERT_EQ(NSHeight(attachment.bounds), 100);
+
+	// Scaled down to fit, keeping the aspect ratio
+	NSTextAttachment* scaled = FirstAttachment(RenderDocument(@"![a picture](pic.png)", document, 50));
+	OAK_ASSERT_EQ(NSWidth(scaled.bounds), 50);
+	OAK_ASSERT_EQ(NSHeight(scaled.bounds), 25);
+
+	[NSFileManager.defaultManager removeItemAtURL:folder error:nil];
+}
+
+void test_missing_or_remote_image ()
+{
+	NSURL* document = [NSURL fileURLWithPath:@"/nonexistent/docs/README.md"];
+
+	NSAttributedString* missing = RenderDocument(@"![diagram](img/d.png)", document);
+	OAK_ASSERT(FirstAttachment(missing) == nil);
+	OAK_ASSERT_EQ(String(missing), "[diagram]");
+	OAK_ASSERT_EQ(S([[missing attribute:NSLinkAttributeName atIndex:1 effectiveRange:nullptr] absoluteString]), "file:///nonexistent/docs/img/d.png");
+
+	// Never fetched
+	NSAttributedString* remote = RenderDocument(@"![](https://example.com/logo.png)", document);
+	OAK_ASSERT(FirstAttachment(remote) == nil);
+	OAK_ASSERT_EQ(String(remote), "[logo.png]");
+}
+
+void test_relative_links ()
+{
+	NSAttributedString* str = RenderDocument(@"See [the guide](guide/intro.md#setup) or [the site](https://example.com).", [NSURL fileURLWithPath:@"/tmp/project/README.md"]);
+	NSURL* relative = [str attribute:NSLinkAttributeName atIndex:[str.string rangeOfString:@"the guide"].location effectiveRange:nullptr];
+	NSURL* remote   = [str attribute:NSLinkAttributeName atIndex:[str.string rangeOfString:@"the site"].location effectiveRange:nullptr];
+	OAK_ASSERT_EQ(S(relative.absoluteString), "file:///tmp/project/guide/intro.md#setup");
+	OAK_ASSERT_EQ(S(remote.absoluteString), "https://example.com");
+}
+
+void test_task_list ()
+{
+	NSAttributedString* str = Render(@"- [ ] write tests\n- [x] fix bug\n- plain item");
+	OAK_ASSERT_EQ(String(str), "☐\twrite tests\n☑\tfix bug\n•\tplain item");
+
+	// Only at the start of an item
+	OAK_ASSERT_EQ(String(Render(@"- see [x] here")), "•\tsee [x] here");
+}
+
+void test_horizontal_rule ()
+{
+	NSAttributedString* str = Render(@"Above\n\n---\n\nBelow");
+	OAK_ASSERT_EQ(String(str), "Above\n \nBelow");
+
+	NSTextBlock* rule = ParagraphStyleAt(str, @" ").textBlocks.firstObject;
+	OAK_ASSERT(rule != nil);
+	OAK_ASSERT_EQ([rule widthForLayer:NSTextBlockBorder edge:NSMaxYEdge], 1);
+}
+
+void test_block_quote_width ()
+{
+	// Without a width, the quote collapsed to one character per line in a text view
+	NSTextBlock* quote = ParagraphStyleAt(Render(@"> A quote"), @"A quote").textBlocks.firstObject;
+	OAK_ASSERT_EQ([quote valueForDimension:NSTextBlockWidth], 100);
+	OAK_ASSERT([quote valueTypeForDimension:NSTextBlockWidth] == NSTextBlockPercentageValueType);
+}

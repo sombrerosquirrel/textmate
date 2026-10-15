@@ -13,7 +13,11 @@ static CGFloat const kQuoteIndent = 12;
 	style.codeFont            = [NSFont monospacedSystemFontOfSize:NSFont.systemFontSize - 1 weight:NSFontWeightRegular];
 	style.textColor           = NSColor.labelColor;
 	style.secondaryTextColor  = NSColor.secondaryLabelColor;
-	style.codeBackgroundColor = [NSColor.labelColor colorWithAlphaComponent:0.06];
+	// A system color made translucent with colorWithAlphaComponent: isn’t drawn as a text block background
+	style.codeBackgroundColor = [NSColor colorWithName:@"OakMarkdownCodeBackground" dynamicProvider:^NSColor*(NSAppearance* appearance){
+		BOOL dark = [[appearance bestMatchFromAppearancesWithNames:@[ NSAppearanceNameAqua, NSAppearanceNameDarkAqua ]] isEqualToString:NSAppearanceNameDarkAqua];
+		return dark ? [NSColor colorWithWhite:1 alpha:0.08] : [NSColor colorWithWhite:0 alpha:0.05];
+	}];
 	style.borderColor         = NSColor.separatorColor;
 	return style;
 }
@@ -85,12 +89,30 @@ namespace
 
 			if(block.identity != lastIdentity)
 			{
+				// GitHub task list items: Foundation’s parser leaves “[ ] ” / “[x] ” in the text
+				taskState = kNotATask;
+				if(block.listItem && block.listItem.identity != lastListItemIdentity && text.length >= 4 && [text characterAtIndex:0] == '[' && [text characterAtIndex:2] == ']' && [text characterAtIndex:3] == ' ')
+				{
+					unichar mark = [text characterAtIndex:1];
+					if(mark == ' ' || mark == 'x' || mark == 'X')
+					{
+						taskState = mark == ' ' ? kTaskOpen : kTaskDone;
+						text = [text substringFromIndex:4];
+					}
+				}
+
 				finish_code_block_if_needed(block);
 				if(output.length)
 					append(@"\n", @{ NSParagraphStyleAttributeName: paragraphStyle });
 				begin_block(block);
 				lastIdentity = block.identity;
 			}
+
+			if(block.thematicBreak)
+				return append(@" ", @{ NSParagraphStyleAttributeName: paragraphStyle, NSFontAttributeName: [NSFont systemFontOfSize:1] });
+
+			if(NSURL* imageURL = attributes[NSImageURLAttributeName])
+				return append_image(imageURL, text, inline_attributes(attributes, block));
 
 			if(block.codeBlock)
 			{
@@ -112,9 +134,40 @@ namespace
 		NSMutableArray<OakMarkdownCodeBlock*>* codeBlocks;
 
 	private:
+		enum task_state_t { kNotATask, kTaskOpen, kTaskDone };
+
 		void append (NSString* text, NSDictionary* attributes)
 		{
 			[output appendAttributedString:[[NSAttributedString alloc] initWithString:text attributes:attributes]];
+		}
+
+		void append_image (NSURL* url, NSString* alt, NSDictionary* attributes)
+		{
+			url = url.absoluteURL;
+			alt = [alt stringByReplacingOccurrencesOfString:@"\uFFFC" withString:@""]; // the parser’s text for an image without alt text
+			NSImage* image = url.isFileURL ? [[NSImage alloc] initWithContentsOfURL:url] : nil;
+			if(!image || image.size.width <= 0 || image.size.height <= 0)
+			{
+				// Remote images aren’t fetched, so previewing a document doesn’t reach out to the network
+				NSMutableDictionary* res = [attributes mutableCopy];
+				res[NSLinkAttributeName]            = url;
+				res[NSForegroundColorAttributeName] = style.secondaryTextColor;
+				return append([NSString stringWithFormat:@"[%@]", alt.length ? alt : (url.lastPathComponent ?: @"image")], res);
+			}
+
+			NSSize size = image.size;
+			if(style.maximumImageWidth > 0 && size.width > style.maximumImageWidth)
+				size = NSMakeSize(style.maximumImageWidth, round(size.height * style.maximumImageWidth / size.width));
+
+			NSTextAttachment* attachment = [[NSTextAttachment alloc] init];
+			attachment.image  = image;
+			attachment.bounds = NSMakeRect(0, 0, size.width, size.height);
+
+			NSMutableAttributedString* str = [[NSAttributedString attributedStringWithAttachment:attachment] mutableCopy];
+			[str addAttributes:attributes range:NSMakeRange(0, str.length)];
+			if(alt.length)
+				[str addAttribute:NSToolTipAttributeName value:alt range:NSMakeRange(0, str.length)];
+			[output appendAttributedString:str];
 		}
 
 		void begin_block (block_info_t const& block)
@@ -132,7 +185,11 @@ namespace
 				if(block.listItem.identity != lastListItemIdentity)
 				{
 					lastListItemIdentity = block.listItem.identity;
-					prefix = block.list.intentKind == NSPresentationIntentKindOrderedList ? [NSString stringWithFormat:@"%ld.\t", block.listItem.ordinal] : @"•\t";
+					if(taskState != kNotATask)
+						prefix = taskState == kTaskDone ? @"☑\t" : @"☐\t";
+					else if(block.list.intentKind == NSPresentationIntentKindOrderedList)
+						prefix = [NSString stringWithFormat:@"%ld.\t", block.listItem.ordinal];
+					else	prefix = @"•\t";
 					paragraph.firstLineHeadIndent = indent - kListIndent;
 				}
 				else
@@ -179,6 +236,7 @@ namespace
 			else if(block.quoteDepth && !block.listItem)
 			{
 				NSTextBlock* quote = [[NSTextBlock alloc] init];
+				[quote setValue:100 type:NSTextBlockPercentageValueType forDimension:NSTextBlockWidth]; // without a width the block collapses to one character per line
 				[quote setWidth:3 type:NSTextBlockAbsoluteValueType forLayer:NSTextBlockBorder edge:NSMinXEdge];
 				[quote setBorderColor:style.borderColor forEdge:NSMinXEdge];
 				[quote setWidth:8 type:NSTextBlockAbsoluteValueType forLayer:NSTextBlockPadding edge:NSMinXEdge];
@@ -217,10 +275,23 @@ namespace
 				paragraph.paragraphSpacing    = 0;
 			}
 
-			paragraphStyle = paragraph;
-
 			if(block.thematicBreak)
-				append(@"⸻", @{ NSParagraphStyleAttributeName: paragraph, NSForegroundColorAttributeName: style.secondaryTextColor, NSFontAttributeName: style.font });
+			{
+				// A full-width line: the bottom border of an (almost) empty block
+				NSTextBlock* rule = [[NSTextBlock alloc] init];
+				[rule setValue:100 type:NSTextBlockPercentageValueType forDimension:NSTextBlockWidth];
+				[rule setWidth:1 type:NSTextBlockAbsoluteValueType forLayer:NSTextBlockBorder edge:NSMaxYEdge];
+				[rule setBorderColor:style.borderColor forEdge:NSMaxYEdge];
+				[rule setWidth:8 type:NSTextBlockAbsoluteValueType forLayer:NSTextBlockMargin edge:NSMinYEdge];
+				[rule setWidth:8 type:NSTextBlockAbsoluteValueType forLayer:NSTextBlockMargin edge:NSMaxYEdge];
+				[rule setWidth:indent type:NSTextBlockAbsoluteValueType forLayer:NSTextBlockMargin edge:NSMinXEdge];
+				paragraph.textBlocks          = @[ rule ];
+				paragraph.firstLineHeadIndent = 0;
+				paragraph.headIndent          = 0;
+				paragraph.paragraphSpacing    = 0;
+			}
+
+			paragraphStyle = paragraph;
 			if(prefix)
 				append(prefix, @{ NSParagraphStyleAttributeName: paragraph, NSForegroundColorAttributeName: style.textColor, NSFontAttributeName: style.font });
 		}
@@ -283,7 +354,7 @@ namespace
 			if(inlineIntent & NSInlinePresentationIntentStrikethrough)
 				res[NSStrikethroughStyleAttributeName] = @(NSUnderlineStyleSingle);
 			if(id link = attributes[NSLinkAttributeName])
-				res[NSLinkAttributeName] = link;
+				res[NSLinkAttributeName] = [link isKindOfClass:[NSURL class]] ? [(NSURL*)link absoluteURL] : link; // relative links resolved against the base URL
 			return res;
 		}
 
@@ -292,6 +363,7 @@ namespace
 		NSMutableAttributedString* output;
 		NSParagraphStyle* paragraphStyle = [NSParagraphStyle defaultParagraphStyle];
 
+		task_state_t taskState         = kNotATask;
 		NSInteger lastIdentity         = NSNotFound - 1;
 		NSInteger lastListItemIdentity = NSNotFound;
 
@@ -308,6 +380,11 @@ namespace
 @implementation OakMarkdownRenderer
 + (NSAttributedString*)attributedStringFromMarkdown:(NSString*)markdown style:(OakMarkdownStyle*)style codeBlocks:(NSArray<OakMarkdownCodeBlock*>**)codeBlocks codeBlockFooter:(NSAttributedString*(^)(NSUInteger index))codeBlockFooter
 {
+	return [self attributedStringFromMarkdown:markdown style:style baseURL:nil codeBlocks:codeBlocks codeBlockFooter:codeBlockFooter];
+}
+
++ (NSAttributedString*)attributedStringFromMarkdown:(NSString*)markdown style:(OakMarkdownStyle*)style baseURL:(NSURL*)baseURL codeBlocks:(NSArray<OakMarkdownCodeBlock*>**)codeBlocks codeBlockFooter:(NSAttributedString*(^)(NSUInteger index))codeBlockFooter
+{
 	NSAttributedStringMarkdownParsingOptions* options = [[NSAttributedStringMarkdownParsingOptions alloc] init];
 	options.interpretedSyntax = NSAttributedStringMarkdownInterpretedSyntaxFull;
 	options.failurePolicy     = NSAttributedStringMarkdownParsingFailureReturnPartiallyParsedIfPossible;
@@ -316,7 +393,7 @@ namespace
 	renderer_t renderer(style, codeBlockFooter);
 	renderer_t* rendererPtr = &renderer; // blocks would capture the C++ object by copy
 
-	NSAttributedString* parsed = [[NSAttributedString alloc] initWithMarkdownString:markdown options:options baseURL:nil error:nil];
+	NSAttributedString* parsed = [[NSAttributedString alloc] initWithMarkdownString:markdown options:options baseURL:baseURL error:nil];
 	if(!parsed)
 	{
 		if(codeBlocks)
