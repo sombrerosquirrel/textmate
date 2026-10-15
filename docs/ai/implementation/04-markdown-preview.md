@@ -129,6 +129,8 @@ Not in P4: ⌘F find in the GitHub renderer; two-way scroll sync.
 
 **Fixed after more testing (2026-10-15):** still jumpy in both renderers. The line's end was taken at the column past its last character, which is the next line's start, so each line measured one row too tall and the preview jumped at every line; the line now ends where the next one starts. The built-in renderer scrolled by the editor's height fraction, which shifts as the editor lays out rows lazily; it now marks source lines (`OakMarkdownStyle.marksSourceLines`, Foundation's `appliesSourcePositionAttributes`) and maps lines to positions like the GitHub renderer.
 
+**Smoother (2026-10-15):** the user still felt some unevenness. Interpolating by source line made the preview's speed change within anchors, because editor lines differ in height (a wrapped paragraph is one line over many rows). Both views now report `anchorLines`, and the editor maps its scroll position between the two surrounding anchor lines by pixels (`sourceLineAtEditorY:`), so the preview moves at an even rate relative to the editor between anchors.
+
 **To test (user):** relaunch (`make run`), open a `.md` file and show the preview (⌃⇧⌘M).
 1. Pick **GitHub** in the preview's header popup. The install sheet appears; try **Cancel** (back to Built-in), then pick GitHub again and **Install with Homebrew** (shows brew's output; the preview switches to GitHub styling when done).
 2. Check a table, a task list, ~~strikethrough~~, a footnote (click it), a local image, a relative link and a web link.
