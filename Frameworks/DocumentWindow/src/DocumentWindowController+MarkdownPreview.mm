@@ -3,6 +3,7 @@
 #import "DocumentWindowController+EditorPanels.h"
 #import <MarkdownPreview/MarkdownPreviewViewController.h>
 #import <MarkdownPreview/MarkdownPreviewCmark.h>
+#import <MarkdownPreview/MarkdownPreviewDocument.h>
 #import <MarkdownPreview/MarkdownPreviewInstallController.h>
 #import <MarkdownPreview/MarkdownPreviewInterpolation.h>
 #import <OakEditorPanels/OakEditorPanelsView.h>
@@ -40,10 +41,7 @@ static BOOL UsesGitHubRenderer ()
 
 static BOOL IsMarkdownDocument (OakDocument* document)
 {
-	if([document.fileType hasPrefix:@"text.html.markdown"])
-		return YES;
-	static NSSet<NSString*>* const extensions = [NSSet setWithArray:@[ @"md", @"markdown", @"mdown", @"mkd", @"mkdn" ]];
-	return [extensions containsObject:document.path.pathExtension.lowercaseString];
+	return MarkdownPreviewIsMarkdownDocument(document.fileType, document.path);
 }
 
 static OakEditorPanelEdge MarkdownPreviewEdge ()
@@ -303,17 +301,6 @@ static OakEditorPanelEdge MarkdownPreviewEdge ()
 	return it != res.end() && !it->second.empty() ? to_ns(it->second) : nil;
 }
 
-// Local files (images) load from the project folder, or the document’s folder if it’s outside the project
-- (NSURL*)readAccessURLForDocument:(OakDocument*)document
-{
-	if(!document.path)
-		return nil;
-	NSString* projectPath = _controller.projectPath;
-	if(projectPath && [document.path hasPrefix:[projectPath stringByAppendingString:@"/"]])
-		return [NSURL fileURLWithPath:projectPath isDirectory:YES];
-	return [NSURL fileURLWithPath:document.path.stringByDeletingLastPathComponent isDirectory:YES];
-}
-
 - (void)renderWithGitHubRenderer
 {
 	if(!_environment)
@@ -353,7 +340,7 @@ static OakEditorPanelEdge MarkdownPreviewEdge ()
 
 	NSString* markdown       = document.content ?: @"";
 	NSURL* documentURL       = document.path ? [NSURL fileURLWithPath:document.path] : nil;
-	NSURL* readAccessURL     = [self readAccessURLForDocument:document];
+	NSURL* readAccessURL     = MarkdownPreviewReadAccessURL(document.path, _controller.projectPath);
 	NSString* name           = customCommand ? @"TM_MARKDOWN" : @"cmark-gfm";
 	NSUInteger generation    = _renderGeneration;
 
@@ -385,9 +372,10 @@ static OakEditorPanelEdge MarkdownPreviewEdge ()
 // = Scrolling =
 // =============
 
-// The editor’s first visible line goes to the top of the preview. The GitHub
-// renderer knows each element’s source lines; the built-in one scrolls
-// proportionally, by the fraction of the document scrolled past.
+// The editor’s first visible line goes to the top of the preview. Both
+// renderers know the source lines of their blocks; `fraction` (of the
+// document scrolled past) is the fallback when they don’t, e.g. for a
+// TM_MARKDOWN command without source positions.
 - (void)editorDidScroll:(NSNotification*)aNotification
 {
 	OakTextView* textView = _controller.textView;
