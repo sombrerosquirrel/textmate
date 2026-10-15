@@ -32,7 +32,7 @@ A native Markdown preview docked beside the editor on any edge, with a built-in 
 
 ## P1 — Shared editor panels container
 
-`Frameworks/OakEditorPanels` (10 tests) replaces `AgentUI/AgentEditorSplitView`:
+`Frameworks/OakEditorPanels` (11 tests) replaces `AgentUI/AgentEditorSplitView`:
 
 | Class | Responsibility |
 |---|---|
@@ -43,6 +43,8 @@ Design kept from the agent split view: Auto Layout rather than NSSplitView, pref
 
 The container keeps the editor at least 320 × 150 pt (`minimumEditorSize`, priority 491), so a large saved size or a long drag can't push the editor out of view. Found in testing: the agent panel had been dragged to 942 pt and saved (7b0f2cc3).
 
+Panels are clipped to their bounds (`clipsToBounds`), because views no longer clip by default and the agent panel's background had painted over the editor (be2e00a6).
+
 The agent panel now uses it (`DocumentWindowController+Agent.mm`). Its width is still saved as `agentPanelWidth` (autosave name `agentPanel`), and placement as `agentPanelPlacement`. No change in behaviour.
 
 Tests run on the main thread (`RunOnMainThread` in `t_editor_panels.mm`), because the test runner runs tests on background threads and AppKit layout must happen on the main thread.
@@ -50,7 +52,7 @@ Tests run on the main thread (`RunOnMainThread` in `t_editor_panels.mm`), becaus
 **To test (user):** show the agent panel (⌃⇧⌘I), drag its divider, move it left and right, close and reopen it; it should behave as before.
 
 ### Commits
-dca8eb08 OakEditorPanels framework · c67c610d agent panel hosted in it · 7b0f2cc3 minimum editor size
+dca8eb08 OakEditorPanels framework · c67c610d agent panel hosted in it · 7b0f2cc3 minimum editor size · be2e00a6 clip panels
 
 ## Future work
 - [ ] The `editorPanelsView` accessor lives in the agent category; move it somewhere shared when the preview category is added (P3).
