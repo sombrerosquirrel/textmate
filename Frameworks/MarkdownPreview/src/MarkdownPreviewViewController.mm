@@ -23,6 +23,7 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 	NSString* _markdown;
 	NSURL* _baseURL;
 	CGFloat _renderedWidth;
+	std::vector<std::pair<CGFloat, CGFloat>> _anchors; // source line → y in the text view, both increasing
 }
 @end
 
@@ -87,6 +88,7 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 	_style = [OakMarkdownStyle defaultStyle];
 	_style.font     = [NSFont systemFontOfSize:NSFont.systemFontSize + 1];
 	_style.codeFont = [NSFont monospacedSystemFontOfSize:NSFont.systemFontSize weight:NSFontWeightRegular];
+	_style.marksSourceLines = YES;
 
 	_scrollView = [[NSScrollView alloc] initWithFrame:NSMakeRect(0, 0, 300, 400)];
 	_scrollView.hasVerticalScroller   = YES;
@@ -265,6 +267,7 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 	// Keep the scroll position, so the preview doesn’t jump while typing
 	[_textView.layoutManager ensureLayoutForTextContainer:_textView.textContainer];
 	[_textView sizeToFit];
+	[self updateAnchors];
 	CGFloat maxY = MAX(0, NSHeight(_textView.frame) - NSHeight(_scrollView.contentView.bounds));
 	[_scrollView.contentView scrollToPoint:NSMakePoint(0, MIN(scrollOrigin.y, maxY))];
 	[_scrollView reflectScrolledClipView:_scrollView.contentView];
@@ -296,12 +299,52 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 	return height > 0 ? MIN(MAX(NSMinY(_scrollView.contentView.bounds) / height, 0), 1) : 0;
 }
 
+// Where the text from each marked source line starts; between two of them,
+// positions are interpolated, so the view scrolls continuously with the editor
+- (void)updateAnchors
+{
+	_anchors.clear();
+	_anchors.emplace_back(1, 0);
+
+	NSTextStorage* textStorage     = _textView.textStorage;
+	NSLayoutManager* layoutManager = _textView.layoutManager;
+	CGFloat const inset = _textView.textContainerOrigin.y;
+	__block CGFloat lastLine = 1;
+	auto anchorsPtr = &_anchors;
+	[textStorage enumerateAttribute:OakMarkdownSourceLineAttributeName inRange:NSMakeRange(0, textStorage.length) options:0 usingBlock:^(NSNumber* line, NSRange range, BOOL* stop){
+		if(!line)
+			return;
+		NSUInteger glyphIndex = [layoutManager glyphIndexForCharacterAtIndex:range.location];
+		CGFloat y = NSMinY([layoutManager lineFragmentRectForGlyphAtIndex:glyphIndex effectiveRange:nullptr]) + inset;
+		if(line.doubleValue > anchorsPtr->back().first && y > anchorsPtr->back().second)
+			anchorsPtr->emplace_back(line.doubleValue, y);
+		lastLine = MAX(lastLine, line.doubleValue);
+	}];
+
+	// The last line maps to the end of the text
+	CGFloat bottom = NSHeight(_textView.frame);
+	if(_anchors.size() > 1 && bottom > _anchors.back().second)
+		_anchors.emplace_back(lastLine + 1, bottom);
+}
+
 - (void)scrollToSourceLine:(CGFloat)line fraction:(CGFloat)fraction
 {
 	if(self.showsHTML)
-		[_htmlView scrollToSourceLine:line fraction:fraction];
-	else
-		self.scrollFraction = fraction;
+		return [_htmlView scrollToSourceLine:line fraction:fraction];
+	if(_anchors.size() < 3)
+		return [self setScrollFraction:fraction];
+
+	auto next = std::upper_bound(_anchors.begin(), _anchors.end(), line, [](CGFloat line, std::pair<CGFloat, CGFloat> const& anchor){ return line < anchor.first; });
+	CGFloat y = _anchors.back().second;
+	if(next != _anchors.end())
+	{
+		auto previous = std::prev(next); // the first anchor is line 1, and lines start at 1
+		y = previous->second + (next->second - previous->second) * (line - previous->first) / (next->first - previous->first);
+	}
+
+	y = round(MIN(MAX(y, 0), [self scrollableHeight]));
+	[_scrollView.contentView scrollToPoint:NSMakePoint(0, y)];
+	[_scrollView reflectScrolledClipView:_scrollView.contentView];
 }
 
 - (void)setScrollFraction:(CGFloat)fraction

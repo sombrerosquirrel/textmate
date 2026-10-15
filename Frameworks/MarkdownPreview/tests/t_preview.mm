@@ -94,7 +94,45 @@ static void notice ()
 	OAK_ASSERT(preview.notice == nil);
 }
 
+static void scrolls_to_source_line ()
+{
+	NSMutableString* markdown = [NSMutableString string];
+	for(NSUInteger i = 0; i < 200; ++i)
+		[markdown appendFormat:@"Paragraph %lu\n\n", i]; // paragraph i is on line 2i+1
+
+	MarkdownPreviewViewController* preview = MakePreview();
+	[preview showMarkdown:markdown baseURL:nil];
+
+	NSTextView* textView = nil;
+	NSMutableArray* queue = [NSMutableArray arrayWithObject:preview.view];
+	while(queue.count && !textView)
+	{
+		NSView* view = queue.firstObject;
+		[queue removeObjectAtIndex:0];
+		if([view isKindOfClass:[NSTextView class]])
+			textView = (NSTextView*)view;
+		[queue addObjectsFromArray:view.subviews];
+	}
+	OAK_ASSERT(textView != nil);
+
+	auto topOfParagraph = [&](NSUInteger i) -> CGFloat {
+		NSRange range = [textView.string rangeOfString:[NSString stringWithFormat:@"Paragraph %lu\n", i]];
+		NSUInteger glyph = [textView.layoutManager glyphIndexForCharacterAtIndex:range.location];
+		return NSMinY([textView.layoutManager lineFragmentRectForGlyphAtIndex:glyph effectiveRange:nullptr]) + textView.textContainerOrigin.y;
+	};
+	auto scrollY = [&]() -> CGFloat { return NSMinY(textView.enclosingScrollView.contentView.bounds); };
+
+	// Line 101 is paragraph 50: it should be at the top
+	[preview scrollToSourceLine:101 fraction:0];
+	OAK_ASSERT(fabs(scrollY() - topOfParagraph(50)) < 1);
+
+	// Halfway to the next paragraph, whatever the fraction says
+	[preview scrollToSourceLine:102 fraction:0.9];
+	OAK_ASSERT(fabs(scrollY() - (topOfParagraph(50) + topOfParagraph(51)) / 2) < 1);
+}
+
 void test_renders_markdown () { RunOnMainThread(renders_markdown); }
+void test_scrolls_to_source_line () { RunOnMainThread(scrolls_to_source_line); }
 void test_switches_between_renderers () { RunOnMainThread(switches_between_renderers); }
 void test_notice () { RunOnMainThread(notice); }
 void test_placeholder () { RunOnMainThread(placeholder); }

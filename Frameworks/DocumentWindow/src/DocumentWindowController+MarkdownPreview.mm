@@ -400,9 +400,11 @@ static OakEditorPanelEdge MarkdownPreviewEdge ()
 	GVLineRecord record = [textView lineRecordForPosition:y];
 	if(record.lineNumber != NSNotFound)
 	{
-		// The record is for one soft-wrapped row; measure the whole line, so the fraction doesn’t restart on each row
+		// The record is for one soft-wrapped row; measure the whole line, so the fraction doesn’t restart on each row.
+		// The line ends where the next one starts (the last line: at the end of its last row).
 		CGFloat firstY = [textView lineFragmentForLine:record.lineNumber column:0].firstY;
-		CGFloat lastY  = [textView lineFragmentForLine:record.lineNumber column:NSUIntegerMax].lastY;
+		GVLineRecord nextLine = [textView lineFragmentForLine:record.lineNumber + 1 column:0];
+		CGFloat lastY = nextLine.lineNumber == record.lineNumber + 1 ? nextLine.firstY : [textView lineFragmentForLine:record.lineNumber column:NSUIntegerMax].lastY;
 		CGFloat height = lastY - firstY;
 		line = record.lineNumber + 1 + (height > 0 ? MIN(MAX((y - firstY) / height, 0), 1) : 0);
 	}
