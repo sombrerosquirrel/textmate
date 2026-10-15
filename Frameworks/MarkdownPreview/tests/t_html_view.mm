@@ -124,6 +124,12 @@ void test_scrolls_to_source_line ()
 	});
 	OAK_ASSERT(WaitFor(view, @"(() => { const p = document.querySelectorAll('#content p'); const a = p[50].getBoundingClientRect().top, b = p[51].getBoundingClientRect().top; return a < -1 && b > 1 && Math.abs(a + b) < 2; })()"));
 
+	// Positions between whole pixels: the page scrolls by whole pixels, and the content moves by the rest
+	dispatch_sync(dispatch_get_main_queue(), ^{
+		[view scrollToSourceLine:101.3 fraction:0];
+	});
+	OAK_ASSERT(WaitFor(view, @"(() => { const p = document.querySelectorAll('#content p'); const a = tmTop(p[50]), b = tmTop(p[51]); const y = a + 0.15 * (b - a); return Math.abs(window.scrollY + tmOffset - y) < 0.01 && tmOffset < 1; })()"));
+
 	// The end of the document scrolls to the bottom
 	dispatch_sync(dispatch_get_main_queue(), ^{
 		[view scrollToSourceLine:500 fraction:0];

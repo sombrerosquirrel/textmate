@@ -4,6 +4,7 @@
 #import <MarkdownPreview/MarkdownPreviewViewController.h>
 #import <MarkdownPreview/MarkdownPreviewCmark.h>
 #import <MarkdownPreview/MarkdownPreviewInstallController.h>
+#import <MarkdownPreview/MarkdownPreviewInterpolation.h>
 #import <OakEditorPanels/OakEditorPanelsView.h>
 #import <OakTextView/OakTextView.h>
 #import <document/OakDocument.h>
@@ -433,12 +434,16 @@ static OakEditorPanelEdge MarkdownPreviewEdge ()
 	if(next == 0 || next >= anchorLines.count)
 		return line;
 
-	CGFloat fromLine = anchorLines[next-1].doubleValue, toLine = anchorLines[next].doubleValue;
-	CGFloat fromY    = [self editorYForSourceLine:(NSUInteger)fromLine];
-	CGFloat toY      = [self editorYForSourceLine:(NSUInteger)toLine];
-	if(toY <= fromY || toLine <= fromLine)
-		return line;
-	return fromLine + (toLine - fromLine) * MIN(MAX((y - fromY) / (toY - fromY), 0), 1);
+	// The anchors around y, two on each side, so the curve’s slopes match its neighbours’
+	std::vector<std::pair<CGFloat, CGFloat>> points; // editor y → line
+	for(NSUInteger i = next >= 2 ? next - 2 : 0; i < MIN(next + 2, anchorLines.count); ++i)
+	{
+		CGFloat anchorLine = anchorLines[i].doubleValue;
+		CGFloat anchorY    = [self editorYForSourceLine:(NSUInteger)anchorLine];
+		if(points.empty() || (anchorY > points.back().first && anchorLine > points.back().second))
+			points.emplace_back(anchorY, anchorLine);
+	}
+	return points.size() >= 2 ? MarkdownPreviewInterpolate(points, y) : line;
 }
 
 - (void)markdownPreviewDidUpdateAnchorLines:(MarkdownPreviewViewController*)preview

@@ -44,6 +44,7 @@ table th, table td { padding: 6px 13px; border: 1px solid var(--border); }
 table tr { border-top: 1px solid var(--border-muted); }
 table tr:nth-child(2n) { background-color: var(--row-alt); }
 img { max-width: 100%; box-sizing: content-box; }
+#content { will-change: transform; } /* moved by fractions of a pixel while scrolling */
 mark { background-color: var(--mark); color: inherit; }
 del { color: var(--muted); }
 .footnotes { font-size: 12px; color: var(--muted); border-top: 1px solid var(--border); }
@@ -57,8 +58,22 @@ function tmSetContent (html) {
 	tmAnchors = null;
 }
 
+// Page scrolling is in whole pixels; the rest is a transform on the content
+let tmOffset = 0;
+
+function tmScrollToY (y) {
+	const maxY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+	y = Math.min(Math.max(0, y), maxY);
+	window.scrollTo(0, Math.floor(y));
+	const offset = Math.min(Math.max(0, y - window.scrollY), 1);
+	if(offset != tmOffset) {
+		tmOffset = offset;
+		document.getElementById("content").style.transform = offset ? `translateY(${-offset}px)` : "";
+	}
+}
+
 function tmTop (el) {
-	return el.getBoundingClientRect().top + window.scrollY;
+	return el.getBoundingClientRect().top + window.scrollY + tmOffset;
 }
 
 // Source line → page position, from where elements start. Cached until the
@@ -75,7 +90,7 @@ function tmComputeAnchors () {
 
 		const start = +m[1], top = tmTop(el), previous = anchors[anchors.length - 1];
 		lastLine = Math.max(lastLine, +m[2] + 1);
-		bottom   = Math.max(bottom, el.getBoundingClientRect().bottom + window.scrollY);
+		bottom   = Math.max(bottom, el.getBoundingClientRect().bottom + window.scrollY + tmOffset);
 
 		if(start == previous.line)
 			continue; // nested elements starting on the same line, e.g. a list, its first item and paragraph
@@ -109,12 +124,12 @@ function tmAnchorLines () {
 function tmScrollTo (line, fraction) {
 	const maxY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
 	if(!document.querySelector("#content [data-sourcepos]"))
-		return window.scrollTo(0, fraction * maxY);
+		return tmScrollToY(fraction * maxY);
 
 	const anchors = tmCurrentAnchors();
 	let lo = 0, hi = anchors.length - 1;
 	if(line >= anchors[hi].line)
-		return window.scrollTo(0, Math.min(anchors[hi].y, maxY));
+		return tmScrollToY(anchors[hi].y);
 	while(hi - lo > 1) { // anchors[lo].line <= line < anchors[hi].line
 		const mid = (lo + hi) >> 1;
 		if(anchors[mid].line <= line)
@@ -123,9 +138,21 @@ function tmScrollTo (line, fraction) {
 			hi = mid;
 	}
 
+	// A monotone cubic between anchors, so the speed changes gradually (as in MarkdownPreviewInterpolation.h)
+	const secant = i => (anchors[i+1].y - anchors[i].y) / (anchors[i+1].line - anchors[i].line);
+	const slope = i => {
+		if(i == 0)
+			return secant(0);
+		if(i == anchors.length - 1)
+			return secant(i - 1);
+		const before = secant(i - 1), after = secant(i);
+		return before > 0 && after > 0 ? 2 * before * after / (before + after) : 0;
+	};
+
 	const a = anchors[lo], b = anchors[hi];
-	const y = a.y + (b.y - a.y) * (line - a.line) / (b.line - a.line);
-	window.scrollTo(0, Math.min(Math.max(0, y), maxY));
+	const h = b.line - a.line, t = (line - a.line) / h, t2 = t * t, t3 = t2 * t;
+	const y = (2*t3 - 3*t2 + 1) * a.y + (t3 - 2*t2 + t) * h * slope(lo) + (-2*t3 + 3*t2) * b.y + (t3 - t2) * h * slope(hi);
+	tmScrollToY(y);
 }
 )JS";
 
@@ -193,8 +220,6 @@ static NSString* PathForPreviewURL (NSURL* url)
 	BOOL _hasScrollPosition;
 	CGFloat _line;
 	CGFloat _fraction;
-	BOOL _scrolling;      // a scroll is on its way to the page
-	BOOL _scrollPending;  // and another one should follow it
 }
 @end
 
@@ -231,8 +256,6 @@ static NSString* PathForPreviewURL (NSURL* url)
 	_documentURL       = documentURL;
 	_loaded            = NO;
 	_hasScrollPosition = NO;
-	_scrolling         = NO;
-	_scrollPending     = NO;
 	NSString* page = [NSString stringWithFormat:@"<!DOCTYPE html><html><head><meta charset=\"utf-8\"><meta name=\"color-scheme\" content=\"light dark\"><style>%@</style></head><body><article id=\"content\" class=\"markdown-body\"></article></body></html>", kStyleSheet];
 	[_webView loadHTMLString:page baseURL:PreviewURLForPath(documentURL.path)];
 }
@@ -260,30 +283,12 @@ static NSString* PathForPreviewURL (NSURL* url)
 	[self sendScrollPosition];
 }
 
-// One at a time: while scrolling, only the latest position is sent, so the page can’t fall behind
+// Every position is sent: the page’s anchors are cached, so each is cheap,
+// and skipping some would make slow scrolling uneven
 - (void)sendScrollPosition
 {
-	if(!_loaded)
-		return;
-	if(_scrolling)
-	{
-		_scrollPending = YES;
-		return;
-	}
-
-	_scrolling = YES;
-	__weak MarkdownPreviewHTMLView* weakSelf = self;
-	[_webView callAsyncJavaScript:@"tmScrollTo(line, fraction)" arguments:@{ @"line": @(_line), @"fraction": @(_fraction) } inFrame:nil inContentWorld:WKContentWorld.defaultClientWorld completionHandler:^(id, NSError*){
-		MarkdownPreviewHTMLView* strongSelf = weakSelf;
-		if(!strongSelf)
-			return;
-		strongSelf->_scrolling = NO;
-		if(strongSelf->_scrollPending)
-		{
-			strongSelf->_scrollPending = NO;
-			[strongSelf sendScrollPosition];
-		}
-	}];
+	if(_loaded)
+		[_webView callAsyncJavaScript:@"tmScrollTo(line, fraction)" arguments:@{ @"line": @(_line), @"fraction": @(_fraction) } inFrame:nil inContentWorld:WKContentWorld.defaultClientWorld completionHandler:nil];
 }
 
 - (void)evaluateJavaScript:(NSString*)script completionHandler:(void(^)(id result, NSError* error))completion

@@ -1,5 +1,6 @@
 #import "MarkdownPreviewViewController.h"
 #import "MarkdownPreviewHTMLView.h"
+#import "MarkdownPreviewInterpolation.h"
 #import <OakMarkdown/OakMarkdown.h>
 #import <OakFoundation/OakStringListTransformer.h>
 #import <Preferences/Keys.h>
@@ -356,15 +357,10 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 	if(_anchors.size() < 3)
 		return [self setScrollFraction:fraction];
 
-	auto next = std::upper_bound(_anchors.begin(), _anchors.end(), line, [](CGFloat line, std::pair<CGFloat, CGFloat> const& anchor){ return line < anchor.first; });
-	CGFloat y = _anchors.back().second;
-	if(next != _anchors.end())
-	{
-		auto previous = std::prev(next); // the first anchor is line 1, and lines start at 1
-		y = previous->second + (next->second - previous->second) * (line - previous->first) / (next->first - previous->first);
-	}
-
-	y = round(MIN(MAX(y, 0), [self scrollableHeight]));
+	// Fractional positions, aligned to the screen’s pixels, so slow scrolling doesn’t move in whole points
+	CGFloat const scale = _scrollView.window.backingScaleFactor ?: 2;
+	CGFloat y = MarkdownPreviewInterpolate(_anchors, line);
+	y = round(MIN(MAX(y, 0), [self scrollableHeight]) * scale) / scale;
 	[_scrollView.contentView scrollToPoint:NSMakePoint(0, y)];
 	[_scrollView reflectScrolledClipView:_scrollView.contentView];
 }
