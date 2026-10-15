@@ -127,6 +127,8 @@ Not in P4: ⌘F find in the GitHub renderer; two-way scroll sync.
 
 **Fixed after user testing (2026-10-15):** scrolling was jumpy. The editor's line record covers one soft-wrapped row, so the fraction within a line restarted on each row; it's now measured over the whole line. The page mapping now interpolates between element starts (continuous across margins and adjacent blocks), caches its anchors until the layout changes, and only one scroll request is in flight at a time.
 
+**Fixed after more testing (2026-10-15):** still jumpy in both renderers. The line's end was taken at the column past its last character, which is the next line's start, so each line measured one row too tall and the preview jumped at every line; the line now ends where the next one starts. The built-in renderer scrolled by the editor's height fraction, which shifts as the editor lays out rows lazily; it now marks source lines (`OakMarkdownStyle.marksSourceLines`, Foundation's `appliesSourcePositionAttributes`) and maps lines to positions like the GitHub renderer.
+
 **To test (user):** relaunch (`make run`), open a `.md` file and show the preview (⌃⇧⌘M).
 1. Pick **GitHub** in the preview's header popup. The install sheet appears; try **Cancel** (back to Built-in), then pick GitHub again and **Install with Homebrew** (shows brew's output; the preview switches to GitHub styling when done).
 2. Check a table, a task list, ~~strikethrough~~, a footnote (click it), a local image, a relative link and a web link.
@@ -143,5 +145,5 @@ fe9b98ca cmark-gfm runner · 5d2557e9 HTML view · 8583da4b header, notices, ins
 - [ ] Save the preview's (and agent panel's) visibility in the session.
 - [ ] Two-way scroll sync (preview scrolls the editor).
 - [x] Precise scroll sync by source line for the GitHub renderer (P4).
-- [ ] Precise scroll sync for the built-in renderer (it would need source positions from the parser).
+- [x] Precise scroll sync for the built-in renderer (source positions from Foundation's parser).
 - [ ] ⌘F find in the GitHub renderer's web view.
