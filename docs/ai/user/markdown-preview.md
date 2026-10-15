@@ -36,7 +36,7 @@ Pick one in the popup at the top right of the preview, or in **Preferences ▸ P
 | Needs | Nothing | `cmark-gfm`, installed from the preview |
 | Looks like | TextMate's agent chat | GitHub |
 | Tables, task lists, strikethrough, bare URLs as links | Yes | Yes |
-| Footnotes | No | Yes |
+| Footnotes | Yes | Yes |
 | Raw HTML (`<b>`, `<details>`, …) | Shown as text | Left out; rendered if **Allow raw HTML** is on |
 | Local images | Yes | Yes, from the project folder (or the document's folder if it's outside the project) |
 | Remote images | Never loaded; shown as a link | Loaded, as on GitHub |
@@ -81,7 +81,7 @@ The preview doesn't scroll the editor (one-way only).
 
 - **Web and mail links** open in your browser or mail app.
 - **Links to files**, including relative ones like `[guide](docs/guide.md)`, open in TextMate in the same project window. Links to folders open in Finder. A missing file beeps.
-- **In-page links** (e.g. footnotes in the GitHub renderer) scroll the preview.
+- **In-page links** (footnotes and their ↩) scroll the preview, not the editor. The next time you scroll the editor, the preview follows it again.
 
 ## Light and dark
 

@@ -156,6 +156,10 @@ fe9b98ca cmark-gfm runner · 5d2557e9 HTML view · 8583da4b header, notices, ins
 
 **To check (user):** read the [user guide](../user/markdown-preview.md) for anything unclear or wrong. The P4 list above (install sheet, GitHub rendering, Preferences) is still worth a run if not done yet.
 
+**Footnotes in the built-in renderer (2026-10-15, after user testing):** Foundation's parser doesn't support footnotes; it turned `[^1]` into a stray link and dropped the definition. OakMarkdown now handles them around the parser: definitions (with indented and lazy continuation lines) are replaced by empty lines so source lines don't shift, and references become markers, turned into superscript links after rendering. The notes follow a rule as a numbered list in order of first reference, each with a ↩ back; unreferenced notes are left out, as on GitHub. `OakMarkdownAnchorAttributeName` marks the targets, and the preview scrolls to them when a footnote or ↩ is clicked. OakMarkdown 19 tests, MarkdownPreview 21; ctest 28/28. Commits 93596794, 3f126e54.
+
+**To check (user):** with **Built-in** selected, the footnote in the test snippet shows as a superscript 1 linking to a numbered note at the end; ↩ goes back.
+
 ### Commits
 75a28e14 document checks in the framework, with tests · 442f736e used by the window
 
@@ -166,4 +170,5 @@ fe9b98ca cmark-gfm runner · 5d2557e9 HTML view · 8583da4b header, notices, ins
 - [x] Precise scroll sync by source line for the GitHub renderer (P4).
 - [x] Precise scroll sync for the built-in renderer (source positions from Foundation's parser).
 - [ ] ⌘F find in the GitHub renderer's web view.
+- [ ] Footnote links in the agent chat: they render, but clicking one does nothing (the transcript has no anchor scrolling).
 - [ ] **Revisit scroll smoothness** (user, 2026-10-15: "Much smoother now, make a note to revisit this later after completion and when doing UX"). With the UX pass at the end. Ideas: time-based easing toward the target; measure the GitHub renderer live (a probe that doesn't block the main queue); update the page's anchors when images finish loading; check the speed-up through paragraphs that are much taller in the preview than in the editor.
