@@ -47,6 +47,32 @@ static void placeholder ()
 	OAK_ASSERT_EQ(S(preview.renderedText), "Back");
 }
 
+static void footnote_links_scroll_preview ()
+{
+	NSMutableString* markdown = [NSMutableString stringWithString:@"See the note[^1] and [another file](other.md).\n\n"];
+	for(NSUInteger i = 0; i < 200; ++i)
+		[markdown appendFormat:@"Paragraph %lu\n\n", i];
+	[markdown appendString:@"[^1]: The note.\n"];
+
+	NSURL* document = [NSURL fileURLWithPath:@"/tmp/project/README.md"];
+	MarkdownPreviewViewController* preview = MakePreview();
+	[preview showMarkdown:markdown baseURL:document];
+
+	// The preview is its text view’s delegate
+	id<NSTextViewDelegate> textViewDelegate = (id<NSTextViewDelegate>)preview;
+	NSTextView* textView = [[NSTextView alloc] init];
+	[textViewDelegate textView:textView clickedOnLink:[NSURL URLWithString:@"#fn-1" relativeToURL:document] atIndex:0];
+	OAK_ASSERT(preview.scrollFraction > 0.9);
+
+	[textViewDelegate textView:textView clickedOnLink:[NSURL URLWithString:@"#fnref-1" relativeToURL:document] atIndex:0];
+	OAK_ASSERT(preview.scrollFraction < 0.01); // the reference, with a small margin above it
+
+	// A footnote in another file doesn’t scroll this one
+	preview.scrollFraction = 0.5;
+	[textViewDelegate textView:textView clickedOnLink:[NSURL URLWithString:@"other.md#fn-1" relativeToURL:document] atIndex:0];
+	OAK_ASSERT(fabs(preview.scrollFraction - 0.5) < 0.01);
+}
+
 static void keeps_scroll_position ()
 {
 	NSMutableString* markdown = [NSMutableString string];
@@ -144,3 +170,4 @@ void test_switches_between_renderers () { RunOnMainThread(switches_between_rende
 void test_notice () { RunOnMainThread(notice); }
 void test_placeholder () { RunOnMainThread(placeholder); }
 void test_keeps_scroll_position () { RunOnMainThread(keeps_scroll_position); }
+void test_footnote_links_scroll_preview () { RunOnMainThread(footnote_links_scroll_preview); }

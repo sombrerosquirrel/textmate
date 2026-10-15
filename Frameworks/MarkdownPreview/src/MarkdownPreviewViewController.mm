@@ -385,8 +385,38 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 - (BOOL)textView:(NSTextView*)textView clickedOnLink:(id)link atIndex:(NSUInteger)charIndex
 {
 	NSURL* url = [link isKindOfClass:[NSURL class]] ? link : [NSURL URLWithString:[link description] relativeToURL:_baseURL];
+	if(url.fragment && [self scrollToAnchor:url.fragment ofURL:url])
+		return YES;
 	if(url)
 		[self.delegate markdownPreview:self openURL:url.absoluteURL];
+	return YES;
+}
+
+// Links within the document, e.g. to footnotes and back, scroll the preview
+// (not the editor, as with the GitHub renderer)
+- (BOOL)scrollToAnchor:(NSString*)anchor ofURL:(NSURL*)url
+{
+	BOOL sameDocument = url.absoluteURL.isFileURL ? [url.absoluteURL.path isEqualToString:_baseURL.path] : !url.absoluteURL.scheme;
+	if(!sameDocument)
+		return NO;
+
+	NSTextStorage* textStorage = _textView.textStorage;
+	__block NSUInteger index = NSNotFound;
+	[textStorage enumerateAttribute:OakMarkdownAnchorAttributeName inRange:NSMakeRange(0, textStorage.length) options:0 usingBlock:^(NSString* value, NSRange range, BOOL* stop){
+		if([value isEqualToString:anchor])
+		{
+			index = range.location;
+			*stop = YES;
+		}
+	}];
+	if(index == NSNotFound)
+		return NO;
+
+	NSLayoutManager* layoutManager = _textView.layoutManager;
+	NSRect rect = [layoutManager lineFragmentRectForGlyphAtIndex:[layoutManager glyphIndexForCharacterAtIndex:index] effectiveRange:nullptr];
+	CGFloat y = MIN(MAX(NSMinY(rect) + _textView.textContainerOrigin.y - 8, 0), [self scrollableHeight]);
+	[_scrollView.contentView scrollToPoint:NSMakePoint(0, y)];
+	[_scrollView reflectScrolledClipView:_scrollView.contentView];
 	return YES;
 }
 @end
