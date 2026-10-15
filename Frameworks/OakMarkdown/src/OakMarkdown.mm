@@ -5,6 +5,18 @@ NSAttributedStringKey const OakMarkdownCodeBlockAttributeName = @"OakMarkdownCod
 static CGFloat const kListIndent  = 18;
 static CGFloat const kQuoteIndent = 12;
 
+// A system color made translucent with colorWithAlphaComponent: isn’t drawn
+// as a text block background, so this is explicit. Created once: creating a
+// named dynamic color on several threads at the same time corrupts memory.
+static NSColor* CodeBackgroundColor ()
+{
+	static NSColor* const color = [NSColor colorWithName:@"OakMarkdownCodeBackground" dynamicProvider:^NSColor*(NSAppearance* appearance){
+		BOOL dark = [[appearance bestMatchFromAppearancesWithNames:@[ NSAppearanceNameAqua, NSAppearanceNameDarkAqua ]] isEqualToString:NSAppearanceNameDarkAqua];
+		return dark ? [NSColor colorWithWhite:1 alpha:0.08] : [NSColor colorWithWhite:0 alpha:0.05];
+	}];
+	return color;
+}
+
 @implementation OakMarkdownStyle
 + (instancetype)defaultStyle
 {
@@ -13,11 +25,7 @@ static CGFloat const kQuoteIndent = 12;
 	style.codeFont            = [NSFont monospacedSystemFontOfSize:NSFont.systemFontSize - 1 weight:NSFontWeightRegular];
 	style.textColor           = NSColor.labelColor;
 	style.secondaryTextColor  = NSColor.secondaryLabelColor;
-	// A system color made translucent with colorWithAlphaComponent: isn’t drawn as a text block background
-	style.codeBackgroundColor = [NSColor colorWithName:@"OakMarkdownCodeBackground" dynamicProvider:^NSColor*(NSAppearance* appearance){
-		BOOL dark = [[appearance bestMatchFromAppearancesWithNames:@[ NSAppearanceNameAqua, NSAppearanceNameDarkAqua ]] isEqualToString:NSAppearanceNameDarkAqua];
-		return dark ? [NSColor colorWithWhite:1 alpha:0.08] : [NSColor colorWithWhite:0 alpha:0.05];
-	}];
+	style.codeBackgroundColor = CodeBackgroundColor();
 	style.borderColor         = NSColor.separatorColor;
 	return style;
 }
@@ -33,6 +41,13 @@ static CGFloat const kQuoteIndent = 12;
 
 namespace
 {
+	// Unlike NSFontManager, font descriptors can be used off the main thread
+	NSFont* FontWithTrait (NSFont* font, NSFontDescriptorSymbolicTraits trait)
+	{
+		NSFontDescriptor* descriptor = [font.fontDescriptor fontDescriptorWithSymbolicTraits:font.fontDescriptor.symbolicTraits | trait];
+		return [NSFont fontWithDescriptor:descriptor size:font.pointSize] ?: font;
+	}
+
 	// The intent chain of a run, innermost first, with the facts we need
 	struct block_info_t
 	{
@@ -329,7 +344,6 @@ namespace
 		NSDictionary* inline_attributes (NSDictionary* attributes, block_info_t const& block)
 		{
 			NSUInteger inlineIntent = [attributes[NSInlinePresentationIntentAttributeName] unsignedIntegerValue];
-			NSFontManager* fm = NSFontManager.sharedFontManager;
 
 			NSFont* font = style.font;
 			if(block.codeBlock || (inlineIntent & NSInlinePresentationIntentCode))
@@ -337,9 +351,9 @@ namespace
 			if(block.headerLevel)
 				font = [NSFont systemFontOfSize:style.font.pointSize + std::max<NSInteger>(0, 8 - 2 * block.headerLevel) weight:NSFontWeightSemibold];
 			if((inlineIntent & NSInlinePresentationIntentStronglyEmphasized) || block.headerRow)
-				font = [fm convertFont:font toHaveTrait:NSBoldFontMask];
+				font = FontWithTrait(font, NSFontDescriptorTraitBold);
 			if(inlineIntent & NSInlinePresentationIntentEmphasized)
-				font = [fm convertFont:font toHaveTrait:NSItalicFontMask];
+				font = FontWithTrait(font, NSFontDescriptorTraitItalic);
 
 			NSMutableDictionary* res = [NSMutableDictionary dictionaryWithDictionary:@{
 				NSFontAttributeName:            font,
