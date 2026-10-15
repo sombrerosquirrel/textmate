@@ -76,7 +76,7 @@ Known limits of the built-in renderer: no raw HTML, footnotes or exact GitHub st
   - View ▸ Show/Hide Markdown Preview, **⌃⇧⌘M** (user decision). ⌃⌥⌘P is the bundles' Show Preview and ⌃⇧⌘P is Bundle Development's Show Scope; no bundle or menu item uses ⌃⇧⌘M.
   - View ▸ Markdown Preview Position ▸ Automatic (opposite the agent panel) / Left / Right / Top / Bottom.
 - **Defaults:** `markdownPreviewPlacement` (`auto`), `markdownPreviewWidth` / `markdownPreviewHeight` (saved by OakEditorPanels), `markdownPreviewRenderer` (`builtin`).
-- **Hooks:** a `DocumentWindowController+MarkdownPreview.{h,mm}` category, plus one-line hooks in `DocumentWindowController.mm` (setup, placement, shutdown, menu validation), as for the agent panel.
+- **Hooks (done):** a `DocumentWindowController+MarkdownPreview.{h,mm}` category, plus one-line hooks in `DocumentWindowController.mm` (setup, placement, shutdown, menu validation), as for the agent panel.
 
 ### P4 — Optional GitHub renderer (cmark-gfm + WKWebView)
 - **Binary:** an external `cmark-gfm` binary, so no new vendor dependency.

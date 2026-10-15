@@ -8,7 +8,7 @@ tags: [textmate, implementation, markdown, preview]
 
 # Markdown Preview Pane
 
-**Status:** 🔄 In progress. P1 confirmed (2026-10-15); P2 done, awaiting user check before P3.
+**Status:** 🔄 In progress. P1 confirmed; P2 done; P3 done (2026-10-15), awaiting user test before P4.
 **Branch:** `feature/markdown-preview` (from `feature/agent`)
 **Plan:** [markdown-preview-plan.md](../plans/markdown-preview-plan.md)
 
@@ -26,7 +26,7 @@ A native Markdown preview docked beside the editor on any edge, with a built-in 
 |---|---|
 | P1. Shared editor panels container | ✅ Done, confirmed by the user (2026-10-15) |
 | P2. Shared Markdown renderer | ✅ Done (2026-10-15), awaiting user check |
-| P3. Preview pane, built-in renderer | ⏳ Not started |
+| P3. Preview pane, built-in renderer | ✅ Done (2026-10-15), awaiting user test |
 | P4. Optional GitHub renderer | ⏳ Not started |
 | P5. Docs, tests, polish | ⏳ Not started |
 
@@ -83,5 +83,29 @@ Not supported by the built-in renderer (as planned; the GitHub renderer in P4 co
 ### Commits
 b4ef2342 move to OakMarkdown · 79aa34e9 images, task lists, rules, base URL · 2377dd86 concurrent rendering crash
 
+## P3 — Preview pane with the built-in renderer
+
+| Part | Responsibility |
+|---|---|
+| `Frameworks/MarkdownPreview` — `MarkdownPreviewViewController` (3 tests) | Read-only, selectable TextKit 1 view (find bar enabled) or a placeholder. Keeps the scroll position across re-renders; re-renders when its width changes so images refit; `scrollFraction` for syncing; link clicks go to its delegate. Knows nothing about documents or windows. |
+| `DocumentWindowController+MarkdownPreview` | A coordinator per window: follows `selectedDocument` (KVO), re-renders 150 ms after `OakDocumentContentDidChangeNotification` from `document.content` (unsaved text), re-renders when the grammar (`fileType`) changes, and scrolls with the editor (proportional, from the editor clip view's bounds changes). |
+| `DocumentWindowController+EditorPanels` | The shared panels container, moved out of the agent category. |
+
+- **Markdown documents:** grammar scope `text.html.markdown…`, or extension md, markdown, mdown, mkd, mkdn. Other documents show a placeholder.
+- **Links:** files open in TextMate (in this project's window); folders and web or mail links open in their apps; missing files beep.
+- **Look:** document-like text background (white in light themes), 16 pt margins, 14 pt text; follows the window's light/dark appearance.
+- **Menus:** View ▸ Show/Hide Markdown Preview (⌃⇧⌘M); View ▸ Markdown Preview Position ▸ Automatic / Left / Right / Top / Bottom.
+- **Defaults:** `markdownPreviewPlacement` (`auto`: opposite the agent panel's side, even when the agent panel is hidden), `markdownPreviewWidth` / `markdownPreviewHeight`.
+- **Hooks in `DocumentWindowController.mm`:** `setupEditorPanels` (replaces `setupAgentPanelSupport`), `shutdownMarkdownPreview`, `updateMarkdownPreviewPlacement`, menu validation.
+
+Not in P3: the preview's visibility isn't saved in the session (nor is the agent panel's); scrolling the preview doesn't scroll the editor; the renderer popup in the header (P4).
+
+**To test (user):** open a `.md` file, press ⌃⇧⌘M; type and watch it update; scroll the editor; try each position, also with the agent panel open; switch tabs to a non-Markdown file; click a relative link and a web link; switch between light and dark themes.
+
+### Commits
+11cf3a4a MarkdownPreview framework · 444f4fdb shared panels container · 91d4a20d preview in the project window
+
 ## Future work
-- [ ] The `editorPanelsView` accessor lives in the agent category; move it somewhere shared when the preview category is added (P3).
+- [x] The `editorPanelsView` accessor lived in the agent category; moved to `DocumentWindowController+EditorPanels` (P3).
+- [ ] Save the preview's (and agent panel's) visibility in the session.
+- [ ] Two-way scroll sync (preview scrolls the editor); precise sync by source line (P4, later for built-in).
