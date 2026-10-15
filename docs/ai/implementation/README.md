@@ -23,14 +23,14 @@ Each phase of work has its own document, created when the phase starts and updat
 | M3. Tools: files, permissions, diff review, terminal | — | ⏳ Not started |
 | M4. Preferences, Keychain, session history, MCP | — | ⏳ Not started |
 | M5. Polish, inline chat, docs, `pr/agent` port | — | ⏳ Not started |
-| Markdown preview pane (P1–P5) | [04-markdown-preview.md](04-markdown-preview.md) | 🔄 In progress: P1–P3 done (2026-10-15); P3 awaiting user test |
+| Markdown preview pane (P1–P5) | [04-markdown-preview.md](04-markdown-preview.md) | 🔄 In progress: P1–P4 done (2026-10-15); P4 awaiting user test |
 
 ## Current state (2026-10-14)
 
 - **Branches:** `main` = `pr-1467` + all `fix/*` branches. `feature/agent` = `main` + agent harness (M1, M2). `feature/markdown-preview` = `feature/agent` + Markdown preview work. All pushed to `origin` (`sombrerosquirrel/textmate`).
 - **Build:** `make debug` builds cleanly with Xcode 27 / Swift 6.4 on macOS 27. No new warnings. Known remaining warnings are listed in [01-build-and-bug-fixes.md](01-build-and-bug-fixes.md#future-work).
 - **Tests:** `ctest` passes 23/23 on `main`, 25/25 on `feature/agent` (adds AgentClient and AgentUI suites), 28/28 on `feature/markdown-preview` (adds OakEditorPanels, OakMarkdown and MarkdownPreview; AgentUI's Markdown tests moved to OakMarkdown).
-- **Next:** user tests the Markdown preview (P3); then P4 (optional GitHub renderer). M2 still awaits confirmation (its UX pass is deferred to the end). Checkpoints with the user after each milestone.
+- **Next:** user tests the GitHub renderer (P4); then P5 (docs, tests, polish). M2 still awaits confirmation (its UX pass is deferred to the end). Checkpoints with the user after each milestone.
 
 ## Future work
 

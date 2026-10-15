@@ -8,7 +8,7 @@ tags: [textmate, implementation, markdown, preview]
 
 # Markdown Preview Pane
 
-**Status:** 🔄 In progress. P1 confirmed; P2 done; P3 done (2026-10-15), awaiting user test before P4.
+**Status:** 🔄 In progress. P1 and P3 confirmed; P2 done; P4 done (2026-10-15), awaiting user test before P5.
 **Branch:** `feature/markdown-preview` (from `feature/agent`)
 **Plan:** [markdown-preview-plan.md](../plans/markdown-preview-plan.md)
 
@@ -26,8 +26,8 @@ A native Markdown preview docked beside the editor on any edge, with a built-in 
 |---|---|
 | P1. Shared editor panels container | ✅ Done, confirmed by the user (2026-10-15) |
 | P2. Shared Markdown renderer | ✅ Done (2026-10-15), awaiting user check |
-| P3. Preview pane, built-in renderer | ✅ Done (2026-10-15), awaiting user test |
-| P4. Optional GitHub renderer | ⏳ Not started |
+| P3. Preview pane, built-in renderer | ✅ Done, confirmed by the user (2026-10-15: "Works well") |
+| P4. Optional GitHub renderer | ✅ Done (2026-10-15), awaiting user test |
 | P5. Docs, tests, polish | ⏳ Not started |
 
 ## P1 — Shared editor panels container
@@ -105,7 +105,41 @@ Not in P3: the preview's visibility isn't saved in the session (nor is the agent
 ### Commits
 11cf3a4a MarkdownPreview framework · 444f4fdb shared panels container · 91d4a20d preview in the project window
 
+## P4 — Optional GitHub renderer (cmark-gfm)
+
+| Part | Responsibility |
+|---|---|
+| `MarkdownPreviewCmark` (4 tests) | Finds cmark-gfm: the path chosen with Locate… (`markdownPreviewCmarkPath`) if still executable, else the login shell's PATH (via `AgentEnvironment`), else `/opt/homebrew/bin`, `/usr/local/bin`. Builds the arguments (`--sourcepos`, extensions table, tasklist, strikethrough, autolink, footnotes; `--unsafe` only with Allow raw HTML). Pipes Markdown through a command off the main thread, writing and reading concurrently, with a 10 s timeout; reports stderr or the exit status. |
+| `MarkdownPreviewHTMLView` (4 tests) | WKWebView with GitHub-like CSS for light and dark. Loads the page once per document and then only replaces its content, so typing keeps the scroll position. Content JavaScript is off (`allowsContentJavaScript = NO`); our scripts run in `WKContentWorld.defaultClientWorld`. Local files are served through the `x-txmt-preview:` scheme, only from below the read access folder. Link clicks go to the delegate (in-page `#` links, e.g. footnotes, scroll the page); other navigation, e.g. a refresh in raw HTML, is blocked. Non-persistent website data store. |
+| `MarkdownPreviewViewController` (now 5 tests) | Header (26 pt) with a notice line plus optional button on the left, and a Built-in / GitHub popup on the right, bound to `markdownPreviewRenderer`. Shows the built-in text view, the HTML view or the placeholder. `scrollToSourceLine:fraction:`. |
+| `MarkdownPreviewInstallController` | Sheet: "Install with Homebrew" runs `brew install cmark-gfm` (non-interactive) and shows its output; "Locate…" chooses a binary and saves it; without Homebrew it explains how to install. Cancelling during an install stops it. |
+| `DocumentWindowController+MarkdownPreview` | With GitHub chosen, runs cmark-gfm (or `TM_MARKDOWN`) on the unsaved text and shows the HTML; falls back to built-in with a notice. Offers the install sheet when the user picks GitHub and cmark-gfm is missing; cancelling switches back to built-in. |
+| Preferences ▸ Projects | "Markdown preview: Built-in / GitHub (cmark-gfm)" and "Allow raw HTML (GitHub renderer)". |
+
+- **`TM_MARKDOWN`:** if set (Preferences ▸ Variables, `.tm_properties`, or a bundle's shell variables), the GitHub renderer runs it with `/bin/sh -c` instead of cmark-gfm, as the Markdown bundle does. Without `--sourcepos` in its output, scrolling falls back to proportional.
+- **Read access:** the project folder, or the document's folder when it's outside the project. Untitled documents can't load local files.
+- **Remote images** load in the GitHub renderer (as on GitHub); the built-in renderer still never fetches them.
+- **Scroll sync:** the editor's first visible line (from `lineRecordForPosition:`, with the fraction within the line) goes to the top of the preview. The script finds the innermost element whose `data-sourcepos` contains the line, or interpolates across the gap between elements (blank lines). The built-in renderer still scrolls proportionally.
+- **Defaults:** `markdownPreviewRenderer` (`builtin`, registered), `markdownPreviewAllowRawHTML`, `markdownPreviewCmarkPath`. Keys are in `Preferences/Keys.h`.
+- **Tests:** `test_cmark_gfm` runs only when cmark-gfm is installed (it isn't on the dev machine yet, so the install flow can be tried first).
+
+Not in P4: ⌘F find in the GitHub renderer; two-way scroll sync.
+
+**To test (user):** relaunch (`make run`), open a `.md` file and show the preview (⌃⇧⌘M).
+1. Pick **GitHub** in the preview's header popup. The install sheet appears; try **Cancel** (back to Built-in), then pick GitHub again and **Install with Homebrew** (shows brew's output; the preview switches to GitHub styling when done).
+2. Check a table, a task list, ~~strikethrough~~, a footnote (click it), a local image, a relative link and a web link.
+3. Scroll the editor: the preview should follow line by line, including over long code blocks.
+4. Type: the preview updates without jumping.
+5. Switch light/dark themes.
+6. Preferences ▸ Projects: switch the renderer there; turn on **Allow raw HTML** and check that `<b>bold</b>` renders (off: it's left out).
+
+### Commits
+fe9b98ca cmark-gfm runner · 5d2557e9 HTML view · 8583da4b header, notices, install sheet · a300b4d2 GitHub renderer in the preview, Preferences
+
 ## Future work
 - [x] The `editorPanelsView` accessor lived in the agent category; moved to `DocumentWindowController+EditorPanels` (P3).
 - [ ] Save the preview's (and agent panel's) visibility in the session.
-- [ ] Two-way scroll sync (preview scrolls the editor); precise sync by source line (P4, later for built-in).
+- [ ] Two-way scroll sync (preview scrolls the editor).
+- [x] Precise scroll sync by source line for the GitHub renderer (P4).
+- [ ] Precise scroll sync for the built-in renderer (it would need source positions from the parser).
+- [ ] ⌘F find in the GitHub renderer's web view.
