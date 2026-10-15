@@ -21,6 +21,7 @@
 	{
 		[OakStringListTransformer createTransformerWithName:@"OakFileBrowserPlacementSettingsTransformer" andObjectsArray:@[ @"left", @"right" ]];
 		[OakStringListTransformer createTransformerWithName:@"OakHTMLOutputPlacementSettingsTransformer" andObjectsArray:@[ @"bottom", @"right", @"window" ]];
+		[OakStringListTransformer createTransformerWithName:@"OakMarkdownPreviewRendererSettingsTransformer" andObjectsArray:@[ @"builtin", @"github" ]];
 
 		self.defaultsProperties = @{
 			@"foldersOnTop":                 kUserDefaultsFoldersOnTopKey,
@@ -30,6 +31,8 @@
 			@"autoRevealFile":               kUserDefaultsAutoRevealFileKey,
 			@"fileBrowserPlacement":         kUserDefaultsFileBrowserPlacementKey,
 			@"htmlOutputPlacement":          kUserDefaultsHTMLOutputPlacementKey,
+			@"markdownPreviewRenderer":      kUserDefaultsMarkdownPreviewRendererKey,
+			@"markdownPreviewAllowRawHTML":  kUserDefaultsMarkdownPreviewAllowRawHTMLKey,
 
 			@"allowExpandingLinks":          kUserDefaultsAllowExpandingLinksKey,
 			@"fileBrowserSingleClickToOpen": kUserDefaultsFileBrowserSingleClickToOpenKey,
@@ -139,6 +142,9 @@
 
 	NSPopUpButton* showCommandOutputPopUp              = OakCreatePopUpButton();
 
+	NSPopUpButton* markdownPreviewRendererPopUp        = OakCreatePopUpButton();
+	NSButton* allowRawHTMLCheckBox                     = OakCreateCheckBox(@"Allow raw HTML (GitHub renderer)");
+
 	MBMenu const fileBrowserPositionMenuItems = {
 		{ @"Left side",  .tag = 0 },
 		{ @"Right side", .tag = 1 },
@@ -151,6 +157,12 @@
 		{ @"New window",         .tag = 2 },
 	};
 	MBCreateMenu(showCommandOutputMenuItems, showCommandOutputPopUp.menu);
+
+	MBMenu const markdownPreviewRendererMenuItems = {
+		{ @"Built-in",             .tag = 0 },
+		{ @"GitHub (cmark-gfm)",   .tag = 1 },
+	};
+	MBCreateMenu(markdownPreviewRendererMenuItems, markdownPreviewRendererPopUp.menu);
 
 	NSGridView* gridView = [NSGridView gridViewWithViews:@[
 		@[ OakCreateLabel(@"File browser location:"),  fileBrowserLocationPopUp                 ],
@@ -171,16 +183,19 @@
 		@[ OakCreateLabel(@"Non-text files:"),         nonTextFilesTextField                    ],
 		@[ ],
 		@[ OakCreateLabel(@"Show command output:"),    showCommandOutputPopUp                   ],
+		@[ ],
+		@[ OakCreateLabel(@"Markdown preview:"),       markdownPreviewRendererPopUp             ],
+		@[ NSGridCell.emptyContentView,                allowRawHTMLCheckBox                     ],
 	]];
 
-	for(NSView* popUpButton in @[ fileBrowserPositionPopUp, showCommandOutputPopUp ])
+	for(NSView* popUpButton in @[ fileBrowserPositionPopUp, showCommandOutputPopUp, markdownPreviewRendererPopUp ])
 		[popUpButton.widthAnchor constraintEqualToAnchor:fileBrowserLocationPopUp.widthAnchor].active = YES;
 
 	[excludeFilesTextField.widthAnchor constraintEqualToConstant:360].active = YES;
 	for(NSView* textField in @[ includeFilesTextField, nonTextFilesTextField ])
 		[textField.widthAnchor constraintEqualToAnchor:excludeFilesTextField.widthAnchor].active = YES;
 
-	self.view = OakSetupGridViewWithSeparators(gridView, { 5, 8, 12, 16 });
+	self.view = OakSetupGridViewWithSeparators(gridView, { 5, 8, 12, 16, 18 });
 
 	fileBrowserPathPopUp = fileBrowserLocationPopUp;
 	[self updatePathPopUp];
@@ -198,5 +213,7 @@
 	[includeFilesTextField                    bind:NSValueBinding       toObject:self withKeyPath:@"includePattern"               options:nil];
 	[nonTextFilesTextField                    bind:NSValueBinding       toObject:self withKeyPath:@"binaryPattern"                options:nil];
 	[showCommandOutputPopUp                   bind:NSSelectedTagBinding toObject:self withKeyPath:@"htmlOutputPlacement"          options:@{ NSValueTransformerNameBindingOption: @"OakHTMLOutputPlacementSettingsTransformer" }];
+	[markdownPreviewRendererPopUp             bind:NSSelectedTagBinding toObject:self withKeyPath:@"markdownPreviewRenderer"      options:@{ NSValueTransformerNameBindingOption: @"OakMarkdownPreviewRendererSettingsTransformer" }];
+	[allowRawHTMLCheckBox                     bind:NSValueBinding       toObject:self withKeyPath:@"markdownPreviewAllowRawHTML"  options:nil];
 }
 @end
