@@ -125,6 +125,8 @@ Not in P3: the preview's visibility isn't saved in the session (nor is the agent
 
 Not in P4: ⌘F find in the GitHub renderer; two-way scroll sync.
 
+**Fixed after user testing (2026-10-15):** scrolling was jumpy. The editor's line record covers one soft-wrapped row, so the fraction within a line restarted on each row; it's now measured over the whole line. The page mapping now interpolates between element starts (continuous across margins and adjacent blocks), caches its anchors until the layout changes, and only one scroll request is in flight at a time.
+
 **To test (user):** relaunch (`make run`), open a `.md` file and show the preview (⌃⇧⌘M).
 1. Pick **GitHub** in the preview's header popup. The install sheet appears; try **Cancel** (back to Built-in), then pick GitHub again and **Install with Homebrew** (shows brew's output; the preview switches to GitHub styling when done).
 2. Check a table, a task list, ~~strikethrough~~, a footnote (click it), a local image, a relative link and a web link.

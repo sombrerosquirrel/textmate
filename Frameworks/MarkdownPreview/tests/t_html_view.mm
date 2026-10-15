@@ -104,9 +104,15 @@ void test_scrolls_to_source_line ()
 	});
 	OAK_ASSERT(WaitFor(view, @"Math.abs(document.querySelectorAll('#content p')[50].getBoundingClientRect().top) < 2"));
 
-	// Line 102 is the blank line after it: between it and the next paragraph
+	// Line 102 is the blank line after it: halfway to the next paragraph
 	dispatch_sync(dispatch_get_main_queue(), ^{
 		[view scrollToSourceLine:102 fraction:0];
 	});
-	OAK_ASSERT(WaitFor(view, @"(() => { const p = document.querySelectorAll('#content p'); return p[50].getBoundingClientRect().bottom <= 1 && p[51].getBoundingClientRect().top >= -1; })()"));
+	OAK_ASSERT(WaitFor(view, @"(() => { const p = document.querySelectorAll('#content p'); const a = p[50].getBoundingClientRect().top, b = p[51].getBoundingClientRect().top; return a < -1 && b > 1 && Math.abs(a + b) < 2; })()"));
+
+	// The end of the document scrolls to the bottom
+	dispatch_sync(dispatch_get_main_queue(), ^{
+		[view scrollToSourceLine:500 fraction:0];
+	});
+	OAK_ASSERT(WaitFor(view, @"Math.abs(window.scrollY + window.innerHeight - document.documentElement.scrollHeight) < 2"));
 }

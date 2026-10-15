@@ -54,55 +54,67 @@ del { color: var(--muted); }
 static NSString* const kScript = @R"JS(
 function tmSetContent (html) {
 	document.getElementById("content").innerHTML = html;
+	tmAnchors = null;
 }
 
 function tmTop (el) {
 	return el.getBoundingClientRect().top + window.scrollY;
 }
 
-function tmBottom (el) {
-	return el.getBoundingClientRect().bottom + window.scrollY;
-}
+// Source line → page position, from where elements start. Cached until the
+// layout changes (content, width, images loading).
+let tmAnchors = null, tmAnchorsKey = null;
 
-// Scrolls so `line` of the source is at the top; elements carry their source
-// lines as data-sourcepos="startLine:startColumn-endLine:endColumn".
-function tmScrollTo (line, fraction) {
-	const maxY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
-
-	const blocks = [];
+function tmComputeAnchors () {
+	const anchors = [ { line: 1, y: 0 } ];
+	let lastLine = 1, bottom = 0;
 	for(const el of document.querySelectorAll("#content [data-sourcepos]")) {
 		const m = /^(\d+):\d+-(\d+):\d+$/.exec(el.getAttribute("data-sourcepos"));
-		if(m)
-			blocks.push({ el: el, start: +m[1], end: +m[2] + 1 }); // end is exclusive
-	}
+		if(!m)
+			continue;
 
-	if(blocks.length == 0)
+		const start = +m[1], top = tmTop(el), previous = anchors[anchors.length - 1];
+		lastLine = Math.max(lastLine, +m[2] + 1);
+		bottom   = Math.max(bottom, el.getBoundingClientRect().bottom + window.scrollY);
+
+		if(start == previous.line)
+			continue; // nested elements starting on the same line, e.g. a list, its first item and paragraph
+		if(start > previous.line && top > previous.y)
+			anchors.push({ line: start, y: top }); // skip elements beside the previous one, e.g. table cells
+	}
+	anchors.push({ line: lastLine, y: Math.max(bottom, anchors[anchors.length - 1].y) });
+	return anchors;
+}
+
+// Scrolls so `line` of the source is at the top. Elements carry their source
+// lines as data-sourcepos="startLine:startColumn-endLine:endColumn"; between
+// the starts of two elements, the position is interpolated, so scrolling
+// through the editor scrolls the page continuously.
+function tmScrollTo (line, fraction) {
+	const maxY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+	if(!document.querySelector("#content [data-sourcepos]"))
 		return window.scrollTo(0, fraction * maxY);
 
-	// Document order: starts never decrease, so later blocks are the innermost
-	let containing = null, previous = null, next = null;
-	for(const block of blocks) {
-		if(block.start > line) {
-			next = block;
-			break;
-		}
-		if(line < block.end)
-			containing = block;
-		else
-			previous = block;
+	const key = document.documentElement.scrollHeight + "×" + window.innerWidth;
+	if(!tmAnchors || tmAnchorsKey != key) {
+		tmAnchors    = tmComputeAnchors();
+		tmAnchorsKey = key;
 	}
 
-	let y = 0;
-	if(containing && !(previous && containing.el.contains(previous.el))) {
-		const top = tmTop(containing.el), height = tmBottom(containing.el) - top;
-		y = top + height * (line - containing.start) / (containing.end - containing.start);
-	} else if(previous) {
-		// Between blocks, e.g. on a blank line
-		const from = tmBottom(previous.el);
-		const to = next ? tmTop(next.el) : document.documentElement.scrollHeight;
-		const lines = next ? next.start - previous.end : 1;
-		y = from + (to - from) * Math.min(1, (line - previous.end) / Math.max(1, lines));
+	const anchors = tmAnchors;
+	let lo = 0, hi = anchors.length - 1;
+	if(line >= anchors[hi].line)
+		return window.scrollTo(0, Math.min(anchors[hi].y, maxY));
+	while(hi - lo > 1) { // anchors[lo].line <= line < anchors[hi].line
+		const mid = (lo + hi) >> 1;
+		if(anchors[mid].line <= line)
+			lo = mid;
+		else
+			hi = mid;
 	}
+
+	const a = anchors[lo], b = anchors[hi];
+	const y = a.y + (b.y - a.y) * (line - a.line) / (b.line - a.line);
 	window.scrollTo(0, Math.min(Math.max(0, y), maxY));
 }
 )JS";
@@ -171,6 +183,8 @@ static NSString* PathForPreviewURL (NSURL* url)
 	BOOL _hasScrollPosition;
 	CGFloat _line;
 	CGFloat _fraction;
+	BOOL _scrolling;      // a scroll is on its way to the page
+	BOOL _scrollPending;  // and another one should follow it
 }
 @end
 
@@ -207,6 +221,8 @@ static NSString* PathForPreviewURL (NSURL* url)
 	_documentURL       = documentURL;
 	_loaded            = NO;
 	_hasScrollPosition = NO;
+	_scrolling         = NO;
+	_scrollPending     = NO;
 	NSString* page = [NSString stringWithFormat:@"<!DOCTYPE html><html><head><meta charset=\"utf-8\"><meta name=\"color-scheme\" content=\"light dark\"><style>%@</style></head><body><article id=\"content\" class=\"markdown-body\"></article></body></html>", kStyleSheet];
 	[_webView loadHTMLString:page baseURL:PreviewURLForPath(documentURL.path)];
 }
@@ -223,8 +239,33 @@ static NSString* PathForPreviewURL (NSURL* url)
 	_hasScrollPosition = YES;
 	_line              = line;
 	_fraction          = fraction;
-	if(_loaded)
-		[_webView callAsyncJavaScript:@"tmScrollTo(line, fraction)" arguments:@{ @"line": @(line), @"fraction": @(fraction) } inFrame:nil inContentWorld:WKContentWorld.defaultClientWorld completionHandler:nil];
+	[self sendScrollPosition];
+}
+
+// One at a time: while scrolling, only the latest position is sent, so the page can’t fall behind
+- (void)sendScrollPosition
+{
+	if(!_loaded)
+		return;
+	if(_scrolling)
+	{
+		_scrollPending = YES;
+		return;
+	}
+
+	_scrolling = YES;
+	__weak MarkdownPreviewHTMLView* weakSelf = self;
+	[_webView callAsyncJavaScript:@"tmScrollTo(line, fraction)" arguments:@{ @"line": @(_line), @"fraction": @(_fraction) } inFrame:nil inContentWorld:WKContentWorld.defaultClientWorld completionHandler:^(id, NSError*){
+		MarkdownPreviewHTMLView* strongSelf = weakSelf;
+		if(!strongSelf)
+			return;
+		strongSelf->_scrolling = NO;
+		if(strongSelf->_scrollPending)
+		{
+			strongSelf->_scrollPending = NO;
+			[strongSelf sendScrollPosition];
+		}
+	}];
 }
 
 - (void)evaluateJavaScript:(NSString*)script completionHandler:(void(^)(id result, NSError* error))completion
