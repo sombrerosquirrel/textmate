@@ -1,6 +1,7 @@
 #import "DocumentWindowController.h"
 #import "DocumentWindowController+Agent.h"
 #import "DocumentWindowController+EditorPanels.h"
+#import "DocumentWindowController+MarkdownPreview.h"
 #import "ProjectLayoutView.h"
 #import "SelectGrammarViewController.h"
 #import "OakRunCommandWindowController.h"
@@ -328,6 +329,7 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 		[self.window makeFirstResponder:nil];
 
 	[self shutdownAgentPanel];
+	[self shutdownMarkdownPreview];
 	[_arrayController unbind:NSContentBinding];
 
 	self.documents           = nil;
@@ -391,6 +393,7 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 		self.layoutView.fileBrowserOnRight = !self.layoutView.fileBrowserOnRight;
 	}
 	[self updateAgentPanelPlacement];
+	[self updateMarkdownPreviewPlacement];
 
 	BOOL disableTabBarCollapsingKey = [NSUserDefaults.standardUserDefaults boolForKey:kUserDefaultsDisableTabBarCollapsingKey];
 	self.titlebarViewController.hidden = !disableTabBarCollapsingKey && self.documents.count <= 1;
@@ -2284,6 +2287,8 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 
 	if([self isAgentPanelMenuItem:menuItem])
 		return [self validateAgentPanelMenuItem:menuItem];
+	if([self isMarkdownPreviewMenuItem:menuItem])
+		return [self validateMarkdownPreviewMenuItem:menuItem];
 
 	BOOL active = YES;
 	if([menuItem action] == @selector(toggleFileBrowser:))

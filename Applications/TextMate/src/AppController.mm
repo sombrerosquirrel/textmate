@@ -245,6 +245,17 @@ BOOL HasDocumentWindow (NSArray* windows)
 				{ @"Show HTML Output",       @selector(toggleHTMLOutput:),     @"h", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagOption|NSEventModifierFlagControl },
 				{ @"Show Agent Panel",       @selector(toggleAgentPanel:),     @"I", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagControl|NSEventModifierFlagShift },
 				{ @"Move Agent Panel to Left Side", @selector(toggleAgentPanelPlacement:) },
+				{ @"Show Markdown Preview",  @selector(toggleMarkdownPreview:), @"M", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagControl|NSEventModifierFlagShift },
+				{ @"Markdown Preview Position",
+					.submenu = {
+						{ @"Automatic", @selector(takeMarkdownPreviewPlacementFrom:), .tag = 0 },
+						{ /* -------- */ },
+						{ @"Left",      @selector(takeMarkdownPreviewPlacementFrom:), .tag = 1 },
+						{ @"Right",     @selector(takeMarkdownPreviewPlacementFrom:), .tag = 2 },
+						{ @"Top",       @selector(takeMarkdownPreviewPlacementFrom:), .tag = 3 },
+						{ @"Bottom",    @selector(takeMarkdownPreviewPlacementFrom:), .tag = 4 },
+					}
+				},
 				{ @"Show Line Numbers",      @selector(toggleLineNumbers:),    @"l", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagOption },
 				{ /* -------- */ },
 				{ @"Show Invisibles",        @selector(toggleShowInvisibles:), @"i", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagOption },
