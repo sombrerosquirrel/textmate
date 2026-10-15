@@ -39,6 +39,7 @@ static NSDictionary* default_settings ()
 		kUserDefaultsClipboardHistoryKeepAtMost:  @(500),
 		kUserDefaultsClipboardHistoryDaysToKeep:  @(30),
 		kUserDefaultsLSPShowInlineDiagnosticsKey:    @YES,
+		kUserDefaultsMarkdownPreviewRendererKey:     @"builtin",
 	};
 }
 
@@ -132,6 +133,14 @@ NSString* const kUserDefaultsLSPShowInlineDiagnosticsKey = @"lspShowInlineDiagno
 // ==============
 
 NSString* const kUserDefaultsFormatterConfigurationsKey = @"formatters";
+
+// ====================
+// = Markdown Preview =
+// ====================
+
+NSString* const kUserDefaultsMarkdownPreviewRendererKey     = @"markdownPreviewRenderer";
+NSString* const kUserDefaultsMarkdownPreviewAllowRawHTMLKey = @"markdownPreviewAllowRawHTML";
+NSString* const kUserDefaultsMarkdownPreviewCmarkPathKey    = @"markdownPreviewCmarkPath";
 
 // =========
 // = Other =

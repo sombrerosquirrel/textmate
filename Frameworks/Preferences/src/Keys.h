@@ -84,6 +84,14 @@ extern NSString* const kUserDefaultsLSPShowInlineDiagnosticsKey;
 
 extern NSString* const kUserDefaultsFormatterConfigurationsKey;
 
+// ====================
+// = Markdown Preview =
+// ====================
+
+extern NSString* const kUserDefaultsMarkdownPreviewRendererKey;     // @"builtin" (default) or @"github"
+extern NSString* const kUserDefaultsMarkdownPreviewAllowRawHTMLKey; // GitHub renderer: pass HTML in the document through
+extern NSString* const kUserDefaultsMarkdownPreviewCmarkPathKey;    // cmark-gfm chosen with Locate…, else found on PATH
+
 // =========
 // = Other =
 // =========
