@@ -266,3 +266,48 @@ void test_source_lines ()
 	// Off by default
 	OAK_ASSERT_EQ(SourceLines(Render(markdown)), "");
 }
+
+static NSString* AnchorAt (NSAttributedString* str, NSUInteger index)
+{
+	return index < str.length ? [str attribute:OakMarkdownAnchorAttributeName atIndex:index effectiveRange:nullptr] : nil;
+}
+
+void test_footnotes ()
+{
+	NSURL* document = [NSURL fileURLWithPath:@"/tmp/project/README.md"];
+	NSAttributedString* str = RenderDocument(@"A note[^n] and another[^2] and again[^N].\n\n[^2]: Second.\n[^n]: First\n    with more.\n", document);
+	OAK_ASSERT_EQ(String(str), "A note1 and another2 and again1.\n \n1.\tFirst with more. ↩\n2.\tSecond. ↩");
+
+	// References: superscript links to the note; the first one is the target of the note’s ↩
+	NSUInteger first = [str.string rangeOfString:@"note1"].location + 4;
+	NSUInteger again = [str.string rangeOfString:@"again1"].location + 5;
+	OAK_ASSERT_EQ(S([[str attribute:NSLinkAttributeName atIndex:first effectiveRange:nullptr] absoluteString]), "file:///tmp/project/README.md#fn-1");
+	OAK_ASSERT([[str attribute:NSBaselineOffsetAttributeName atIndex:first effectiveRange:nullptr] doubleValue] > 0);
+	OAK_ASSERT_EQ(S(AnchorAt(str, first)), "fnref-1");
+	OAK_ASSERT(AnchorAt(str, again) == nil);
+
+	// Notes: anchored at their start, ↩ links back
+	OAK_ASSERT_EQ(S(AnchorAt(str, [str.string rangeOfString:@"First"].location)), "fn-1");
+	OAK_ASSERT_EQ(S(AnchorAt(str, [str.string rangeOfString:@"Second"].location)), "fn-2");
+	NSUInteger back = [str.string rangeOfString:@"↩"].location;
+	OAK_ASSERT_EQ(S([[str attribute:NSLinkAttributeName atIndex:back effectiveRange:nullptr] absoluteString]), "file:///tmp/project/README.md#fnref-1");
+}
+
+void test_footnotes_left_alone ()
+{
+	// Undefined, in code, or escaped
+	OAK_ASSERT_EQ(String(Render(@"No note[^x] here.")), "No note[^x] here.");
+	OAK_ASSERT_EQ(String(Render(@"Code `[^1]` and \\[^1].\n\n```\n[^1]: not a note\n```\n\n[^1]: Note.")), "Code [^1] and [^1].\n[^1]: not a note");
+
+	// Unreferenced notes are left out
+	OAK_ASSERT_EQ(String(Render(@"Text.\n\n[^1]: Unused.")), "Text.");
+}
+
+void test_footnote_source_lines ()
+{
+	// Definitions are taken out without changing the lines of what follows
+	OakMarkdownStyle* style = [OakMarkdownStyle defaultStyle];
+	style.marksSourceLines = YES;
+	NSAttributedString* str = [OakMarkdownRenderer attributedStringFromMarkdown:@"One[^1]\n\n[^1]: Note\n    more\n\nTwo\n" style:style baseURL:nil codeBlocks:nullptr codeBlockFooter:nil];
+	OAK_ASSERT_EQ(SourceLines(str), "1:O 6:T ");
+}

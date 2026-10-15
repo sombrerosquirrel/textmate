@@ -1,7 +1,7 @@
 // Renders Markdown into an attributed string for a TextKit 1 text view (agent
 // chat, Markdown preview): headings, paragraphs, (nested) lists, code blocks,
-// block quotes, tables, task lists, horizontal rules, local images, and inline
-// emphasis, code, strikethrough and links.
+// block quotes, tables, task lists, horizontal rules, local images, footnotes,
+// and inline emphasis, code, strikethrough and links.
 //
 // Foundation’s parser only labels block structure (NSPresentationIntent); this
 // turns those labels into separators, indentation, fonts and text blocks.
@@ -29,6 +29,11 @@ extern NSAttributedStringKey const OakMarkdownCodeBlockAttributeName;
 // With `marksSourceLines`: on the first character rendered from a source line
 // that starts a run of text; value is the 1-based line (NSNumber).
 extern NSAttributedStringKey const OakMarkdownSourceLineAttributeName;
+
+// On a footnote and on its first reference; value is the fragment links to it
+// use (NSString, “fn-1” or “fnref-1”). Footnote links are “#fn-1” resolved
+// against the base URL.
+extern NSAttributedStringKey const OakMarkdownAnchorAttributeName;
 
 @interface OakMarkdownRenderer : NSObject
 // `codeBlockFooter`, if given, is called after each code block and its result

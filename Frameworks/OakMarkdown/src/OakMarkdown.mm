@@ -2,6 +2,7 @@
 
 NSAttributedStringKey const OakMarkdownCodeBlockAttributeName = @"OakMarkdownCodeBlock";
 NSAttributedStringKey const OakMarkdownSourceLineAttributeName = @"OakMarkdownSourceLine";
+NSAttributedStringKey const OakMarkdownAnchorAttributeName = @"OakMarkdownAnchor";
 
 static CGFloat const kListIndent  = 18;
 static CGFloat const kQuoteIndent = 12;
@@ -403,22 +404,298 @@ namespace
 		NSMutableDictionary<NSNumber*, NSTextTable*>* tables;
 		NSMutableDictionary<NSNumber*, NSMutableArray*>* tableRows;
 	};
+
+	// =============
+	// = Footnotes =
+	// =============
+
+	// Foundation’s parser doesn’t know GitHub’s footnotes, so they’re handled
+	// around it: references become markers (private use characters around a
+	// kind and a number), definitions are taken out, and after rendering the
+	// markers become superscript links and the definitions a numbered list.
+
+	enum marker_kind_t : unichar { kFootnoteReference = 'r', kFootnoteStart = 'd', kFootnoteBackReference = 'b' };
+
+	NSString* Marker (marker_kind_t kind, NSUInteger number)
+	{
+		return [NSString stringWithFormat:@"%C%lu", (unichar)kind, number];
+	}
+
+	bool IsBlank (NSString* line)
+	{
+		return [line stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet].length == 0;
+	}
+
+	bool IsIndented (NSString* line)
+	{
+		return [line hasPrefix:@"    "] || [line hasPrefix:@"\t"];
+	}
+
+	NSString* Dedent (NSString* line)
+	{
+		return [line hasPrefix:@"\t"] ? [line substringFromIndex:1] : [line hasPrefix:@"    "] ? [line substringFromIndex:4] : line;
+	}
+
+	// The fence (e.g. “```”) if the line opens or closes a fenced code block
+	NSString* Fence (NSString* line)
+	{
+		static NSRegularExpression* const regex = [NSRegularExpression regularExpressionWithPattern:@"^ {0,3}(`{3,}|~{3,})" options:0 error:nil];
+		NSTextCheckingResult* match = [regex firstMatchInString:line options:0 range:NSMakeRange(0, line.length)];
+		return match ? [line substringWithRange:[match rangeAtIndex:1]] : nil;
+	}
+
+	struct footnotes_t
+	{
+		// Returns the Markdown with references replaced by markers and
+		// definitions by empty lines, so source line numbers don’t change
+		NSString* extract (NSString* markdown)
+		{
+			static NSRegularExpression* const definitionRegex = [NSRegularExpression regularExpressionWithPattern:@"^ {0,3}\\[\\^([^\\]\\s]+)\\]:[ \\t]?(.*)$" options:0 error:nil];
+
+			NSMutableArray<NSString*>* lines = [[markdown componentsSeparatedByString:@"\n"] mutableCopy];
+			std::vector<bool> skip(lines.count, false); // code and definitions
+
+			NSString* fence = nil;
+			NSMutableString* definition = nil; // being read
+			bool lazy = false;                 // the previous line was definition text, so a plain line continues it
+			for(NSUInteger i = 0; i < lines.count; ++i)
+			{
+				NSString* line = lines[i];
+				if(fence)
+				{
+					skip[i] = true;
+					NSString* closing = Fence(line);
+					if(closing && [closing characterAtIndex:0] == [fence characterAtIndex:0] && closing.length >= fence.length && IsBlank([line substringFromIndex:NSMaxRange([line rangeOfString:closing])]))
+						fence = nil;
+					continue;
+				}
+
+				NSTextCheckingResult* match = [definitionRegex firstMatchInString:line options:0 range:NSMakeRange(0, line.length)];
+				if(definition && !match)
+				{
+					if(IsBlank(line))
+					{
+						// Blank lines belong to the definition if indented text follows
+						NSUInteger next = i;
+						while(next < lines.count && IsBlank(lines[next]))
+							++next;
+						if(next < lines.count && IsIndented(lines[next]))
+						{
+							for(; i < next; ++i)
+							{
+								[definition appendString:@"\n"];
+								lines[i] = @"";
+								skip[i] = true;
+							}
+							--i;
+							lazy = false;
+							continue;
+						}
+					}
+					else if(IsIndented(line) || (lazy && !Fence(line)))
+					{
+						[definition appendFormat:@"\n%@", Dedent(line)];
+						lines[i] = @"";
+						skip[i] = true;
+						lazy = !IsIndented(line) || !IsBlank(Dedent(line));
+						continue;
+					}
+					definition = nil;
+				}
+
+				if(match)
+				{
+					NSString* label = [line substringWithRange:[match rangeAtIndex:1]].lowercaseString;
+					definition = [[line substringWithRange:[match rangeAtIndex:2]] mutableCopy];
+					if(!definitions[label]) // the first definition wins
+						definitions[label] = definition;
+					lines[i] = @"";
+					skip[i]  = true;
+					lazy     = true;
+				}
+				else if((fence = Fence(line)))
+				{
+					skip[i] = true;
+				}
+			}
+
+			for(NSUInteger i = 0; i < lines.count; ++i)
+			{
+				if(!skip[i] && [lines[i] containsString:@"[^"])
+					lines[i] = replace_references(lines[i]);
+			}
+			return [lines componentsJoinedByString:@"\n"];
+		}
+
+		// Referenced definitions, in the order of their first reference
+		NSArray<NSString*>* notes () const
+		{
+			return order;
+		}
+
+	private:
+		// `[^label]` with a definition becomes a marker; code spans and escaped brackets are left alone
+		NSString* replace_references (NSString* line)
+		{
+			NSMutableString* res = [NSMutableString string];
+			NSUInteger const length = line.length;
+			for(NSUInteger i = 0; i < length; )
+			{
+				unichar ch = [line characterAtIndex:i];
+				if(ch == '\\' && i + 1 < length)
+				{
+					[res appendString:[line substringWithRange:NSMakeRange(i, 2)]];
+					i += 2;
+					continue;
+				}
+
+				if(ch == '`')
+				{
+					NSUInteger run = i;
+					while(run < length && [line characterAtIndex:run] == '`')
+						++run;
+					NSString* ticks = [line substringWithRange:NSMakeRange(i, run - i)];
+
+					// The closing run of exactly as many backticks
+					NSUInteger end = NSNotFound;
+					for(NSRange range = NSMakeRange(run, length - run); range.length; )
+					{
+						NSRange found = [line rangeOfString:ticks options:0 range:range];
+						if(found.location == NSNotFound)
+							break;
+						NSUInteger after = NSMaxRange(found);
+						while(after < length && [line characterAtIndex:after] == '`')
+							++after;
+						if(after == NSMaxRange(found))
+						{
+							end = after;
+							break;
+						}
+						range = NSMakeRange(after, length - after);
+					}
+
+					NSUInteger stop = end != NSNotFound ? end : run;
+					[res appendString:[line substringWithRange:NSMakeRange(i, stop - i)]];
+					i = stop;
+					continue;
+				}
+
+				if(ch == '[' && i + 1 < length && [line characterAtIndex:i+1] == '^')
+				{
+					NSRange close = [line rangeOfString:@"]" options:0 range:NSMakeRange(i + 2, length - i - 2)];
+					if(close.location != NSNotFound && close.location > i + 2)
+					{
+						NSString* label = [line substringWithRange:NSMakeRange(i + 2, close.location - i - 2)].lowercaseString;
+						if(NSString* note = [label rangeOfCharacterFromSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].location == NSNotFound ? definitions[label] : nil)
+						{
+							NSNumber* number = numbers[label];
+							if(!number)
+							{
+								[order addObject:note];
+								number = numbers[label] = @(order.count);
+							}
+							[res appendString:Marker(kFootnoteReference, number.unsignedIntegerValue)];
+							i = NSMaxRange(close);
+							continue;
+						}
+					}
+				}
+
+				[res appendFormat:@"%C", ch];
+				++i;
+			}
+			return res;
+		}
+
+		NSMutableDictionary<NSString*, NSMutableString*>* definitions = [NSMutableDictionary dictionary];
+		NSMutableDictionary<NSString*, NSNumber*>* numbers = [NSMutableDictionary dictionary];
+		NSMutableArray<NSString*>* order = [NSMutableArray array];
+	};
+
+	// Markdown for the notes: a rule, then a numbered list. Each item starts
+	// with a marker for its anchor and ends with one for the link back.
+	NSString* FootnotesMarkdown (NSArray<NSString*>* notes)
+	{
+		NSMutableString* res = [NSMutableString stringWithString:@"---\n\n"];
+		[notes enumerateObjectsUsingBlock:^(NSString* note, NSUInteger index, BOOL* stop){
+			NSMutableArray<NSString*>* lines = [[note componentsSeparatedByString:@"\n"] mutableCopy];
+			while(lines.count > 1 && IsBlank(lines.lastObject))
+				[lines removeLastObject];
+			for(NSUInteger i = 1; i < lines.count; ++i)
+				lines[i] = IsBlank(lines[i]) ? @"" : [@"   " stringByAppendingString:lines[i]];
+			lines[lines.count - 1] = [lines.lastObject stringByAppendingFormat:@" %@", Marker(kFootnoteBackReference, index + 1)];
+			[res appendFormat:@"%lu. %@%@\n", index + 1, Marker(kFootnoteStart, index + 1), [lines componentsJoinedByString:@"\n"]];
+		}];
+		return res;
+	}
+
+	NSURL* FootnoteURL (NSString* anchor, NSURL* baseURL)
+	{
+		NSURL* url = [NSURL URLWithString:[@"#" stringByAppendingString:anchor] relativeToURL:baseURL];
+		return baseURL ? url.absoluteURL : url;
+	}
+
+	// References become superscript numbers linking to their note, the note’s
+	// start gets its anchor, and the end of the note a ↩ back to the reference
+	void ReplaceFootnoteMarkers (NSMutableAttributedString* str, NSURL* baseURL)
+	{
+		static NSRegularExpression* const regex = [NSRegularExpression regularExpressionWithPattern:@"\\uE000([rdb])(\\d+)\\uE001" options:0 error:nil];
+		NSArray<NSTextCheckingResult*>* matches = [regex matchesInString:str.string options:0 range:NSMakeRange(0, str.length)];
+
+		NSMutableSet<NSString*>* referenced = [NSMutableSet set]; // only the first reference gets the anchor
+		std::vector<bool> firstReference(matches.count, false);
+		for(NSUInteger i = 0; i < matches.count; ++i)
+		{
+			NSString* number = [str.string substringWithRange:[matches[i] rangeAtIndex:2]];
+			if([[str.string substringWithRange:[matches[i] rangeAtIndex:1]] isEqualToString:@"r"] && ![referenced containsObject:number])
+			{
+				[referenced addObject:number];
+				firstReference[i] = true;
+			}
+		}
+
+		for(NSUInteger i = matches.count; i-- > 0; )
+		{
+			NSRange range   = matches[i].range;
+			unichar kind    = [str.string characterAtIndex:[matches[i] rangeAtIndex:1].location];
+			NSString* number = [str.string substringWithRange:[matches[i] rangeAtIndex:2]];
+			NSMutableDictionary* attributes = [[str attributesAtIndex:range.location effectiveRange:nullptr] mutableCopy];
+
+			if(kind == kFootnoteStart)
+			{
+				[str deleteCharactersInRange:range];
+				if(range.location < str.length)
+					[str addAttribute:OakMarkdownAnchorAttributeName value:[@"fn-" stringByAppendingString:number] range:NSMakeRange(range.location, 1)];
+				continue;
+			}
+
+			NSString* text = number;
+			if(kind == kFootnoteReference)
+			{
+				NSFont* font = attributes[NSFontAttributeName] ?: [NSFont systemFontOfSize:NSFont.systemFontSize];
+				attributes[NSFontAttributeName]           = [NSFont fontWithDescriptor:font.fontDescriptor size:round(font.pointSize * 0.75)] ?: font;
+				attributes[NSBaselineOffsetAttributeName] = @(round(font.pointSize * 0.35));
+				attributes[NSLinkAttributeName]           = FootnoteURL([@"fn-" stringByAppendingString:number], baseURL);
+				if(firstReference[i])
+					attributes[OakMarkdownAnchorAttributeName] = [@"fnref-" stringByAppendingString:number];
+			}
+			else
+			{
+				text = @"↩";
+				attributes[NSLinkAttributeName] = FootnoteURL([@"fnref-" stringByAppendingString:number], baseURL);
+			}
+			[str replaceCharactersInRange:range withAttributedString:[[NSAttributedString alloc] initWithString:text attributes:attributes]];
+		}
+	}
 }
 
-@implementation OakMarkdownRenderer
-+ (NSAttributedString*)attributedStringFromMarkdown:(NSString*)markdown style:(OakMarkdownStyle*)style codeBlocks:(NSArray<OakMarkdownCodeBlock*>**)codeBlocks codeBlockFooter:(NSAttributedString*(^)(NSUInteger index))codeBlockFooter
-{
-	return [self attributedStringFromMarkdown:markdown style:style baseURL:nil codeBlocks:codeBlocks codeBlockFooter:codeBlockFooter];
-}
-
-+ (NSAttributedString*)attributedStringFromMarkdown:(NSString*)markdown style:(OakMarkdownStyle*)style baseURL:(NSURL*)baseURL codeBlocks:(NSArray<OakMarkdownCodeBlock*>**)codeBlocks codeBlockFooter:(NSAttributedString*(^)(NSUInteger index))codeBlockFooter
+static NSMutableAttributedString* Render (NSString* markdown, OakMarkdownStyle* style, BOOL marksSourceLines, NSURL* baseURL, NSArray<OakMarkdownCodeBlock*>** codeBlocks, NSAttributedString*(^codeBlockFooter)(NSUInteger index))
 {
 	NSAttributedStringMarkdownParsingOptions* options = [[NSAttributedStringMarkdownParsingOptions alloc] init];
 	options.interpretedSyntax = NSAttributedStringMarkdownInterpretedSyntaxFull;
 	options.failurePolicy     = NSAttributedStringMarkdownParsingFailureReturnPartiallyParsedIfPossible;
-	options.appliesSourcePositionAttributes = style.marksSourceLines;
+	options.appliesSourcePositionAttributes = marksSourceLines;
 
-	style = style ?: [OakMarkdownStyle defaultStyle];
 	renderer_t renderer(style, codeBlockFooter);
 	renderer_t* rendererPtr = &renderer; // blocks would capture the C++ object by copy
 
@@ -427,13 +704,13 @@ namespace
 	{
 		if(codeBlocks)
 			*codeBlocks = @[ ];
-		return [[NSAttributedString alloc] initWithString:markdown attributes:@{ NSFontAttributeName: style.font, NSForegroundColorAttributeName: style.textColor }];
+		return [[NSMutableAttributedString alloc] initWithString:markdown attributes:@{ NSFontAttributeName: style.font, NSForegroundColorAttributeName: style.textColor }];
 	}
 
 	// Source positions split the text into many small runs; take them out so
 	// the renderer sees the same runs as without them
 	std::vector<std::pair<NSUInteger, NSInteger>> sourceLines; // parsed index → line
-	if(style.marksSourceLines)
+	if(marksSourceLines)
 	{
 		NSMutableAttributedString* stripped = [parsed mutableCopy];
 		auto sourceLinesPtr = &sourceLines;
@@ -471,6 +748,34 @@ namespace
 
 	if(codeBlocks)
 		*codeBlocks = [renderer.codeBlocks copy];
+	return res;
+}
+
+@implementation OakMarkdownRenderer
++ (NSAttributedString*)attributedStringFromMarkdown:(NSString*)markdown style:(OakMarkdownStyle*)style codeBlocks:(NSArray<OakMarkdownCodeBlock*>**)codeBlocks codeBlockFooter:(NSAttributedString*(^)(NSUInteger index))codeBlockFooter
+{
+	return [self attributedStringFromMarkdown:markdown style:style baseURL:nil codeBlocks:codeBlocks codeBlockFooter:codeBlockFooter];
+}
+
++ (NSAttributedString*)attributedStringFromMarkdown:(NSString*)markdown style:(OakMarkdownStyle*)style baseURL:(NSURL*)baseURL codeBlocks:(NSArray<OakMarkdownCodeBlock*>**)codeBlocks codeBlockFooter:(NSAttributedString*(^)(NSUInteger index))codeBlockFooter
+{
+	style = style ?: [OakMarkdownStyle defaultStyle];
+
+	footnotes_t footnotes;
+	NSString* text = [markdown containsString:@"[^"] ? footnotes.extract(markdown) : markdown;
+	NSMutableAttributedString* res = Render(text, style, style.marksSourceLines, baseURL, codeBlocks, codeBlockFooter);
+	if(!footnotes.notes().count)
+		return res;
+
+	// The notes come last, without source lines (they aren’t where they were
+	// written) or code block indices (they aren’t in `codeBlocks`)
+	NSMutableAttributedString* notes = Render(FootnotesMarkdown(footnotes.notes()), style, NO, baseURL, nullptr, nil);
+	[notes removeAttribute:OakMarkdownCodeBlockAttributeName range:NSMakeRange(0, notes.length)];
+	if(res.length)
+		[res appendAttributedString:[[NSAttributedString alloc] initWithString:@"\n" attributes:[res attributesAtIndex:res.length - 1 effectiveRange:nullptr]]];
+	[res appendAttributedString:notes];
+
+	ReplaceFootnoteMarkers(res, baseURL);
 	return res;
 }
 @end
