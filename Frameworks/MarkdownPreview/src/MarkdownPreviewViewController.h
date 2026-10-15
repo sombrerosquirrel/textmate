@@ -28,9 +28,10 @@
 // A notice in the header, with an optional button that calls the delegate. Pass nil to hide it.
 - (void)showNotice:(NSString*)notice actionTitle:(NSString*)actionTitle;
 
-// `line` (1-based, may be fractional) is the editor’s first visible line;
-// the HTML view uses it when the renderer gives source positions. The
-// built-in view scrolls by `fraction` (0 at the top, 1 at the bottom).
+// `line` (1-based, may be fractional) is the editor’s first visible line,
+// put at the top of the preview. Without source positions (e.g. output of a
+// TM_MARKDOWN command), the preview scrolls by `fraction` (0 at the top, 1
+// at the bottom).
 - (void)scrollToSourceLine:(CGFloat)line fraction:(CGFloat)fraction;
 
 // Source lines whose position in the preview is known, ascending (empty if
