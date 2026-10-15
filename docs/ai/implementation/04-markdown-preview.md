@@ -158,7 +158,31 @@ fe9b98ca cmark-gfm runner · 5d2557e9 HTML view · 8583da4b header, notices, ins
 
 **Footnotes in the built-in renderer (2026-10-15, after user testing):** Foundation's parser doesn't support footnotes; it turned `[^1]` into a stray link and dropped the definition. OakMarkdown now handles them around the parser: definitions (with indented and lazy continuation lines) are replaced by empty lines so source lines don't shift, and references become markers, turned into superscript links after rendering. The notes follow a rule as a numbered list in order of first reference, each with a ↩ back; unreferenced notes are left out, as on GitHub. `OakMarkdownAnchorAttributeName` marks the targets, and the preview scrolls to them when a footnote or ↩ is clicked. OakMarkdown 19 tests, MarkdownPreview 21; ctest 28/28. Commits 93596794, 3f126e54.
 
-**To check (user):** with **Built-in** selected, the footnote in the test snippet shows as a superscript 1 linking to a numbered note at the end; ↩ goes back.
+Confirmed with the user: clicking a footnote scrolls only the preview, not the editor (one-way sync, same as the GitHub renderer).
+
+**To check (user):** with **Built-in** selected, paste this into a `.md` file:
+
+```markdown
+| a | b |
+|---|---|
+| 1 | 2 |
+
+- [ ] todo
+- [x] done
+
+~~gone~~ and a note[^1] and <b>bold</b>
+
+A second note[^long], the first one again[^1], and one in code `[^1]`.
+
+![image](some-local-image.png) [other file](README.md) [web](https://github.com)
+
+[^1]: The footnote.
+[^long]: A longer note
+    that continues on an indented line.
+[^unused]: Never referenced, so it shouldn't appear.
+```
+
+Expected: superscript 1, 2, 1 in the text; `[^1]` in code stays as text; at the end a rule and "1. The footnote. ↩", "2. A longer note that continues on an indented line. ↩"; the unused note is absent; clicking 1 scrolls the preview to the notes and ↩ back, the editor doesn't move; `<b>bold</b>` shows as text (built-in doesn't render raw HTML). GitHub shows the same footnotes, and bold in bold with Allow raw HTML on.
 
 ### Commits
 75a28e14 document checks in the framework, with tests · 442f736e used by the window
