@@ -34,7 +34,8 @@ How to use what's there today:
   ```
   TM_MARKDOWN = "/opt/homebrew/bin/cmark-gfm --extension table --extension tasklist --extension strikethrough --extension autolink"
   ```
-- **Requirements:** the `ruby18` shim in `Bundle Support.tmbundle/Support/shared/bin` (installed with the bundles). To do: verify it runs in TextMate-dev.
+- **Requirements:** the `ruby18` shim in `Bundle Support.tmbundle/Support/shared/bin` (installed with the bundles), which downloads ruby 1.8.7 on first use. Verified (2026-10-15): the conversion runs, and with `TM_MARKDOWN` set to cmark-gfm it renders tables.
+- **User guide** for the native preview: [docs/ai/user/markdown-preview.md](../user/markdown-preview.md).
 
 ## 3. Part B — Native preview pane
 

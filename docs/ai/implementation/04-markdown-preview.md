@@ -2,15 +2,16 @@
 title: Markdown Preview Pane
 status: in progress
 started: 2026-10-14
-updated: 2026-10-14
+updated: 2026-10-15
 tags: [textmate, implementation, markdown, preview]
 ---
 
 # Markdown Preview Pane
 
-**Status:** 🔄 In progress. P1 and P3 confirmed; P2 done; P4 done (2026-10-15), awaiting user test before P5.
+**Status:** 🔄 In progress. P1 and P3 confirmed; P2 done; P4 done, scrolling confirmed smooth (2026-10-15); P5 done (2026-10-15), awaiting user check.
 **Branch:** `feature/markdown-preview` (from `feature/agent`)
 **Plan:** [markdown-preview-plan.md](../plans/markdown-preview-plan.md)
+**User guide:** [markdown-preview.md](../user/markdown-preview.md)
 
 ## Goal
 A native Markdown preview docked beside the editor on any edge, with a built-in renderer and an optional GitHub renderer (cmark-gfm) that can be installed from the TextMate UI.
@@ -27,8 +28,8 @@ A native Markdown preview docked beside the editor on any edge, with a built-in 
 | P1. Shared editor panels container | ✅ Done, confirmed by the user (2026-10-15) |
 | P2. Shared Markdown renderer | ✅ Done (2026-10-15), awaiting user check |
 | P3. Preview pane, built-in renderer | ✅ Done, confirmed by the user (2026-10-15: "Works well") |
-| P4. Optional GitHub renderer | ✅ Done (2026-10-15), awaiting user test |
-| P5. Docs, tests, polish | ⏳ Not started |
+| P4. Optional GitHub renderer | ✅ Done (2026-10-15); scrolling confirmed by the user ("Much smoother now") |
+| P5. Docs, tests, polish | ✅ Done (2026-10-15), awaiting user check |
 
 ## P1 — Shared editor panels container
 
@@ -144,6 +145,20 @@ Not in P4: ⌘F find in the GitHub renderer; two-way scroll sync.
 ### Commits
 fe9b98ca cmark-gfm runner · 5d2557e9 HTML view · 8583da4b header, notices, install sheet · a300b4d2 GitHub renderer in the preview, Preferences
 
+## P5 — Docs, tests, polish
+
+- **User guide:** [docs/ai/user/markdown-preview.md](../user/markdown-preview.md): showing and placing the preview, the two renderers compared, installing cmark-gfm, raw HTML, `TM_MARKDOWN`, scrolling, links, the Markdown bundle's own preview, and the settings keys.
+- **Tests:** which documents count as Markdown and the GitHub renderer's read access folder were decided in the DocumentWindow category, which has no tests. They're now `MarkdownPreviewIsMarkdownDocument` and `MarkdownPreviewReadAccessURL` (`MarkdownPreviewDocument.{h,mm}`) with 2 tests. MarkdownPreview has 20 tests; ctest 28/28.
+- **Fixed:** a project path with a trailing slash didn't count as containing its documents, so local images were limited to the document's folder.
+- **Comments:** the scrolling comments still said the built-in renderer scrolls proportionally.
+- **Plan coverage check:** OakMarkdown renderer tests (16), container layout tests (11: each edge, minimum sizes, panels on both sides, two on one edge) and the cmark-gfm tests (skipped without cmark-gfm) were written in P1–P4.
+- **Part A to-do resolved:** the Markdown bundle's conversion runs with the `ruby18` shim (ruby 1.8.7 is installed in Application Support); with `TM_MARKDOWN` set to cmark-gfm it renders tables. Checked from the shell, not in the HTML output window.
+
+**To check (user):** read the [user guide](../user/markdown-preview.md) for anything unclear or wrong. The P4 list above (install sheet, GitHub rendering, Preferences) is still worth a run if not done yet.
+
+### Commits
+75a28e14 document checks in the framework, with tests · 442f736e used by the window
+
 ## Future work
 - [x] The `editorPanelsView` accessor lived in the agent category; moved to `DocumentWindowController+EditorPanels` (P3).
 - [ ] Save the preview's (and agent panel's) visibility in the session.
@@ -151,3 +166,4 @@ fe9b98ca cmark-gfm runner · 5d2557e9 HTML view · 8583da4b header, notices, ins
 - [x] Precise scroll sync by source line for the GitHub renderer (P4).
 - [x] Precise scroll sync for the built-in renderer (source positions from Foundation's parser).
 - [ ] ⌘F find in the GitHub renderer's web view.
+- [ ] **Revisit scroll smoothness** (user, 2026-10-15: "Much smoother now, make a note to revisit this later after completion and when doing UX"). With the UX pass at the end. Ideas: time-based easing toward the target; measure the GitHub renderer live (a probe that doesn't block the main queue); update the page's anchors when images finish loading; check the speed-up through paragraphs that are much taller in the preview than in the editor.
