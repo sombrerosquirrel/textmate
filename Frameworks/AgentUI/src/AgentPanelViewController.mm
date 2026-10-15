@@ -32,10 +32,12 @@ static NSString* StopReasonNotice (NSString* stopReason)
 @implementation AgentPanelBackgroundView
 - (BOOL)isOpaque { return YES; }
 
+// Views don’t clip to their bounds by default (macOS 14 SDK), and the dirty
+// rect can extend past them; filling all of it painted over the editor
 - (void)drawRect:(NSRect)rect
 {
 	[NSColor.tmSidebarBackgroundColor setFill];
-	NSRectFill(rect);
+	NSRectFill(NSIntersectionRect(rect, self.bounds));
 }
 @end
 
