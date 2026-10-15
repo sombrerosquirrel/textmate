@@ -86,6 +86,22 @@ function tmComputeAnchors () {
 	return anchors;
 }
 
+function tmCurrentAnchors () {
+	const key = document.documentElement.scrollHeight + "×" + window.innerWidth;
+	if(!tmAnchors || tmAnchorsKey != key) {
+		tmAnchors    = tmComputeAnchors();
+		tmAnchorsKey = key;
+	}
+	return tmAnchors;
+}
+
+// For the editor, which maps its scroll position to a line between two of these
+function tmAnchorLines () {
+	if(!document.querySelector("#content [data-sourcepos]"))
+		return [];
+	return tmCurrentAnchors().map(anchor => anchor.line);
+}
+
 // Scrolls so `line` of the source is at the top. Elements carry their source
 // lines as data-sourcepos="startLine:startColumn-endLine:endColumn"; between
 // the starts of two elements, the position is interpolated, so scrolling
@@ -95,13 +111,7 @@ function tmScrollTo (line, fraction) {
 	if(!document.querySelector("#content [data-sourcepos]"))
 		return window.scrollTo(0, fraction * maxY);
 
-	const key = document.documentElement.scrollHeight + "×" + window.innerWidth;
-	if(!tmAnchors || tmAnchorsKey != key) {
-		tmAnchors    = tmComputeAnchors();
-		tmAnchorsKey = key;
-	}
-
-	const anchors = tmAnchors;
+	const anchors = tmCurrentAnchors();
 	let lo = 0, hi = anchors.length - 1;
 	if(line >= anchors[hi].line)
 		return window.scrollTo(0, Math.min(anchors[hi].y, maxY));
@@ -229,7 +239,15 @@ static NSString* PathForPreviewURL (NSURL* url)
 
 - (void)pushContent
 {
-	[_webView callAsyncJavaScript:@"tmSetContent(html)" arguments:@{ @"html": _body ?: @"" } inFrame:nil inContentWorld:WKContentWorld.defaultClientWorld completionHandler:nil];
+	__weak MarkdownPreviewHTMLView* weakSelf = self;
+	[_webView callAsyncJavaScript:@"tmSetContent(html); return tmAnchorLines();" arguments:@{ @"html": _body ?: @"" } inFrame:nil inContentWorld:WKContentWorld.defaultClientWorld completionHandler:^(id result, NSError* error){
+		MarkdownPreviewHTMLView* strongSelf = weakSelf;
+		if(!strongSelf)
+			return;
+		strongSelf->_anchorLines = [result isKindOfClass:[NSArray class]] ? result : @[ ];
+		if([strongSelf.delegate respondsToSelector:@selector(HTMLViewDidUpdateAnchorLines:)])
+			[strongSelf.delegate HTMLViewDidUpdateAnchorLines:strongSelf];
+	}];
 	if(_hasScrollPosition)
 		[self scrollToSourceLine:_line fraction:_fraction];
 }

@@ -12,6 +12,7 @@
 - (void)markdownPreview:(MarkdownPreviewViewController*)preview openURL:(NSURL*)url;
 @optional
 - (void)markdownPreviewPerformNoticeAction:(MarkdownPreviewViewController*)preview;
+- (void)markdownPreviewDidUpdateAnchorLines:(MarkdownPreviewViewController*)preview; // re-sync the scroll position
 @end
 
 @interface MarkdownPreviewViewController : NSViewController
@@ -31,6 +32,11 @@
 // the HTML view uses it when the renderer gives source positions. The
 // built-in view scrolls by `fraction` (0 at the top, 1 at the bottom).
 - (void)scrollToSourceLine:(CGFloat)line fraction:(CGFloat)fraction;
+
+// Source lines whose position in the preview is known, ascending (empty if
+// none). Between two of them the preview interpolates, so the editor can map
+// its own position between the same lines by pixels, for even scrolling.
+@property (nonatomic, readonly) NSArray<NSNumber*>* anchorLines;
 
 @property (nonatomic, readonly) NSString* renderedText; // what’s shown, for tests
 @property (nonatomic, readonly) NSString* notice;       // for tests

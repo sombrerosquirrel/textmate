@@ -122,6 +122,13 @@ static void scrolls_to_source_line ()
 	};
 	auto scrollY = [&]() -> CGFloat { return NSMinY(textView.enclosingScrollView.contentView.bounds); };
 
+	// The editor maps its position between these lines
+	NSArray<NSNumber*>* anchorLines = preview.anchorLines;
+	OAK_ASSERT_EQ(anchorLines.firstObject.intValue, 1);
+	OAK_ASSERT([anchorLines containsObject:@101]);
+	for(NSUInteger i = 1; i < anchorLines.count; ++i)
+		OAK_ASSERT(anchorLines[i-1].doubleValue < anchorLines[i].doubleValue);
+
 	// Line 101 is paragraph 50: it should be at the top
 	[preview scrollToSourceLine:101 fraction:0];
 	OAK_ASSERT(fabs(scrollY() - topOfParagraph(50)) < 1);

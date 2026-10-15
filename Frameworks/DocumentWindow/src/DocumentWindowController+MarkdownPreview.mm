@@ -395,20 +395,55 @@ static OakEditorPanelEdge MarkdownPreviewEdge ()
 	CGFloat scrollable = NSHeight(scrollView.documentView.frame) - NSHeight(scrollView.contentView.bounds);
 	CGFloat fraction = scrollable > 0 ? top / scrollable : 0;
 
-	CGFloat line = 1;
 	CGFloat y = [textView convertPoint:NSMakePoint(0, top) fromView:scrollView.documentView].y;
+	[_preview scrollToSourceLine:[self sourceLineAtEditorY:y] fraction:fraction];
+}
+
+// The editor’s y where a 1-based source line starts; past the last line, the end of the text
+- (CGFloat)editorYForSourceLine:(NSUInteger)line
+{
+	OakTextView* textView = _controller.textView;
+	GVLineRecord record = [textView lineFragmentForLine:line - 1 column:0];
+	if(record.lineNumber == line - 1)
+		return record.firstY;
+	return [textView lineFragmentForLine:line - 1 column:NSUIntegerMax].lastY; // clamped to the last line
+}
+
+// A fractional source line for the editor’s y. Between the preview’s anchor
+// lines, it moves in proportion to the editor’s pixels rather than its lines:
+// a wrapped paragraph is one line but many rows, and the preview should
+// scroll through it as evenly as through short lines.
+- (CGFloat)sourceLineAtEditorY:(CGFloat)y
+{
+	OakTextView* textView = _controller.textView;
 	GVLineRecord record = [textView lineRecordForPosition:y];
-	if(record.lineNumber != NSNotFound)
-	{
-		// The record is for one soft-wrapped row; measure the whole line, so the fraction doesn’t restart on each row.
-		// The line ends where the next one starts (the last line: at the end of its last row).
-		CGFloat firstY = [textView lineFragmentForLine:record.lineNumber column:0].firstY;
-		GVLineRecord nextLine = [textView lineFragmentForLine:record.lineNumber + 1 column:0];
-		CGFloat lastY = nextLine.lineNumber == record.lineNumber + 1 ? nextLine.firstY : [textView lineFragmentForLine:record.lineNumber column:NSUIntegerMax].lastY;
-		CGFloat height = lastY - firstY;
-		line = record.lineNumber + 1 + (height > 0 ? MIN(MAX((y - firstY) / height, 0), 1) : 0);
-	}
-	[_preview scrollToSourceLine:line fraction:fraction];
+	if(record.lineNumber == NSNotFound)
+		return 1;
+
+	// The record is for one soft-wrapped row; measure the whole line, so the fraction doesn’t restart on each row
+	CGFloat firstY = [self editorYForSourceLine:record.lineNumber + 1];
+	CGFloat lastY  = [self editorYForSourceLine:record.lineNumber + 2];
+	CGFloat height = lastY - firstY;
+	CGFloat line   = record.lineNumber + 1 + (height > 0 ? MIN(MAX((y - firstY) / height, 0), 1) : 0);
+
+	NSArray<NSNumber*>* anchorLines = _preview.anchorLines;
+	NSUInteger next = [anchorLines indexOfObject:@(line) inSortedRange:NSMakeRange(0, anchorLines.count) options:NSBinarySearchingInsertionIndex|NSBinarySearchingLastEqual usingComparator:^NSComparisonResult(NSNumber* lhs, NSNumber* rhs){
+		return [lhs compare:rhs];
+	}];
+	if(next == 0 || next >= anchorLines.count)
+		return line;
+
+	CGFloat fromLine = anchorLines[next-1].doubleValue, toLine = anchorLines[next].doubleValue;
+	CGFloat fromY    = [self editorYForSourceLine:(NSUInteger)fromLine];
+	CGFloat toY      = [self editorYForSourceLine:(NSUInteger)toLine];
+	if(toY <= fromY || toLine <= fromLine)
+		return line;
+	return fromLine + (toLine - fromLine) * MIN(MAX((y - fromY) / (toY - fromY), 0), 1);
+}
+
+- (void)markdownPreviewDidUpdateAnchorLines:(MarkdownPreviewViewController*)preview
+{
+	[self editorDidScroll:nil];
 }
 
 // Web and mail links open in their apps; links to files open in TextMate

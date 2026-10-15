@@ -98,6 +98,20 @@ void test_scrolls_to_source_line ()
 	ShowHTML(view, html, nil, nil);
 	OAK_ASSERT(WaitFor(view, @"document.querySelectorAll('#content p').length == 100"));
 
+	// Reported for the editor once the content is shown
+	__block NSArray<NSNumber*>* anchorLines;
+	for(NSUInteger i = 0; i < 200 && anchorLines.count == 0; ++i)
+	{
+		dispatch_sync(dispatch_get_main_queue(), ^{
+			anchorLines = view.anchorLines;
+		});
+		if(anchorLines.count == 0)
+			usleep(50000);
+	}
+	OAK_ASSERT_EQ(anchorLines.count, 101); // line 1 (also paragraph 0), paragraphs 1–99, the end
+	OAK_ASSERT_EQ(anchorLines[1].intValue, 3);
+	OAK_ASSERT_EQ(anchorLines.lastObject.intValue, 200);
+
 	// Line 101 is paragraph 50: it should be at the top
 	dispatch_sync(dispatch_get_main_queue(), ^{
 		[view scrollToSourceLine:101 fraction:0];

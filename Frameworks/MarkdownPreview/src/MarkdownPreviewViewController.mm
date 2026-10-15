@@ -325,6 +325,28 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 	CGFloat bottom = NSHeight(_textView.frame);
 	if(_anchors.size() > 1 && bottom > _anchors.back().second)
 		_anchors.emplace_back(lastLine + 1, bottom);
+
+	if([self.delegate respondsToSelector:@selector(markdownPreviewDidUpdateAnchorLines:)])
+		[self.delegate markdownPreviewDidUpdateAnchorLines:self];
+}
+
+- (NSArray<NSNumber*>*)anchorLines
+{
+	if(self.showsHTML)
+		return _htmlView.anchorLines ?: @[ ];
+	if(_anchors.size() < 3)
+		return @[ ];
+
+	NSMutableArray* res = [NSMutableArray array];
+	for(auto const& anchor : _anchors)
+		[res addObject:@(anchor.first)];
+	return res;
+}
+
+- (void)HTMLViewDidUpdateAnchorLines:(MarkdownPreviewHTMLView*)view
+{
+	if([self.delegate respondsToSelector:@selector(markdownPreviewDidUpdateAnchorLines:)])
+		[self.delegate markdownPreviewDidUpdateAnchorLines:self];
 }
 
 - (void)scrollToSourceLine:(CGFloat)line fraction:(CGFloat)fraction
