@@ -177,6 +177,7 @@ static BOOL IsHorizontal (OakEditorPanelEdge edge)
 	[_panels addObject:panel];
 	panel.container = self;
 	panel.view.translatesAutoresizingMaskIntoConstraints    = NO;
+	panel.view.clipsToBounds = YES; // views don’t clip by default; a panel must never draw over the editor
 	panel.divider.translatesAutoresizingMaskIntoConstraints = NO;
 	[self addSubview:panel.divider];
 	[self addSubview:panel.view];

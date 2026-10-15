@@ -179,6 +179,13 @@ static void saved_size_keeps_editor_visible ()
 	OAK_ASSERT(Equal(h.editor.frame,   NSMakeRect(0, 450, 1000, 150)));
 }
 
+static void panels_clip_to_bounds ()
+{
+	host_t h;
+	OakEditorPanel* panel = h.add(OakEditorPanelEdgeRight, 300);
+	OAK_ASSERT(panel.view.clipsToBounds);
+}
+
 void test_editor_alone () { RunOnMainThread(editor_alone); }
 void test_saved_size_keeps_editor_visible () { RunOnMainThread(saved_size_keeps_editor_visible); }
 void test_right_panel () { RunOnMainThread(right_panel); }
@@ -189,3 +196,4 @@ void test_same_edge_outermost_first () { RunOnMainThread(same_edge_outermost_fir
 void test_editor_minimum_wins () { RunOnMainThread(editor_minimum_wins); }
 void test_minimum_size () { RunOnMainThread(minimum_size); }
 void test_autosave_name () { RunOnMainThread(autosave_name); }
+void test_panels_clip_to_bounds () { RunOnMainThread(panels_clip_to_bounds); }
