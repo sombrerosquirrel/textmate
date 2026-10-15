@@ -23,7 +23,7 @@ Each phase of work has its own document, created when the phase starts and updat
 | M3. Tools: files, permissions, diff review, terminal | — | ⏳ Not started |
 | M4. Preferences, Keychain, session history, MCP | — | ⏳ Not started |
 | M5. Polish, inline chat, docs, `pr/agent` port | — | ⏳ Not started |
-| Markdown preview pane (P1–P5) | [04-markdown-preview.md](04-markdown-preview.md) | 🔄 In progress: P1 done, being tested by the user |
+| Markdown preview pane (P1–P5) | [04-markdown-preview.md](04-markdown-preview.md) | 🔄 In progress: P1 done and confirmed (2026-10-15); P2 started |
 
 ## Current state (2026-10-14)
 
@@ -41,3 +41,4 @@ Work not yet assigned to a phase document. Items move into a phase document when
 - [ ] **M5 — Polish:** theme colours and syntax-highlighted code blocks, inline chat at the caret, error states, log view, user documentation, `pr/agent` port onto `master`.
 - [ ] Fix the commit grouping on `feature/agent`: 7723847e deletes the M1 debug window files while AppController still references them until d6d22909, so 7723847e alone doesn't build. Needs a force-push; awaiting the user's decision.
 - [ ] Optional clean-up: delete upstream's leftover branches on the fork (`10_7`, `gh-pages`, `no-copy-of-scopes`) and local `backup/pre-trailer-removal/*` branches and `refs/original`.
+- [ ] **Agent panel UX pass** (user, 2026-10-15: "ux of the panel needs some work but we'll tackle that at the end"). Scheduled after the Markdown preview and M3–M4; collect specifics from the user then.

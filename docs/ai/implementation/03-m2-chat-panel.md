@@ -62,3 +62,4 @@ Defaults: `agentPanelPlacement` (right), `agentPanelWidth` (380), `agentPanelAge
 ## Future work
 - [ ] Commit 7723847e alone doesn't build (it removes the debug window files that AppController references until d6d22909). Regrouping needs a force-push of `feature/agent`; awaiting the user's decision.
 - [ ] Exact theme colours and syntax-highlighted code blocks (M5).
+- [ ] **Agent panel UX pass** (user, 2026-10-15: "ux of the panel needs some work but we'll tackle that at the end"). Scheduled after the Markdown preview and M3–M4; collect specifics from the user then.

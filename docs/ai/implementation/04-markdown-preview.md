@@ -8,7 +8,7 @@ tags: [textmate, implementation, markdown, preview]
 
 # Markdown Preview Pane
 
-**Status:** 🔄 In progress. P1 done; waiting for the user to test before P2.
+**Status:** 🔄 In progress. P1 confirmed by the user (2026-10-15); P2 in progress.
 **Branch:** `feature/markdown-preview` (from `feature/agent`)
 **Plan:** [markdown-preview-plan.md](../plans/markdown-preview-plan.md)
 
@@ -24,8 +24,8 @@ A native Markdown preview docked beside the editor on any edge, with a built-in 
 
 | Phase | Status |
 |---|---|
-| P1. Shared editor panels container | ✅ Done (2026-10-14), awaiting user test |
-| P2. Shared Markdown renderer | ⏳ Not started |
+| P1. Shared editor panels container | ✅ Done, confirmed by the user (2026-10-15) |
+| P2. Shared Markdown renderer | 🔄 In progress |
 | P3. Preview pane, built-in renderer | ⏳ Not started |
 | P4. Optional GitHub renderer | ⏳ Not started |
 | P5. Docs, tests, polish | ⏳ Not started |
