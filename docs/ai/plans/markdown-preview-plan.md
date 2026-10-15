@@ -51,7 +51,7 @@ How to use what's there today:
 - Nesting: top/bottom panels span the editor column only. For example, `file browser | [preview | editor | chat]`, or `file browser | [editor over preview | chat]`.
 
 ### P2 — Shared Markdown renderer
-- Extract `AgentMarkdownRenderer` / `AgentMarkdownStyle` (`Frameworks/AgentUI/src/AgentMarkdown.{h,mm}`) into a framework both features use (e.g. `Frameworks/OakMarkdown`). AgentUI uses it from there.
+- Extract `AgentMarkdownRenderer` / `AgentMarkdownStyle` (`Frameworks/AgentUI/src/AgentMarkdown.{h,mm}`) into a framework both features use (`Frameworks/OakMarkdown`, done). AgentUI uses it from there.
 - Additions a document preview needs:
   - Local images resolved relative to the file (NSTextAttachment, scaled to the pane width).
   - Task-list markers (☐ / ☑) where Apple's parser exposes them.

@@ -8,7 +8,7 @@ tags: [textmate, implementation, markdown, preview]
 
 # Markdown Preview Pane
 
-**Status:** 🔄 In progress. P1 confirmed by the user (2026-10-15); P2 in progress.
+**Status:** 🔄 In progress. P1 confirmed (2026-10-15); P2 done, awaiting user check before P3.
 **Branch:** `feature/markdown-preview` (from `feature/agent`)
 **Plan:** [markdown-preview-plan.md](../plans/markdown-preview-plan.md)
 
@@ -25,7 +25,7 @@ A native Markdown preview docked beside the editor on any edge, with a built-in 
 | Phase | Status |
 |---|---|
 | P1. Shared editor panels container | ✅ Done, confirmed by the user (2026-10-15) |
-| P2. Shared Markdown renderer | 🔄 In progress |
+| P2. Shared Markdown renderer | ✅ Done (2026-10-15), awaiting user check |
 | P3. Preview pane, built-in renderer | ⏳ Not started |
 | P4. Optional GitHub renderer | ⏳ Not started |
 | P5. Docs, tests, polish | ⏳ Not started |
@@ -53,6 +53,35 @@ Tests run on the main thread (`RunOnMainThread` in `t_editor_panels.mm`), becaus
 
 ### Commits
 dca8eb08 OakEditorPanels framework · c67c610d agent panel hosted in it · 7b0f2cc3 minimum editor size · be2e00a6 clip panels
+
+## P2 — Shared Markdown renderer
+
+`Frameworks/OakMarkdown` (15 tests) holds the renderer used by the agent chat and, from P3, the preview. `AgentMarkdown*` became `OakMarkdown*` (`OakMarkdownStyle`, `OakMarkdownRenderer`, `OakMarkdownCodeBlock`, `OakMarkdownCodeBlockAttributeName`); AgentUI links it.
+
+Added for documents:
+
+| Feature | How |
+|---|---|
+| Relative links and images | New `baseURL:` parameter (the document's file URL); links are stored as absolute URLs. |
+| Local images | `NSTextAttachment`, scaled down to `style.maximumImageWidth` keeping the aspect ratio; alt text as tooltip. |
+| Remote or missing images | Never fetched (previewing a file doesn't reach the network); shown as `[alt]` linking to the image URL. |
+| Task lists | `- [ ]` / `- [x]` become ☐ / ☑. Foundation's parser doesn't support them and leaves the marker in the text. |
+| Horizontal rules | A full-width 1 pt line (bottom border of a text block). |
+
+Found and fixed along the way (also affect agent chat):
+- Horizontal rules showed `⸻⸻`: the parser emits its own ⸻ and the renderer added another.
+- Block quotes collapsed to one character per line: their text block had no width.
+- Code backgrounds weren't drawn: a system colour made translucent with `colorWithAlphaComponent:` isn't drawn as a text block background. Now an explicit light/dark colour.
+- Intermittent crash when rendering on several threads (seen as a flaky OakMarkdown test run): the named dynamic code colour was created on every call, and creating it concurrently corrupts memory. Now created once. Bold/italic use font descriptors instead of `NSFontManager` (main thread only). Verified with a 20,000-document concurrent stress tool; a unit test couldn't reproduce the race.
+
+Checked visually by rendering a sample document offscreen (headings, inline styles, task list, rule, local and remote image, quote, table, code block).
+
+Not supported by the built-in renderer (as planned; the GitHub renderer in P4 covers them): raw HTML (shown as text), footnotes.
+
+**To test (user):** the preview pane comes in P3. Meanwhile the agent chat uses the new renderer: ask the agent for a reply with a block quote, a code block, a task list, a table and a horizontal rule.
+
+### Commits
+b4ef2342 move to OakMarkdown · 79aa34e9 images, task lists, rules, base URL · 2377dd86 concurrent rendering crash
 
 ## Future work
 - [ ] The `editorPanelsView` accessor lives in the agent category; move it somewhere shared when the preview category is added (P3).
