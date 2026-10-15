@@ -1,14 +1,14 @@
-#import "AgentMarkdown.h"
+#import "OakMarkdown.h"
 
-NSAttributedStringKey const AgentCodeBlockAttributeName = @"AgentCodeBlock";
+NSAttributedStringKey const OakMarkdownCodeBlockAttributeName = @"OakMarkdownCodeBlock";
 
 static CGFloat const kListIndent  = 18;
 static CGFloat const kQuoteIndent = 12;
 
-@implementation AgentMarkdownStyle
+@implementation OakMarkdownStyle
 + (instancetype)defaultStyle
 {
-	AgentMarkdownStyle* style = [[self alloc] init];
+	OakMarkdownStyle* style = [[self alloc] init];
 	style.font                = [NSFont systemFontOfSize:NSFont.systemFontSize];
 	style.codeFont            = [NSFont monospacedSystemFontOfSize:NSFont.systemFontSize - 1 weight:NSFontWeightRegular];
 	style.textColor           = NSColor.labelColor;
@@ -19,12 +19,12 @@ static CGFloat const kQuoteIndent = 12;
 }
 @end
 
-@interface AgentMarkdownCodeBlock ()
+@interface OakMarkdownCodeBlock ()
 @property (nonatomic, readwrite) NSString* code;
 @property (nonatomic, readwrite) NSString* language;
 @end
 
-@implementation AgentMarkdownCodeBlock
+@implementation OakMarkdownCodeBlock
 @end
 
 namespace
@@ -71,7 +71,7 @@ namespace
 
 	struct renderer_t
 	{
-		renderer_t (AgentMarkdownStyle* style, NSAttributedString*(^footer)(NSUInteger)) : style(style), footer(footer)
+		renderer_t (OakMarkdownStyle* style, NSAttributedString*(^footer)(NSUInteger)) : style(style), footer(footer)
 		{
 			output     = [[NSMutableAttributedString alloc] init];
 			codeBlocks = [NSMutableArray array];
@@ -109,7 +109,7 @@ namespace
 			return output;
 		}
 
-		NSMutableArray<AgentMarkdownCodeBlock*>* codeBlocks;
+		NSMutableArray<OakMarkdownCodeBlock*>* codeBlocks;
 
 	private:
 		void append (NSString* text, NSDictionary* attributes)
@@ -230,7 +230,7 @@ namespace
 			if(!currentCode || (next.codeBlock && next.codeBlock.identity == currentCodeIdentity))
 				return;
 
-			AgentMarkdownCodeBlock* codeBlock = [[AgentMarkdownCodeBlock alloc] init];
+			OakMarkdownCodeBlock* codeBlock = [[OakMarkdownCodeBlock alloc] init];
 			codeBlock.code     = currentCode;
 			codeBlock.language = currentLanguage;
 			[codeBlocks addObject:codeBlock];
@@ -277,7 +277,7 @@ namespace
 			}];
 
 			if(block.codeBlock)
-				res[AgentCodeBlockAttributeName] = @(codeBlocks.count);
+				res[OakMarkdownCodeBlockAttributeName] = @(codeBlocks.count);
 			else if(inlineIntent & NSInlinePresentationIntentCode)
 				res[NSBackgroundColorAttributeName] = style.codeBackgroundColor;
 			if(inlineIntent & NSInlinePresentationIntentStrikethrough)
@@ -287,7 +287,7 @@ namespace
 			return res;
 		}
 
-		AgentMarkdownStyle* style;
+		OakMarkdownStyle* style;
 		NSAttributedString*(^footer)(NSUInteger);
 		NSMutableAttributedString* output;
 		NSParagraphStyle* paragraphStyle = [NSParagraphStyle defaultParagraphStyle];
@@ -305,14 +305,14 @@ namespace
 	};
 }
 
-@implementation AgentMarkdownRenderer
-+ (NSAttributedString*)attributedStringFromMarkdown:(NSString*)markdown style:(AgentMarkdownStyle*)style codeBlocks:(NSArray<AgentMarkdownCodeBlock*>**)codeBlocks codeBlockFooter:(NSAttributedString*(^)(NSUInteger index))codeBlockFooter
+@implementation OakMarkdownRenderer
++ (NSAttributedString*)attributedStringFromMarkdown:(NSString*)markdown style:(OakMarkdownStyle*)style codeBlocks:(NSArray<OakMarkdownCodeBlock*>**)codeBlocks codeBlockFooter:(NSAttributedString*(^)(NSUInteger index))codeBlockFooter
 {
 	NSAttributedStringMarkdownParsingOptions* options = [[NSAttributedStringMarkdownParsingOptions alloc] init];
 	options.interpretedSyntax = NSAttributedStringMarkdownInterpretedSyntaxFull;
 	options.failurePolicy     = NSAttributedStringMarkdownParsingFailureReturnPartiallyParsedIfPossible;
 
-	style = style ?: [AgentMarkdownStyle defaultStyle];
+	style = style ?: [OakMarkdownStyle defaultStyle];
 	renderer_t renderer(style, codeBlockFooter);
 	renderer_t* rendererPtr = &renderer; // blocks would capture the C++ object by copy
 

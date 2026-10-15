@@ -1,5 +1,5 @@
 #import "AgentTranscriptView.h"
-#import "AgentMarkdown.h"
+#import <OakMarkdown/OakMarkdown.h>
 #import <OakAppKit/NSColor Additions.h>
 
 static NSString* const kActionScheme      = @"textmate-agent";
@@ -41,9 +41,9 @@ static NSString* PathFromURI (NSString* uri)
 {
 	NSMutableDictionary<NSString*, NSNumber*>* _renderedLengths;
 	NSMutableSet<NSString*>* _pendingIdentifiers;
-	NSMutableDictionary<NSString*, NSArray<AgentMarkdownCodeBlock*>*>* _codeBlocks;
+	NSMutableDictionary<NSString*, NSArray<OakMarkdownCodeBlock*>*>* _codeBlocks;
 	BOOL _flushScheduled;
-	AgentMarkdownStyle* _markdownStyle;
+	OakMarkdownStyle* _markdownStyle;
 }
 @end
 
@@ -84,7 +84,7 @@ static NSString* PathFromURI (NSString* uri)
 		_renderedLengths     = [NSMutableDictionary dictionary];
 		_pendingIdentifiers  = [NSMutableSet set];
 		_codeBlocks          = [NSMutableDictionary dictionary];
-		_markdownStyle       = [AgentMarkdownStyle defaultStyle];
+		_markdownStyle       = [OakMarkdownStyle defaultStyle];
 
 		self.editable           = NO;
 		self.selectable         = YES;
@@ -276,8 +276,8 @@ static NSString* PathFromURI (NSString* uri)
 
 - (void)renderAgentItem:(AgentTranscriptItem*)item into:(NSMutableAttributedString*)res
 {
-	NSArray<AgentMarkdownCodeBlock*>* codeBlocks;
-	NSAttributedString* rendered = [AgentMarkdownRenderer attributedStringFromMarkdown:item.text style:_markdownStyle codeBlocks:&codeBlocks codeBlockFooter:^NSAttributedString*(NSUInteger index){
+	NSArray<OakMarkdownCodeBlock*>* codeBlocks;
+	NSAttributedString* rendered = [OakMarkdownRenderer attributedStringFromMarkdown:item.text style:_markdownStyle codeBlocks:&codeBlocks codeBlockFooter:^NSAttributedString*(NSUInteger index){
 		NSMutableAttributedString* footer = [[NSMutableAttributedString alloc] init];
 		NSDictionary* parameters = @{ @"block": [NSString stringWithFormat:@"%lu", index] };
 		[footer appendAttributedString:[self link:@"Copy" url:[self actionURL:@"copy" item:item parameters:parameters]]];
@@ -379,7 +379,7 @@ static NSString* PathFromURI (NSString* uri)
 
 	if([action isEqualToString:@"copy"] || [action isEqualToString:@"insert"])
 	{
-		NSArray<AgentMarkdownCodeBlock*>* codeBlocks = _codeBlocks[parameters[@"item"]];
+		NSArray<OakMarkdownCodeBlock*>* codeBlocks = _codeBlocks[parameters[@"item"]];
 		NSUInteger index = parameters[@"block"].integerValue;
 		if(index >= codeBlocks.count)
 			return YES;

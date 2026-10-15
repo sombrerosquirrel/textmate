@@ -1,11 +1,11 @@
-// Renders Markdown from agents into an attributed string for a TextKit 1 text
-// view: headings, paragraphs, (nested) lists, code blocks, block quotes,
-// tables, and inline emphasis, code, strikethrough and links.
+// Renders Markdown into an attributed string for a TextKit 1 text view (agent
+// chat, Markdown preview): headings, paragraphs, (nested) lists, code blocks,
+// block quotes, tables, and inline emphasis, code, strikethrough and links.
 //
 // Foundation’s parser only labels block structure (NSPresentationIntent); this
 // turns those labels into separators, indentation, fonts and text blocks.
 
-@interface AgentMarkdownStyle : NSObject
+@interface OakMarkdownStyle : NSObject
 @property (nonatomic) NSFont* font;
 @property (nonatomic) NSFont* codeFont;
 @property (nonatomic) NSColor* textColor;
@@ -15,16 +15,16 @@
 + (instancetype)defaultStyle;
 @end
 
-@interface AgentMarkdownCodeBlock : NSObject
+@interface OakMarkdownCodeBlock : NSObject
 @property (nonatomic, readonly) NSString* code;
 @property (nonatomic, readonly) NSString* language; // nil if the fence has no language
 @end
 
 // Marks every character of a rendered code block; value is the block’s index (NSNumber).
-extern NSAttributedStringKey const AgentCodeBlockAttributeName;
+extern NSAttributedStringKey const OakMarkdownCodeBlockAttributeName;
 
-@interface AgentMarkdownRenderer : NSObject
+@interface OakMarkdownRenderer : NSObject
 // `codeBlockFooter`, if given, is called after each code block and its result
 // appended on the following line (e.g. Copy / Insert action links).
-+ (NSAttributedString*)attributedStringFromMarkdown:(NSString*)markdown style:(AgentMarkdownStyle*)style codeBlocks:(NSArray<AgentMarkdownCodeBlock*>**)codeBlocks codeBlockFooter:(NSAttributedString*(^)(NSUInteger index))codeBlockFooter;
++ (NSAttributedString*)attributedStringFromMarkdown:(NSString*)markdown style:(OakMarkdownStyle*)style codeBlocks:(NSArray<OakMarkdownCodeBlock*>**)codeBlocks codeBlockFooter:(NSAttributedString*(^)(NSUInteger index))codeBlockFooter;
 @end

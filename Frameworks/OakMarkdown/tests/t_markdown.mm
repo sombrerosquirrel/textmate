@@ -1,8 +1,8 @@
-#import <AgentUI/AgentMarkdown.h>
+#import <OakMarkdown/OakMarkdown.h>
 
-static NSAttributedString* Render (NSString* markdown, NSArray<AgentMarkdownCodeBlock*>** codeBlocks = nullptr, NSAttributedString*(^footer)(NSUInteger) = nil)
+static NSAttributedString* Render (NSString* markdown, NSArray<OakMarkdownCodeBlock*>** codeBlocks = nullptr, NSAttributedString*(^footer)(NSUInteger) = nil)
 {
-	return [AgentMarkdownRenderer attributedStringFromMarkdown:markdown style:[AgentMarkdownStyle defaultStyle] codeBlocks:codeBlocks codeBlockFooter:footer];
+	return [OakMarkdownRenderer attributedStringFromMarkdown:markdown style:[OakMarkdownStyle defaultStyle] codeBlocks:codeBlocks codeBlockFooter:footer];
 }
 
 static std::string S (NSString* str)
@@ -59,7 +59,7 @@ void test_lists ()
 
 void test_code_block ()
 {
-	NSArray<AgentMarkdownCodeBlock*>* codeBlocks;
+	NSArray<OakMarkdownCodeBlock*>* codeBlocks;
 	NSAttributedString* str = Render(@"Text\n\n```swift\nlet x = 1\nprint(x)\n```\n\nAfter", &codeBlocks);
 
 	OAK_ASSERT_EQ(String(str), "Text\nlet x = 1\nprint(x)\nAfter");
@@ -68,16 +68,16 @@ void test_code_block ()
 	OAK_ASSERT_EQ(S(codeBlocks[0].language), "swift");
 
 	NSUInteger index = [str.string rangeOfString:@"print"].location;
-	OAK_ASSERT([[str attribute:AgentCodeBlockAttributeName atIndex:index effectiveRange:nullptr] isEqual:@0]);
+	OAK_ASSERT([[str attribute:OakMarkdownCodeBlockAttributeName atIndex:index effectiveRange:nullptr] isEqual:@0]);
 	OAK_ASSERT(IsMonospace(FontAt(str, @"print")));
 	OAK_ASSERT_EQ(ParagraphStyleAt(str, @"print").textBlocks.count, 1);
 	OAK_ASSERT(ParagraphStyleAt(str, @"let").textBlocks.firstObject == ParagraphStyleAt(str, @"print").textBlocks.firstObject);
-	OAK_ASSERT([str attribute:AgentCodeBlockAttributeName atIndex:[str.string rangeOfString:@"After"].location effectiveRange:nullptr] == nil);
+	OAK_ASSERT([str attribute:OakMarkdownCodeBlockAttributeName atIndex:[str.string rangeOfString:@"After"].location effectiveRange:nullptr] == nil);
 }
 
 void test_code_block_footer ()
 {
-	NSArray<AgentMarkdownCodeBlock*>* codeBlocks;
+	NSArray<OakMarkdownCodeBlock*>* codeBlocks;
 	NSAttributedString* str = Render(@"```\none\n```\n\n```\ntwo\n```\n\nEnd", &codeBlocks, ^NSAttributedString*(NSUInteger index){
 		return [[NSAttributedString alloc] initWithString:[NSString stringWithFormat:@"Copy %lu", index]];
 	});
@@ -90,7 +90,7 @@ void test_code_block_footer ()
 void test_unterminated_code_fence ()
 {
 	// While streaming, the closing fence hasn’t arrived yet
-	NSArray<AgentMarkdownCodeBlock*>* codeBlocks;
+	NSArray<OakMarkdownCodeBlock*>* codeBlocks;
 	NSAttributedString* str = Render(@"Here:\n\n```py\nprint(1)", &codeBlocks);
 	OAK_ASSERT_EQ(String(str), "Here:\nprint(1)");
 	OAK_ASSERT_EQ(codeBlocks.count, 1);
