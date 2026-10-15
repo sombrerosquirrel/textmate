@@ -1,6 +1,7 @@
 #import "OakMarkdown.h"
 
 NSAttributedStringKey const OakMarkdownCodeBlockAttributeName = @"OakMarkdownCodeBlock";
+NSAttributedStringKey const OakMarkdownSourceLineAttributeName = @"OakMarkdownSourceLine";
 
 static CGFloat const kListIndent  = 18;
 static CGFloat const kQuoteIndent = 12;
@@ -101,6 +102,7 @@ namespace
 		void append_run (NSString* text, NSDictionary* attributes)
 		{
 			block_info_t block(attributes[NSPresentationIntentAttributeName]);
+			droppedPrefix = 0;
 
 			if(block.identity != lastIdentity)
 			{
@@ -113,6 +115,7 @@ namespace
 					{
 						taskState = mark == ' ' ? kTaskOpen : kTaskDone;
 						text = [text substringFromIndex:4];
+						droppedPrefix = 4;
 					}
 				}
 
@@ -123,6 +126,7 @@ namespace
 				lastIdentity = block.identity;
 			}
 
+			textStart = output.length;
 			if(block.thematicBreak)
 				return append(@" ", @{ NSParagraphStyleAttributeName: paragraphStyle, NSFontAttributeName: [NSFont systemFontOfSize:1] });
 
@@ -140,7 +144,17 @@ namespace
 			append(text, inline_attributes(attributes, block));
 		}
 
-		NSAttributedString* finish ()
+		NSUInteger length () const
+		{
+			return output.length;
+		}
+
+		// For the last run: where its text starts in the output, after
+		// separators and list markers, and how much of its start was dropped
+		NSUInteger textStart     = 0;
+		NSUInteger droppedPrefix = 0;
+
+		NSMutableAttributedString* finish ()
 		{
 			finish_code_block_if_needed(block_info_t(nil));
 			return output;
@@ -402,6 +416,7 @@ namespace
 	NSAttributedStringMarkdownParsingOptions* options = [[NSAttributedStringMarkdownParsingOptions alloc] init];
 	options.interpretedSyntax = NSAttributedStringMarkdownInterpretedSyntaxFull;
 	options.failurePolicy     = NSAttributedStringMarkdownParsingFailureReturnPartiallyParsedIfPossible;
+	options.appliesSourcePositionAttributes = style.marksSourceLines;
 
 	style = style ?: [OakMarkdownStyle defaultStyle];
 	renderer_t renderer(style, codeBlockFooter);
@@ -415,11 +430,45 @@ namespace
 		return [[NSAttributedString alloc] initWithString:markdown attributes:@{ NSFontAttributeName: style.font, NSForegroundColorAttributeName: style.textColor }];
 	}
 
+	// Source positions split the text into many small runs; take them out so
+	// the renderer sees the same runs as without them
+	std::vector<std::pair<NSUInteger, NSInteger>> sourceLines; // parsed index → line
+	if(style.marksSourceLines)
+	{
+		NSMutableAttributedString* stripped = [parsed mutableCopy];
+		auto sourceLinesPtr = &sourceLines;
+		[parsed enumerateAttribute:NSMarkdownSourcePositionAttributeName inRange:NSMakeRange(0, parsed.length) options:0 usingBlock:^(NSAttributedStringMarkdownSourcePosition* position, NSRange range, BOOL* stop){
+			if(position && (sourceLinesPtr->empty() || position.startLine > sourceLinesPtr->back().second))
+				sourceLinesPtr->emplace_back(range.location, position.startLine);
+		}];
+		[stripped removeAttribute:NSMarkdownSourcePositionAttributeName range:NSMakeRange(0, stripped.length)];
+		parsed = stripped;
+	}
+
+	// Where each run of the parsed string ended up in the output
+	struct run_t { NSRange parsed; NSUInteger textStart; NSUInteger droppedPrefix; NSUInteger outputEnd; };
+	std::vector<run_t> runs;
+	auto runsPtr = &runs;
 	[parsed enumerateAttributesInRange:NSMakeRange(0, parsed.length) options:0 usingBlock:^(NSDictionary<NSAttributedStringKey, id>* attributes, NSRange range, BOOL* stop){
 		rendererPtr->append_run([parsed.string substringWithRange:range], attributes);
+		runsPtr->push_back({ range, rendererPtr->textStart, rendererPtr->droppedPrefix, rendererPtr->length() });
 	}];
 
-	NSAttributedString* res = renderer.finish();
+	NSMutableAttributedString* res = renderer.finish();
+	auto run = runs.begin();
+	for(auto const& [index, line] : sourceLines)
+	{
+		while(run != runs.end() && NSMaxRange(run->parsed) <= index)
+			++run;
+		if(run == runs.end())
+			break;
+
+		NSUInteger offset = index - run->parsed.location;
+		NSUInteger outputIndex = run->textStart + (offset > run->droppedPrefix ? offset - run->droppedPrefix : 0);
+		if(outputIndex < MIN(run->outputEnd, res.length))
+			[res addAttribute:OakMarkdownSourceLineAttributeName value:@(line) range:NSMakeRange(outputIndex, 1)];
+	}
+
 	if(codeBlocks)
 		*codeBlocks = [renderer.codeBlocks copy];
 	return res;

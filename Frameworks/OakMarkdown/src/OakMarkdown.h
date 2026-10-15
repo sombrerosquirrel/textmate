@@ -14,6 +14,7 @@
 @property (nonatomic) NSColor* codeBackgroundColor;
 @property (nonatomic) NSColor* borderColor;
 @property (nonatomic) CGFloat maximumImageWidth; // local images are scaled down to fit; 0 for no limit
+@property (nonatomic) BOOL marksSourceLines;      // add OakMarkdownSourceLineAttributeName, e.g. for scroll sync
 + (instancetype)defaultStyle;
 @end
 
@@ -24,6 +25,10 @@
 
 // Marks every character of a rendered code block; value is the block’s index (NSNumber).
 extern NSAttributedStringKey const OakMarkdownCodeBlockAttributeName;
+
+// With `marksSourceLines`: on the first character rendered from a source line
+// that starts a run of text; value is the 1-based line (NSNumber).
+extern NSAttributedStringKey const OakMarkdownSourceLineAttributeName;
 
 @interface OakMarkdownRenderer : NSObject
 // `codeBlockFooter`, if given, is called after each code block and its result

@@ -240,3 +240,29 @@ void test_block_quote_width ()
 	OAK_ASSERT_EQ([quote valueForDimension:NSTextBlockWidth], 100);
 	OAK_ASSERT([quote valueTypeForDimension:NSTextBlockWidth] == NSTextBlockPercentageValueType);
 }
+
+static std::string SourceLines (NSAttributedString* str)
+{
+	__block std::string res;
+	[str enumerateAttribute:OakMarkdownSourceLineAttributeName inRange:NSMakeRange(0, str.length) options:0 usingBlock:^(NSNumber* line, NSRange range, BOOL* stop){
+		if(line)
+			res += std::to_string(line.intValue) + ":" + S([str.string substringWithRange:NSMakeRange(range.location, 1)]) + " ";
+	}];
+	return res;
+}
+
+void test_source_lines ()
+{
+	NSString* markdown = @"# Title\n\nSome *text* and a [link](x) on\nthree lines\nhere.\n\n- [ ] task\n- [x] done\n\n```\ncode\n```\n\n> quote\n";
+
+	OakMarkdownStyle* style = [OakMarkdownStyle defaultStyle];
+	style.marksSourceLines = YES;
+	NSAttributedString* marked = [OakMarkdownRenderer attributedStringFromMarkdown:markdown style:style baseURL:nil codeBlocks:nullptr codeBlockFooter:nil];
+
+	// The same text as without source lines, e.g. task markers still recognized
+	OAK_ASSERT_EQ(String(marked), String(Render(markdown)));
+	OAK_ASSERT_EQ(SourceLines(marked), "1:T 3:S 4:t 5:h 7:t 8:d 10:c 14:q ");
+
+	// Off by default
+	OAK_ASSERT_EQ(SourceLines(Render(markdown)), "");
+}
