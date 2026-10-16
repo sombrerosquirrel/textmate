@@ -1,4 +1,5 @@
 #import "AgentPromptView.h"
+#import "AgentCommandList.h"
 
 static CGFloat const kMinTextHeight = 28;
 static CGFloat const kMaxTextHeight = 180;
@@ -30,25 +31,6 @@ static NSUInteger const kMaxHistory = 50;
 	NSPoint origin = self.textContainerOrigin;
 	origin.x += self.textContainer.lineFragmentPadding;
 	[_promptPlaceholder drawAtPoint:origin withAttributes:@{ NSFontAttributeName: self.font ?: [NSFont systemFontOfSize:NSFont.systemFontSize], NSForegroundColorAttributeName: NSColor.placeholderTextColor }];
-}
-
-// Include the leading “/” so slash commands complete as one word
-- (NSRange)rangeForUserCompletion
-{
-	NSString* str = self.string;
-	NSRange selection = self.selectedRange;
-	if([str hasPrefix:@"/"] && selection.length == 0 && [str rangeOfCharacterFromSet:NSCharacterSet.whitespaceAndNewlineCharacterSet options:0 range:NSMakeRange(0, selection.location)].location == NSNotFound)
-		return NSMakeRange(0, selection.location);
-	return [super rangeForUserCompletion];
-}
-
-// ↩ in the completion list closes it and sends the prompt, as ↩ does without
-// the list; ⇥ picks a completion without sending
-- (void)insertCompletion:(NSString*)word forPartialWordRange:(NSRange)charRange movement:(NSInteger)movement isFinal:(BOOL)flag
-{
-	[super insertCompletion:word forPartialWordRange:charRange movement:movement isFinal:flag];
-	if(flag && movement == NSTextMovementReturn)
-		[self doCommandBySelector:@selector(insertNewline:)];
 }
 
 - (NSArray<NSURL*>*)fileURLsFromDraggingInfo:(id<NSDraggingInfo>)sender
@@ -91,7 +73,7 @@ static NSUInteger const kMaxHistory = 50;
 	NSMutableArray<NSString*>* _history;
 	NSInteger _historyIndex;
 	NSString* _draftBeforeHistory;
-	BOOL _completing;
+	AgentCommandList* _commandList;
 
 	NSStackView* _chipsView;
 	NSScrollView* _textScrollView;
@@ -147,6 +129,12 @@ static NSUInteger const kMaxHistory = 50;
 		_textView.delegate = self;
 		_textView.owner    = self;
 		_textScrollView.documentView = _textView;
+
+		__weak AgentPromptView* weakSelf = self;
+		_commandList = [[AgentCommandList alloc] init];
+		_commandList.clickHandler = ^(NSDictionary* command){
+			[weakSelf completeCommand:command trailingSpace:YES];
+		};
 
 		_addContextButton = [NSButton buttonWithImage:[NSImage imageWithSystemSymbolName:@"plus" accessibilityDescription:@"Add Context"] target:self action:@selector(showAddContextMenu:)];
 		_addContextButton.bordered = NO;
@@ -205,6 +193,7 @@ static NSUInteger const kMaxHistory = 50;
 
 - (void)setText:(NSString*)text
 {
+	[_commandList close];
 	_textView.string = text ?: @"";
 	_textView.selectedRange = NSMakeRange(_textView.string.length, 0);
 	[self updateTextHeight];
@@ -344,6 +333,7 @@ static NSUInteger const kMaxHistory = 50;
 
 - (void)submit
 {
+	[_commandList close];
 	if(!_enabled || _working || (!self.text.length && !_attachments.count))
 		return;
 	[_delegate promptViewDidSubmit:self];
@@ -393,6 +383,31 @@ static NSUInteger const kMaxHistory = 50;
 
 - (BOOL)textView:(NSTextView*)textView doCommandBySelector:(SEL)selector
 {
+	// With the slash command list showing: ↩ sends the selected command, ⇥
+	// completes it so arguments can follow, ↑ / ↓ select, ⎋ closes the list
+	if(_commandList.visible)
+	{
+		BOOL newline = selector == @selector(insertNewline:) && !(NSApp.currentEvent.modifierFlags & (NSEventModifierFlagShift|NSEventModifierFlagOption));
+		if(newline || selector == @selector(insertTab:))
+		{
+			if(NSDictionary* command = _commandList.selectedCommand)
+				[self completeCommand:command trailingSpace:!newline];
+			if(newline)
+				[self submit];
+			return YES;
+		}
+		if(selector == @selector(moveUp:) || selector == @selector(moveDown:))
+		{
+			[_commandList moveSelection:selector == @selector(moveUp:) ? -1 : +1];
+			return YES;
+		}
+		if(selector == @selector(cancelOperation:))
+		{
+			[_commandList close];
+			return YES;
+		}
+	}
+
 	if(selector == @selector(insertNewline:))
 	{
 		if(NSApp.currentEvent.modifierFlags & (NSEventModifierFlagShift|NSEventModifierFlagOption))
@@ -423,49 +438,66 @@ static NSUInteger const kMaxHistory = 50;
 {
 	[self updateTextHeight];
 	_textView.needsDisplay = YES;
+	[self updateCommandList];
+}
 
-	// Offer slash commands while the first word starts with “/”
-	if(_completing)
-		return;
+- (void)textDidEndEditing:(NSNotification*)notification
+{
+	[_commandList close];
+}
+
+- (void)viewDidMoveToWindow
+{
+	[super viewDidMoveToWindow];
+	if(!self.window)
+		[_commandList close];
+}
+
+// ==================
+// = Slash Commands =
+// ==================
+
+// The first word, while it starts with “/” and the caret is in it
+- (NSRange)commandWordRange
+{
 	NSString* str = _textView.string;
-	NSRange word = [_textView rangeForUserCompletion];
-	if(![str hasPrefix:@"/"] || word.location != 0 || word.length != _textView.selectedRange.location)
-		return;
-
-	NSString* partial = [str substringWithRange:word];
-	NSArray* completions = [self slashCommandCompletionsForPrefix:partial];
-	if(completions.count && !(completions.count == 1 && [completions.firstObject isEqualToString:partial]))
-	{
-		_completing = YES;
-		[_textView complete:self];
-		_completing = NO;
-	}
+	NSRange selection = _textView.selectedRange;
+	if(![str hasPrefix:@"/"] || selection.length != 0 || [str rangeOfCharacterFromSet:NSCharacterSet.whitespaceAndNewlineCharacterSet options:0 range:NSMakeRange(0, selection.location)].location != NSNotFound)
+		return NSMakeRange(NSNotFound, 0);
+	NSUInteger end = [str rangeOfCharacterFromSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].location;
+	return NSMakeRange(0, end == NSNotFound ? str.length : end);
 }
 
-- (NSArray<NSString*>*)slashCommandCompletionsForPrefix:(NSString*)prefix
+- (void)updateCommandList
 {
-	if(![_delegate respondsToSelector:@selector(slashCommandsForPromptView:)])
-		return @[ ];
+	NSRange word = [self commandWordRange];
+	NSArray* commands = @[ ];
+	if(word.location != NSNotFound && [_delegate respondsToSelector:@selector(slashCommandsForPromptView:)])
+		commands = AgentSlashCommandsMatchingPrefix([_delegate slashCommandsForPromptView:self], [_textView.string substringWithRange:NSMakeRange(0, _textView.selectedRange.location)]);
 
-	NSMutableArray* res = [NSMutableArray array];
-	for(NSDictionary* command in [_delegate slashCommandsForPromptView:self])
-	{
-		NSString* name = [@"/" stringByAppendingString:command[@"name"] ?: @""];
-		if(name.length > 1 && [name.lowercaseString hasPrefix:prefix.lowercaseString])
-			[res addObject:name];
-	}
-	return [res sortedArrayUsingSelector:@selector(localizedCaseInsensitiveCompare:)];
+	if(commands.count)
+			[_commandList showCommands:commands aboveView:_textScrollView];
+	else	[_commandList close];
 }
 
-- (NSArray<NSString*>*)textView:(NSTextView*)textView completions:(NSArray<NSString*>*)words forPartialWordRange:(NSRange)charRange indexOfSelectedItem:(NSInteger*)index
+// Replaces the first word with the command, followed by a space so
+// arguments can be typed
+- (void)completeCommand:(NSDictionary*)command trailingSpace:(BOOL)wantsSpace
 {
-	NSString* partial = [textView.string substringWithRange:charRange];
-	if(charRange.location == 0 && [partial hasPrefix:@"/"])
+	NSRange word = [self commandWordRange];
+	if(word.location == NSNotFound)
+		word = NSMakeRange(0, 0);
+
+	NSString* str = _textView.string;
+	BOOL hasSpace = NSMaxRange(word) < str.length && [NSCharacterSet.whitespaceAndNewlineCharacterSet characterIsMember:[str characterAtIndex:NSMaxRange(word)]];
+	NSString* replacement = [NSString stringWithFormat:@"/%@%@", command[@"name"], hasSpace || !wantsSpace ? @"" : @" "];
+	if([_textView shouldChangeTextInRange:word replacementString:replacement])
 	{
-		if(index)
-			*index = -1; // don’t insert anything until the user picks
-		return [self slashCommandCompletionsForPrefix:partial];
+		[_textView.textStorage replaceCharactersInRange:word withString:replacement];
+		[_textView didChangeText];
 	}
-	return @[ ];
+	_textView.selectedRange = NSMakeRange(replacement.length + (hasSpace ? 1 : 0), 0);
+	[_commandList close];
+	[_textView.window makeFirstResponder:_textView];
 }
 @end

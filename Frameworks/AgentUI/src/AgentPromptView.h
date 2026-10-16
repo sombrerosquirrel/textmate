@@ -2,7 +2,8 @@
 
 // The chat input: multi-line text, attachment chips, an Add Context button,
 // and Send / Stop. ↩ sends, ⇧↩ or ⌥↩ inserts a newline, ⎋ stops, ↑ / ↓ recall
-// previous prompts, and typing “/” completes the agent’s slash commands.
+// previous prompts, and typing “/” lists the agent’s slash commands: ↩ sends
+// the selected one, ⇥ completes it, ⎋ closes the list.
 
 @class AgentPromptView;
 
