@@ -37,7 +37,7 @@ Pick one in the popup at the top right of the preview, or in **Preferences ▸ P
 | Looks like | TextMate's agent chat | GitHub |
 | Tables, task lists, strikethrough, bare URLs as links | Yes | Yes |
 | Footnotes | Yes | Yes |
-| Raw HTML (`<b>`, `<details>`, …) | Shown as text | Safe tags rendered, as on GitHub; all of it if **Allow raw HTML** is on |
+| Raw HTML (`<b>`, `<details>`, …) | Shown as text | Safe tags rendered, as on GitHub; all of it with **Render all HTML** |
 | Local images | Yes | Yes, from the project folder (or the document's folder if it's outside the project) |
 | Remote images | Never loaded; shown as a link | Loaded, as on GitHub |
 | Find (⌘F) | Yes | Not yet |
@@ -56,9 +56,9 @@ TextMate looks for cmark-gfm in this order: the binary chosen with Locate…, yo
 
 If cmark-gfm fails, the preview shows the built-in rendering with a notice explaining why.
 
-### Allow raw HTML
+### Render all HTML
 
-Off by default: like GitHub, the GitHub renderer keeps safe HTML (`<b>`, `<i>`, `<kbd>`, `<sup>`, `<details>`, `<summary>`, `<br>`, `<img>`, tables, …) and removes the rest, such as forms, styles, scripts and event attributes; the text inside removed tags still shows. Links must be web, mail or relative links. Turn it on in **Preferences ▸ Projects** to show all HTML as written, for documents you trust. Scripts in the document never run either way, and the preview never navigates away from the document.
+Off by default: like GitHub, the GitHub renderer keeps safe HTML (`<b>`, `<i>`, `<kbd>`, `<sup>`, `<details>`, `<summary>`, `<br>`, `<img>`, tables, …) and removes the rest, such as forms, styles, scripts and event attributes; the text inside removed tags still shows. Links must be web, mail or relative links. Turn on **Render all HTML** in **Preferences ▸ Projects** to show all HTML as written, for documents you trust. Scripts in the document never run either way, and the preview never navigates away from the document.
 
 ### Your own Markdown command (`TM_MARKDOWN`)
 

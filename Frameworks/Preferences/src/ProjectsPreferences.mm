@@ -143,7 +143,7 @@
 	NSPopUpButton* showCommandOutputPopUp              = OakCreatePopUpButton();
 
 	NSPopUpButton* markdownPreviewRendererPopUp        = OakCreatePopUpButton();
-	NSButton* allowRawHTMLCheckBox                     = OakCreateCheckBox(@"Allow raw HTML (GitHub renderer)");
+	NSButton* allowRawHTMLCheckBox                     = OakCreateCheckBox(@"Render all HTML (GitHub renderer)");
 
 	MBMenu const fileBrowserPositionMenuItems = {
 		{ @"Left side",  .tag = 0 },
@@ -214,6 +214,7 @@
 	[nonTextFilesTextField                    bind:NSValueBinding       toObject:self withKeyPath:@"binaryPattern"                options:nil];
 	[showCommandOutputPopUp                   bind:NSSelectedTagBinding toObject:self withKeyPath:@"htmlOutputPlacement"          options:@{ NSValueTransformerNameBindingOption: @"OakHTMLOutputPlacementSettingsTransformer" }];
 	[markdownPreviewRendererPopUp             bind:NSSelectedTagBinding toObject:self withKeyPath:@"markdownPreviewRenderer"      options:@{ NSValueTransformerNameBindingOption: @"OakMarkdownPreviewRendererSettingsTransformer" }];
+	allowRawHTMLCheckBox.toolTip = @"Off: like GitHub, only safe tags such as <b>, <kbd> and <details> are rendered. On: all HTML as written, including styles and forms.";
 	[allowRawHTMLCheckBox                     bind:NSValueBinding       toObject:self withKeyPath:@"markdownPreviewAllowRawHTML"  options:nil];
 }
 @end
