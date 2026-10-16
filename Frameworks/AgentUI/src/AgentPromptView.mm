@@ -42,6 +42,15 @@ static NSUInteger const kMaxHistory = 50;
 	return [super rangeForUserCompletion];
 }
 
+// ↩ in the completion list closes it and sends the prompt, as ↩ does without
+// the list; ⇥ picks a completion without sending
+- (void)insertCompletion:(NSString*)word forPartialWordRange:(NSRange)charRange movement:(NSInteger)movement isFinal:(BOOL)flag
+{
+	[super insertCompletion:word forPartialWordRange:charRange movement:movement isFinal:flag];
+	if(flag && movement == NSTextMovementReturn)
+		[self doCommandBySelector:@selector(insertNewline:)];
+}
+
 - (NSArray<NSURL*>*)fileURLsFromDraggingInfo:(id<NSDraggingInfo>)sender
 {
 	return [sender.draggingPasteboard readObjectsForClasses:@[ [NSURL class] ] options:@{ NSPasteboardURLReadingFileURLsOnlyKey: @YES }];
