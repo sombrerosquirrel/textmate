@@ -2,8 +2,10 @@
 // external binary (e.g. from Homebrew), so TextMate doesn’t bundle a parser.
 
 @interface MarkdownPreviewCmark : NSObject
-// Extensions GitHub uses, plus source positions for scroll sync. Raw HTML in
-// the document is left out of the output unless `allowRawHTML` is set.
+// Extensions GitHub uses, plus source positions for scroll sync. Raw HTML is
+// passed through; unless `allowRawHTML` is set, tagfilter turns <script> and
+// the like into text, and the output must go through
+// MarkdownPreviewSanitizedHTML() to keep only GitHub’s safe tags.
 + (NSArray<NSString*>*)argumentsAllowingRawHTML:(BOOL)allowRawHTML;
 
 // The binary set with Locate… if it’s still there, else cmark-gfm on the

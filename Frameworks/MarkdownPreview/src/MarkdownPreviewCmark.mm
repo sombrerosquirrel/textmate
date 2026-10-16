@@ -11,8 +11,9 @@ static NSTimeInterval const kTimeout = 10;
 	NSMutableArray* res = [NSMutableArray arrayWithObject:@"--sourcepos"];
 	for(NSString* extension in @[ @"table", @"tasklist", @"strikethrough", @"autolink", @"footnotes" ])
 		[res addObjectsFromArray:@[ @"--extension", extension ]];
-	if(allowRawHTML)
-		[res addObject:@"--unsafe"];
+	[res addObject:@"--unsafe"];
+	if(!allowRawHTML)
+		[res addObjectsFromArray:@[ @"--extension", @"tagfilter" ]];
 	return res;
 }
 

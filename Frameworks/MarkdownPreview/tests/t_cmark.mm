@@ -1,4 +1,5 @@
 #import <MarkdownPreview/MarkdownPreviewCmark.h>
+#import <MarkdownPreview/MarkdownPreviewSanitizer.h>
 
 static NSDictionary* const kEnvironment = @{ @"PATH": @"/usr/bin:/bin" };
 
@@ -8,8 +9,9 @@ void test_arguments ()
 	OAK_ASSERT([arguments containsObject:@"--sourcepos"]);
 	OAK_ASSERT([arguments containsObject:@"table"]);
 	OAK_ASSERT([arguments containsObject:@"tasklist"]);
-	OAK_ASSERT(![arguments containsObject:@"--unsafe"]);
+	OAK_ASSERT([arguments containsObject:@"tagfilter"]);
 	OAK_ASSERT([[MarkdownPreviewCmark argumentsAllowingRawHTML:YES] containsObject:@"--unsafe"]);
+	OAK_ASSERT(![[MarkdownPreviewCmark argumentsAllowingRawHTML:YES] containsObject:@"tagfilter"]);
 }
 
 void test_pipes_markdown_through_command ()
@@ -50,13 +52,20 @@ void test_cmark_gfm ()
 		return; // not installed
 
 	NSString* error;
-	NSString* markdown = @"# Title\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n- [x] done\n\n<b>raw</b>\n";
+	NSString* markdown = @"# Title\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n- [x] done\n\n<b>raw</b> <form>form</form> <script>alert(1)</script>\n\n[js](javascript:alert(1)) [^1]\n\n[^1]: Note\n";
 	NSString* html = [MarkdownPreviewCmark HTMLFromMarkdown:markdown executable:path arguments:[MarkdownPreviewCmark argumentsAllowingRawHTML:NO] environment:kEnvironment error:&error];
 	OAK_ASSERT(html != nil);
+	html = MarkdownPreviewSanitizedHTML(html);
 	OAK_ASSERT([html containsString:@"<h1 data-sourcepos=\"1:1-1:7\">Title</h1>"]);
 	OAK_ASSERT([html containsString:@"<table"]);
 	OAK_ASSERT([html containsString:@"type=\"checkbox\""]);
-	OAK_ASSERT(![html containsString:@"<b>raw</b>"]);
+	OAK_ASSERT([html containsString:@"<b>raw</b>"]);
+	OAK_ASSERT([html containsString:@" form "]);
+	OAK_ASSERT([html containsString:@"&lt;script>alert(1)"]);
+	OAK_ASSERT(![html containsString:@"<form"]);
+	OAK_ASSERT(![html containsString:@"javascript"]);
+	OAK_ASSERT([html containsString:@"<section class=\"footnotes\" data-footnotes>"]);
+	OAK_ASSERT([html containsString:@"href=\"#fn-1\""]);
 
 	html = [MarkdownPreviewCmark HTMLFromMarkdown:markdown executable:path arguments:[MarkdownPreviewCmark argumentsAllowingRawHTML:YES] environment:kEnvironment error:&error];
 	OAK_ASSERT([html containsString:@"<b>raw</b>"]);

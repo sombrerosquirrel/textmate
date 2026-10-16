@@ -110,7 +110,7 @@ Not in P3: the preview's visibility isn't saved in the session (nor is the agent
 
 | Part | Responsibility |
 |---|---|
-| `MarkdownPreviewCmark` (4 tests) | Finds cmark-gfm: the path chosen with Locate… (`markdownPreviewCmarkPath`) if still executable, else the login shell's PATH (via `AgentEnvironment`), else `/opt/homebrew/bin`, `/usr/local/bin`. Builds the arguments (`--sourcepos`, extensions table, tasklist, strikethrough, autolink, footnotes; `--unsafe` only with Allow raw HTML). Pipes Markdown through a command off the main thread, writing and reading concurrently, with a 10 s timeout; reports stderr or the exit status. |
+| `MarkdownPreviewCmark` (4 tests) | Finds cmark-gfm: the path chosen with Locate… (`markdownPreviewCmarkPath`) if still executable, else the login shell's PATH (via `AgentEnvironment`), else `/opt/homebrew/bin`, `/usr/local/bin`. Builds the arguments (`--sourcepos`, extensions table, tasklist, strikethrough, autolink, footnotes; `--unsafe`, plus `tagfilter` unless Allow raw HTML is on). Pipes Markdown through a command off the main thread, writing and reading concurrently, with a 10 s timeout; reports stderr or the exit status. |
 | `MarkdownPreviewHTMLView` (4 tests) | WKWebView with GitHub-like CSS for light and dark. Loads the page once per document and then only replaces its content, so typing keeps the scroll position. Content JavaScript is off (`allowsContentJavaScript = NO`); our scripts run in `WKContentWorld.defaultClientWorld`. Local files are served through the `x-txmt-preview:` scheme, only from below the read access folder. Link clicks go to the delegate (in-page `#` links, e.g. footnotes, scroll the page); other navigation, e.g. a refresh in raw HTML, is blocked. Non-persistent website data store. |
 | `MarkdownPreviewViewController` (now 5 tests) | Header (26 pt) with a notice line plus optional button on the left, and a Built-in / GitHub popup on the right, bound to `markdownPreviewRenderer`. Shows the built-in text view, the HTML view or the placeholder. `scrollToSourceLine:fraction:`. |
 | `MarkdownPreviewInstallController` | Sheet: "Install with Homebrew" runs `brew install cmark-gfm` (non-interactive) and shows its output; "Locate…" chooses a binary and saves it; without Homebrew it explains how to install. Cancelling during an install stops it. |
@@ -140,7 +140,7 @@ Not in P4: ⌘F find in the GitHub renderer; two-way scroll sync.
 3. Scroll the editor: the preview should follow line by line, including over long code blocks.
 4. Type: the preview updates without jumping.
 5. Switch light/dark themes.
-6. Preferences ▸ Projects: switch the renderer there; turn on **Allow raw HTML** and check that `<b>bold</b>` renders (off: it's left out).
+6. Preferences ▸ Projects: switch the renderer there; `<b>bold</b>` renders either way; with **Allow raw HTML** off, `<form>` or `style=` are removed, with it on they're kept.
 
 ### Commits
 fe9b98ca cmark-gfm runner · 5d2557e9 HTML view · 8583da4b header, notices, install sheet · a300b4d2 GitHub renderer in the preview, Preferences
@@ -182,10 +182,12 @@ A second note[^long], the first one again[^1], and one in code `[^1]`.
 [^unused]: Never referenced, so it shouldn't appear.
 ```
 
-Expected: superscript 1, 2, 1 in the text; `[^1]` in code stays as text; at the end a rule and "1. The footnote. ↩", "2. A longer note that continues on an indented line. ↩"; the unused note is absent; clicking 1 scrolls the preview to the notes and ↩ back, the editor doesn't move; `<b>bold</b>` shows as text (built-in doesn't render raw HTML). GitHub shows the same footnotes, and bold in bold with Allow raw HTML on.
+Expected: superscript 1, 2, 1 in the text; `[^1]` in code stays as text; at the end a rule and "1. The footnote. ↩", "2. A longer note that continues on an indented line. ↩"; the unused note is absent; clicking 1 scrolls the preview to the notes and ↩ back, the editor doesn't move; `<b>bold</b>` shows as text (built-in doesn't render raw HTML). GitHub shows the same footnotes, and bold in bold.
 
 ### Commits
 75a28e14 document checks in the framework, with tests · 442f736e used by the window
+
+**GitHub's safe HTML (2026-10-16, after user testing):** `<b>bold</b>` wasn't bold with Allow raw HTML off, because cmark-gfm without `--unsafe` leaves out all HTML, while GitHub keeps safe tags. Now cmark-gfm always runs with `--unsafe`; with Allow raw HTML off it adds the `tagfilter` extension (turns `<script>`, `<style>`, `<iframe>`, … into text) and the output goes through `MarkdownPreviewSanitizedHTML()` (`MarkdownPreviewSanitizer.{h,mm}`), an allow-list like GitHub's: tags such as `<b>`, `<i>`, `<kbd>`, `<sup>`, `<details>`, `<summary>`, `<br>`, `<img>` are kept, others removed with their text kept; only safe attributes are kept (`class`, `id`, `title`, `align`, `data-*`, and per tag e.g. `href`, `src`, `alt`, `colspan`, `open`), so no `style` or event handlers; `href`/`src`/`cite` must be relative or http(s)/mailto (images also `data:image/…`), checked after decoding entities; checkboxes are always disabled; comments dropped. `--unsafe` also turns off cmark-gfm's own URL check, so `[x](javascript:…)` links rely on the same filter. `TM_MARKDOWN` output isn't filtered (the user's own command). With Allow raw HTML on, HTML is passed through as written. 6 sanitizer tests, and `test_cmark_gfm` checks the whole path with cmark-gfm; MarkdownPreview 27 tests; ctest 28/28.
 
 ## Future work
 - [x] The `editorPanelsView` accessor lived in the agent category; moved to `DocumentWindowController+EditorPanels` (P3).

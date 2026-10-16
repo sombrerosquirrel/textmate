@@ -3,6 +3,7 @@
 #import "DocumentWindowController+EditorPanels.h"
 #import <MarkdownPreview/MarkdownPreviewViewController.h>
 #import <MarkdownPreview/MarkdownPreviewCmark.h>
+#import <MarkdownPreview/MarkdownPreviewSanitizer.h>
 #import <MarkdownPreview/MarkdownPreviewDocument.h>
 #import <MarkdownPreview/MarkdownPreviewInstallController.h>
 #import <MarkdownPreview/MarkdownPreviewInterpolation.h>
@@ -316,6 +317,7 @@ static OakEditorPanelEdge MarkdownPreviewEdge ()
 
 	NSString* executable;
 	NSArray<NSString*>* arguments;
+	BOOL sanitize = NO;
 	NSMutableDictionary<NSString*, NSString*>* environment = [_environment mutableCopy];
 	if(customCommand)
 	{
@@ -329,8 +331,9 @@ static OakEditorPanelEdge MarkdownPreviewEdge ()
 	}
 	else if(_cmarkPath)
 	{
+		sanitize   = ![NSUserDefaults.standardUserDefaults boolForKey:kUserDefaultsMarkdownPreviewAllowRawHTMLKey];
 		executable = _cmarkPath;
-		arguments  = [MarkdownPreviewCmark argumentsAllowingRawHTML:[NSUserDefaults.standardUserDefaults boolForKey:kUserDefaultsMarkdownPreviewAllowRawHTMLKey]];
+		arguments  = [MarkdownPreviewCmark argumentsAllowingRawHTML:!sanitize];
 	}
 	else
 	{
@@ -348,6 +351,8 @@ static OakEditorPanelEdge MarkdownPreviewEdge ()
 	dispatch_async(_cmarkQueue, ^{
 		NSString* error;
 		NSString* html = [MarkdownPreviewCmark HTMLFromMarkdown:markdown executable:executable arguments:arguments environment:environment error:&error];
+		if(html && sanitize)
+			html = MarkdownPreviewSanitizedHTML(html);
 		dispatch_async(dispatch_get_main_queue(), ^{
 			MarkdownPreviewCoordinator* strongSelf = weakSelf;
 			if(!strongSelf || strongSelf->_renderGeneration != generation || strongSelf->_document != document)
