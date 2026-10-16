@@ -21,7 +21,7 @@ User guides are in [`../user/`](../user/): [markdown-preview.md](../user/markdow
 | 0. Repository setup | [00-repository-setup.md](00-repository-setup.md) | ✅ Complete (2026-10-13) |
 | 1. Build and bug fixes | [01-build-and-bug-fixes.md](01-build-and-bug-fixes.md) | ✅ Complete (2026-10-13) |
 | M1. AgentClient core | [02-m1-agent-client.md](02-m1-agent-client.md) | ✅ Complete (2026-10-13) |
-| M2. Chat panel | [03-m2-chat-panel.md](03-m2-chat-panel.md) | 🔄 In progress: implemented, being tested by the user |
+| M2. Chat panel | [03-m2-chat-panel.md](03-m2-chat-panel.md) | ✅ Complete (2026-10-16) |
 | M3. Tools: files, permissions, diff review, terminal | — | ⏳ Not started |
 | M4. Preferences, Keychain, session history, MCP | — | ⏳ Not started |
 | M5. Polish, inline chat, docs, `pr/agent` port | — | ⏳ Not started |
@@ -32,7 +32,7 @@ User guides are in [`../user/`](../user/): [markdown-preview.md](../user/markdow
 - **Branches:** `main` = `pr-1467` + all `fix/*` branches. `feature/agent` = `main` + agent harness (M1, M2). `feature/markdown-preview` = `feature/agent` + Markdown preview work. All pushed to `origin` (`sombrerosquirrel/textmate`).
 - **Build:** `make debug` builds cleanly with Xcode 27 / Swift 6.4 on macOS 27. No new warnings. Known remaining warnings are listed in [01-build-and-bug-fixes.md](01-build-and-bug-fixes.md#future-work).
 - **Tests:** `ctest` passes 23/23 on `main`, 25/25 on `feature/agent` (adds AgentClient and AgentUI suites), 28/28 on `feature/markdown-preview` (adds OakEditorPanels, OakMarkdown and MarkdownPreview; AgentUI's Markdown tests moved to OakMarkdown).
-- **Next:** user checks P5 (user guide, tests); then the Markdown preview is complete. M2 still awaits confirmation (its UX pass is deferred to the end). Checkpoints with the user after each milestone.
+- **Next:** user checks P5 (user guide, tests); then the Markdown preview is complete. M2 is complete (its UX pass is deferred to the end); M3 (tools: permissions, file edits, diff review, terminal) is next. Checkpoints with the user after each milestone.
 
 ## Future work
 

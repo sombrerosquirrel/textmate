@@ -1,15 +1,15 @@
 ---
 title: M2 — Chat Panel
-status: in progress
+status: complete
 started: 2026-10-13
-updated: 2026-10-14
+completed: 2026-10-16
 tags: [textmate, implementation, agent, ui]
 ---
 
 # M2 — Chat Panel
 
-**Status:** 🔄 In progress. Implemented and pushed; the user is testing it. Marked complete after the user confirms.
-**Branch:** `feature/agent`
+**Status:** ✅ Complete (2026-10-16), confirmed by the user after testing. Its UX pass is deferred to the end.
+**Branch:** `feature/agent` (fixes after user testing, such as the slash command list and the agent's error output, are on `feature/markdown-preview`)
 **Design:** [agent-harness-design.md §4.2, §6, §6a](../plans/agent-harness-design.md)
 
 ## Goal
@@ -59,10 +59,10 @@ Defaults: `agentPanelPlacement` (right), `agentPanelWidth` (380), `agentPanelAge
 8ecd469e §6a plan · ffc740ac AgentUI + Markdown · 4d8c4a0d transcript model · 72b93fd9 attachments · 7723847e chat panel · d6d22909 project window integration · 1418d472 layout fix · 9b5adbd9 theme/backgrounds · 6da8258f inherit window appearance
 
 ## Remaining before M2 is complete
-- [ ] User confirmation after testing.
+- [x] User confirmation after testing (2026-10-16).
 - [x] Checked by the user (2026-10-16): Insert at Cursor, open-file links (tool-call `↳ file:line` links open the file at the line).
-- [ ] Not yet checked in the GUI: dragging the divider, switching between light and dark themes with the panel open.
-- [ ] Update the design doc status to "M2 done" and sync Obsidian.
+- [x] Checked by the user (2026-10-16): dragging the divider, switching between light and dark themes with the panel open.
+- [x] Design doc status updated to "M2 done"; Obsidian synced.
 
 ## Future work
 - [ ] Commit 7723847e alone doesn't build (it removes the debug window files that AppController references until d6d22909). Regrouping needs a force-push of `feature/agent`; awaiting the user's decision.
