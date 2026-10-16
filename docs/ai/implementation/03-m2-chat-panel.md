@@ -60,7 +60,8 @@ Defaults: `agentPanelPlacement` (right), `agentPanelWidth` (380), `agentPanelAge
 
 ## Remaining before M2 is complete
 - [ ] User confirmation after testing.
-- [ ] Not yet checked in the GUI: dragging the divider, Insert at Cursor, open-file links, switching between light and dark themes with the panel open.
+- [x] Checked by the user (2026-10-16): Insert at Cursor, open-file links (tool-call `↳ file:line` links open the file at the line).
+- [ ] Not yet checked in the GUI: dragging the divider, switching between light and dark themes with the panel open.
 - [ ] Update the design doc status to "M2 done" and sync Obsidian.
 
 ## Future work
