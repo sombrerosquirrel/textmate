@@ -27,6 +27,13 @@ struct test_session_t
 		return res;
 	}
 
+	NSString* standardError ()
+	{
+		__block NSString* res;
+		dispatch_sync(queue, ^{ res = session.recentStandardError; });
+		return res;
+	}
+
 	NSArray* commandNames ()
 	{
 		__block NSArray* res;
@@ -218,6 +225,24 @@ void test_agent_crash_during_prompt ()
 
 	OAK_ASSERT(Wait(t.recorder.terminated));
 	OAK_ASSERT_EQ((NSInteger)t.state(), (NSInteger)AgentSessionStateTerminated);
+}
+
+void test_standard_error_explains_failure ()
+{
+	test_session_t t(@[ @"--exit-early" ]);
+	OAK_ASSERT(t.start() != nil);
+
+	OAK_ASSERT([t.standardError() isEqualToString:@"fake agent: starting\nfake agent: unsupported Node version"]);
+}
+
+void test_standard_error_while_running ()
+{
+	test_session_t t;
+	OAK_ASSERT(t.start() == nil);
+
+	OAK_ASSERT(t.standardError() == nil);
+	OAK_ASSERT([t.prompt(@"stderr") isEqualToString:@"end_turn"]);
+	OAK_ASSERT([t.standardError() isEqualToString:@"fake agent: stderr line"]);
 }
 
 void test_launch_failure ()

@@ -210,7 +210,7 @@ static NSView* Separator ()
 				return;
 			if(error)
 			{
-				[self showError:[NSString stringWithFormat:@"%@ didn’t start: %@", agent.name, error.localizedDescription]];
+				[self showError:[self message:[NSString stringWithFormat:@"%@ didn’t start: %@", agent.name, error.localizedDescription] withOutputOfSession:session]];
 				[self failPendingPrompt];
 			}
 			else if(_pendingText || _pendingAttachments)
@@ -293,6 +293,14 @@ static NSView* Separator ()
 - (void)showError:(NSString*)message
 {
 	[self showItem:[_transcript addError:message]];
+}
+
+// The agent’s last error output usually says why it failed, e.g. an npx too
+// old for `-y`, or a missing login
+- (NSString*)message:(NSString*)message withOutputOfSession:(AgentSession*)session
+{
+	NSString* output = session.recentStandardError;
+	return output ? [NSString stringWithFormat:@"%@\n\nOutput from %@:\n%@", message, _agent.name, output] : message;
 }
 
 - (void)showNotice:(NSString*)message
@@ -555,7 +563,7 @@ static NSView* Separator ()
 	if(session.state == AgentSessionStateTerminated)
 	{
 		_promptView.working = NO;
-		[self showError:[NSString stringWithFormat:@"%@ stopped running. Send a message to start it again.", _agent.name]];
+		[self showError:[self message:[NSString stringWithFormat:@"%@ stopped running. Send a message to start it again.", _agent.name] withOutputOfSession:session]];
 		[self rebuildOptions];
 	}
 	[self updateStatus];

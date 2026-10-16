@@ -61,6 +61,9 @@ typedef NS_ENUM(NSInteger, AgentSessionState) {
 
 @property (nonatomic, readonly) AgentSessionState state;
 @property (nonatomic, readonly) NSError* error; // reason for AgentSessionStateFailed
+// The agent’s last few lines of standard error, which often explain why it
+// failed or exited; nil if it wrote none.
+@property (nonatomic, readonly) NSString* recentStandardError;
 @property (nonatomic, readonly) NSString* sessionId;
 @property (nonatomic, readonly) NSDictionary* agentInfo;
 @property (nonatomic, readonly) NSDictionary* agentCapabilities;

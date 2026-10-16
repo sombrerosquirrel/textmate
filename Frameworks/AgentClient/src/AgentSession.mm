@@ -31,7 +31,14 @@ static NSString* ClientVersion ()
 @property (nonatomic, readwrite) NSArray<NSDictionary*>* availableCommands;
 @end
 
+static NSUInteger const kMaxStandardErrorLines      = 10;
+static NSUInteger const kMaxStandardErrorLineLength = 300;
+
 @implementation AgentSession
+{
+	NSMutableArray<NSString*>* _standardErrorLines;
+}
+
 - (instancetype)initWithConnection:(AgentConnection*)connection workingDirectory:(NSString*)workingDirectory
 {
 	if(self = [super init])
@@ -345,8 +352,24 @@ static NSString* ClientVersion ()
 	[_pendingPermissionReplies removeObjectForKey:token];
 }
 
+- (NSString*)recentStandardError
+{
+	return _standardErrorLines.count ? [_standardErrorLines componentsJoinedByString:@"\n"] : nil;
+}
+
 - (void)agentConnection:(AgentConnection*)connection didReceiveStandardError:(NSString*)text
 {
+	if(!_standardErrorLines)
+		_standardErrorLines = [NSMutableArray array];
+	for(NSString* line in [text componentsSeparatedByCharactersInSet:NSCharacterSet.newlineCharacterSet])
+	{
+		NSString* trimmed = [line stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
+		if(trimmed.length)
+			[_standardErrorLines addObject:trimmed.length > kMaxStandardErrorLineLength ? [[trimmed substringToIndex:kMaxStandardErrorLineLength] stringByAppendingString:@"…"] : trimmed];
+	}
+	if(_standardErrorLines.count > kMaxStandardErrorLines)
+		[_standardErrorLines removeObjectsInRange:NSMakeRange(0, _standardErrorLines.count - kMaxStandardErrorLines)];
+
 	if([self.delegate respondsToSelector:@selector(agentSession:didReceiveStandardError:)])
 		[self.delegate agentSession:self didReceiveStandardError:text];
 }

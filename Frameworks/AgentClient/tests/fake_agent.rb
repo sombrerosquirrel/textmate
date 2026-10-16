@@ -14,6 +14,7 @@
 #
 # Arguments: --version N  answer initialize with protocol version N
 #            --fail-new   answer session/new with an error
+#            --exit-early write to stderr and exit with status 1 before initialize
 
 require 'json'
 
@@ -21,12 +22,19 @@ $stdout.sync = true
 
 protocol_version = 1
 fail_new         = false
+exit_early       = false
 args = ARGV.dup
 while arg = args.shift
 	case arg
 	when '--version'  then protocol_version = args.shift.to_i
-	when '--fail-new' then fail_new = true
+	when '--fail-new'   then fail_new = true
+	when '--exit-early' then exit_early = true
 	end
+end
+
+if exit_early
+	$stderr.puts('fake agent: starting', '', 'fake agent: unsupported Node version')
+	exit 1
 end
 
 def send_message(msg)
