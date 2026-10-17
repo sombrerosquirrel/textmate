@@ -11,6 +11,7 @@
 @optional
 - (void)transcriptView:(AgentTranscriptView*)transcriptView insertCode:(NSString*)code;
 - (void)transcriptView:(AgentTranscriptView*)transcriptView openFile:(NSString*)path line:(NSUInteger)line;
+- (void)transcriptView:(AgentTranscriptView*)transcriptView selectPermissionOption:(NSString*)optionId forItem:(AgentTranscriptItem*)item;
 @end
 
 @interface AgentTranscriptView : NSTextView

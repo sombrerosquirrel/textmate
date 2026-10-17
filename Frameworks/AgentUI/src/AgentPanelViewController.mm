@@ -54,6 +54,7 @@ static NSView* Separator ()
 	AgentSession* _session;
 	BOOL _creatingSession;
 	AgentFileSystem* _fileSystem;              // one per chat, so its changes outlive an agent restart
+	NSMutableDictionary<NSString*, void(^)(NSDictionary*)>* _permissionReplies; // transcript item identifier → reply
 
 	AgentTranscript* _transcript;
 	NSString* _pendingText;                     // sent once the session is ready
@@ -79,6 +80,7 @@ static NSView* Separator ()
 	if(self = [super initWithNibName:nil bundle:nil])
 	{
 		_transcript = [[AgentTranscript alloc] init];
+		_permissionReplies = [NSMutableDictionary dictionary];
 		_agent      = [AgentRegistry agentWithIdentifier:[NSUserDefaults.standardUserDefaults stringForKey:kUserDefaultsAgentPanelAgentKey]] ?: AgentRegistry.agents.firstObject;
 	}
 	return self;
@@ -240,6 +242,7 @@ static NSView* Separator ()
 
 - (void)closeSession
 {
+	[self cancelPendingPermissionRequests];
 	AgentSession* session = _session;
 	_session   = nil;
 	_usageText = nil;
@@ -355,6 +358,7 @@ static NSView* Separator ()
 		if(session != _session)
 			return;
 		_promptView.working = NO;
+		[self cancelPendingPermissionRequests];
 		if(error)
 			[self showError:error.localizedDescription];
 		else if(NSString* notice = StopReasonNotice(stopReason))
@@ -382,6 +386,7 @@ static NSView* Separator ()
 		_promptView.working = NO;
 		[self showNotice:@"Stopped."];
 	}
+	[self cancelPendingPermissionRequests];
 	[_session cancel];
 }
 
@@ -558,6 +563,8 @@ static NSView* Separator ()
 		status = [NSString stringWithFormat:@"Starting %@…", _agent.name];
 	else if(!_session || _session.state == AgentSessionStateFailed || _session.state == AgentSessionStateTerminated)
 		status = @"Not running";
+	else if(_transcript.pendingPermissionItems.count)
+		status = @"Waiting for your approval";
 	else if(_usageText)
 		status = _usageText;
 	else
@@ -577,6 +584,7 @@ static NSView* Separator ()
 		return;
 	if(session.state == AgentSessionStateTerminated)
 	{
+		[self cancelPendingPermissionRequests];
 		_promptView.working = NO;
 		[self showError:[self message:[NSString stringWithFormat:@"%@ stopped running. Send a message to start it again.", _agent.name] withOutputOfSession:session]];
 		[self rebuildOptions];
@@ -609,6 +617,38 @@ static NSView* Separator ()
 		[self showItem:item];
 }
 
+- (void)agentSession:(AgentSession*)session requestPermission:(NSDictionary*)params reply:(void(^)(NSDictionary* outcome))reply
+{
+	if(session != _session)
+		return reply(@{ @"outcome": @"cancelled" });
+
+	AgentTranscriptItem* item = [_transcript addPermissionRequest:params];
+	_permissionReplies[item.identifier] = reply;
+	[self showItem:item];
+	[self updateStatus];
+
+	if(!NSApp.isActive)
+		[NSApp requestUserAttention:NSInformationalRequest];
+}
+
+- (void)resolvePermissionItem:(AgentTranscriptItem*)item selectedOptionId:(NSString*)optionId
+{
+	void(^reply)(NSDictionary*) = _permissionReplies[item.identifier];
+	[_permissionReplies removeObjectForKey:item.identifier];
+	[_transcript resolvePermissionItem:item selectedOptionId:optionId];
+	[self showItem:item];
+	[self updateStatus];
+
+	if(reply)
+		reply(optionId ? @{ @"outcome": @"selected", @"optionId": optionId } : @{ @"outcome": @"cancelled" });
+}
+
+- (void)cancelPendingPermissionRequests
+{
+	for(AgentTranscriptItem* item in _transcript.pendingPermissionItems)
+		[self resolvePermissionItem:item selectedOptionId:nil];
+}
+
 - (void)agentSession:(AgentSession*)session didReceiveStandardError:(NSString*)text
 {
 	NSLog(@"[Agent %@] %@", _agent.identifier, [text stringByTrimmingCharactersInSet:NSCharacterSet.newlineCharacterSet]);
@@ -622,6 +662,12 @@ static NSView* Separator ()
 {
 	if([_delegate respondsToSelector:@selector(agentPanel:insertText:)])
 		[_delegate agentPanel:self insertText:code];
+}
+
+- (void)transcriptView:(AgentTranscriptView*)transcriptView selectPermissionOption:(NSString*)optionId forItem:(AgentTranscriptItem*)item
+{
+	if(_permissionReplies[item.identifier])
+		[self resolvePermissionItem:item selectedOptionId:optionId];
 }
 
 - (void)transcriptView:(AgentTranscriptView*)transcriptView openFile:(NSString*)path line:(NSUInteger)line

@@ -27,6 +27,9 @@ static NSString* TextOfContentBlock (NSDictionary* content)
 @property (nonatomic, readwrite) NSArray<NSString*>* attachmentNames;
 @property (nonatomic, readwrite) NSMutableDictionary* mutableToolCall;
 @property (nonatomic, readwrite) NSArray<NSDictionary*>* planEntries;
+@property (nonatomic, readwrite) NSDictionary* permissionRequest;
+@property (nonatomic, readwrite) BOOL permissionResolved;
+@property (nonatomic, readwrite) NSString* selectedOptionId;
 @end
 
 @implementation AgentTranscriptItem
@@ -73,6 +76,26 @@ static NSString* TextOfContentBlock (NSDictionary* content)
 
 - (AgentTranscriptItem*)addNotice:(NSString*)text { return [self addItemOfKind:AgentTranscriptItemKindNotice text:text]; }
 - (AgentTranscriptItem*)addError:(NSString*)text  { return [self addItemOfKind:AgentTranscriptItemKindError text:text]; }
+
+- (AgentTranscriptItem*)addPermissionRequest:(NSDictionary*)params
+{
+	AgentTranscriptItem* item = [self addItemOfKind:AgentTranscriptItemKindPermission text:nil];
+	item.permissionRequest = params;
+	return item;
+}
+
+- (void)resolvePermissionItem:(AgentTranscriptItem*)item selectedOptionId:(NSString*)optionId
+{
+	item.permissionResolved = YES;
+	item.selectedOptionId   = optionId;
+}
+
+- (NSArray<AgentTranscriptItem*>*)pendingPermissionItems
+{
+	return [_items filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(AgentTranscriptItem* item, NSDictionary*){
+		return item.kind == AgentTranscriptItemKindPermission && !item.permissionResolved;
+	}]];
+}
 
 - (void)removeAllItems
 {

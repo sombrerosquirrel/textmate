@@ -31,6 +31,25 @@ static NSString* PlanStatusGlyph (NSString* status)
 	return @"☐";
 }
 
+static NSString* PermissionOptionGlyph (NSString* kind)
+{
+	if([kind isEqualToString:@"allow_once"])    return @"✓";
+	if([kind isEqualToString:@"allow_always"])  return @"✓✓";
+	if([kind hasPrefix:@"reject"])              return @"✗";
+	return @"•";
+}
+
+// The command of an execute tool call, from its raw input (agents differ:
+// a string, or an array of arguments)
+static NSString* CommandOfToolCall (NSDictionary* toolCall)
+{
+	NSDictionary* rawInput = [toolCall[@"rawInput"] isKindOfClass:[NSDictionary class]] ? toolCall[@"rawInput"] : nil;
+	id command = rawInput[@"command"];
+	if([command isKindOfClass:[NSArray class]])
+		command = [command componentsJoinedByString:@" "];
+	return [command isKindOfClass:[NSString class]] && [command length] ? command : nil;
+}
+
 static NSString* PathFromURI (NSString* uri)
 {
 	NSURL* url = [NSURL URLWithString:uri];
@@ -237,6 +256,7 @@ static NSString* PathFromURI (NSString* uri)
 		case AgentTranscriptItemKindPlan:     [self renderPlanItem:item into:res];     break;
 		case AgentTranscriptItemKindNotice:   [res appendAttributedString:[self text:item.text font:SmallFont() color:NSColor.secondaryLabelColor]]; break;
 		case AgentTranscriptItemKindError:    [res appendAttributedString:[self text:[@"⚠︎ " stringByAppendingString:item.text] font:SmallFont() color:NSColor.systemRedColor]]; break;
+		case AgentTranscriptItemKindPermission: [self renderPermissionItem:item into:res]; break;
 	}
 
 	// End the item’s last paragraph, then a small spacer paragraph between items
@@ -305,6 +325,12 @@ static NSString* PathFromURI (NSString* uri)
 	[res appendAttributedString:[self text:[ToolStatusGlyph(status) stringByAppendingString:@" "] font:SmallFont() color:ToolStatusColor(status)]];
 	[res appendAttributedString:[self text:title font:[NSFont systemFontOfSize:NSFont.smallSystemFontSize weight:NSFontWeightMedium] color:NSColor.labelColor]];
 
+	[self appendDetailsOfToolCall:toolCall item:item into:res];
+}
+
+// Locations as links to open, then the tool call’s content
+- (void)appendDetailsOfToolCall:(NSDictionary*)toolCall item:(AgentTranscriptItem*)item into:(NSMutableAttributedString*)res
+{
 	for(NSDictionary* location in [toolCall[@"locations"] isKindOfClass:[NSArray class]] ? toolCall[@"locations"] : @[ ])
 	{
 		NSString* path = location[@"path"];
@@ -339,6 +365,68 @@ static NSString* PathFromURI (NSString* uri)
 	}
 }
 
+- (void)renderPermissionItem:(AgentTranscriptItem*)item into:(NSMutableAttributedString*)res
+{
+	NSDictionary* request = item.permissionRequest;
+	NSDictionary* toolCall = [request[@"toolCall"] isKindOfClass:[NSDictionary class]] ? request[@"toolCall"] : @{ };
+	NSArray* options = [request[@"options"] isKindOfClass:[NSArray class]] ? request[@"options"] : @[ ];
+
+	// The request may only name the tool call; fill in what its row knows
+	if(AgentTranscriptItem* toolCallItem = [self toolCallItemWithIdentifier:toolCall[@"toolCallId"]])
+	{
+		NSMutableDictionary* merged = [toolCallItem.toolCall mutableCopy];
+		[merged addEntriesFromDictionary:toolCall];
+		toolCall = merged;
+	}
+
+	NSTextBlock* block = [[NSTextBlock alloc] init];
+	block.backgroundColor = [(item.permissionResolved ? NSColor.secondaryLabelColor : NSColor.systemOrangeColor) colorWithAlphaComponent:0.12];
+	[block setValue:100 type:NSTextBlockPercentageValueType forDimension:NSTextBlockWidth];
+	[block setWidth:8 type:NSTextBlockAbsoluteValueType forLayer:NSTextBlockPadding];
+	NSMutableParagraphStyle* paragraph = [[NSMutableParagraphStyle alloc] init];
+	paragraph.textBlocks = @[ block ];
+
+	NSMutableAttributedString* card = [[NSMutableAttributedString alloc] init];
+	NSString* title = [toolCall[@"title"] isKindOfClass:[NSString class]] ? toolCall[@"title"] : @"Use a tool";
+	[card appendAttributedString:[self text:@"Allow this action?\n" font:SmallFont() color:NSColor.secondaryLabelColor]];
+	[card appendAttributedString:[self text:title font:[NSFont systemFontOfSize:NSFont.systemFontSize weight:NSFontWeightSemibold] color:NSColor.labelColor]];
+	if(NSString* command = CommandOfToolCall(toolCall))
+	{
+		if(![command isEqualToString:title])
+			[card appendAttributedString:[self text:[@"\n$ " stringByAppendingString:command] font:SmallMonospaceFont() color:NSColor.labelColor]];
+	}
+	[self appendDetailsOfToolCall:toolCall item:item into:card];
+	[card appendAttributedString:[self text:@"\n" font:SmallFont() color:NSColor.labelColor]];
+
+	if(!item.permissionResolved)
+	{
+		for(NSDictionary* option in options)
+		{
+			if(option != options.firstObject)
+				[card appendAttributedString:[self text:@"     " font:SmallFont() color:NSColor.labelColor]];
+			NSString* name = [NSString stringWithFormat:@"%@ %@", PermissionOptionGlyph(option[@"kind"]), option[@"name"] ?: option[@"optionId"]];
+			NSMutableAttributedString* link = [[self link:name url:[self actionURL:@"permission" item:item parameters:@{ @"option": [option[@"optionId"] description] ?: @"" }]] mutableCopy];
+			[link addAttribute:NSFontAttributeName value:[NSFont systemFontOfSize:NSFont.systemFontSize weight:NSFontWeightMedium] range:NSMakeRange(0, link.length)];
+			[card appendAttributedString:link];
+		}
+	}
+	else
+	{
+		NSDictionary* selected = nil;
+		for(NSDictionary* option in options)
+		{
+			if([option[@"optionId"] isEqual:item.selectedOptionId])
+				selected = option;
+		}
+		NSString* outcome = selected ? [NSString stringWithFormat:@"%@ %@", PermissionOptionGlyph(selected[@"kind"]), selected[@"name"] ?: selected[@"optionId"]] : @"– Cancelled";
+		NSColor* color = [selected[@"kind"] hasPrefix:@"allow"] ? NSColor.systemGreenColor : ([selected[@"kind"] hasPrefix:@"reject"] ? NSColor.systemRedColor : NSColor.secondaryLabelColor);
+		[card appendAttributedString:[self text:outcome font:SmallFont() color:color]];
+	}
+
+	[card addAttribute:NSParagraphStyleAttributeName value:paragraph range:NSMakeRange(0, card.length)];
+	[res appendAttributedString:card];
+}
+
 - (void)renderPlanItem:(AgentTranscriptItem*)item into:(NSMutableAttributedString*)res
 {
 	[res appendAttributedString:[self text:@"Plan" font:[NSFont systemFontOfSize:NSFont.smallSystemFontSize weight:NSFontWeightSemibold] color:NSColor.labelColor]];
@@ -353,6 +441,18 @@ static NSString* PathFromURI (NSString* uri)
 // ===========
 // = Actions =
 // ===========
+
+- (AgentTranscriptItem*)toolCallItemWithIdentifier:(id)toolCallId
+{
+	if(!toolCallId)
+		return nil;
+	for(AgentTranscriptItem* item in _transcript.items.reverseObjectEnumerator)
+	{
+		if(item.kind == AgentTranscriptItemKindToolCall && [item.toolCall[@"toolCallId"] isEqual:toolCallId])
+			return item;
+	}
+	return nil;
+}
 
 - (AgentTranscriptItem*)itemWithIdentifier:(NSString*)identifier
 {
@@ -400,6 +500,11 @@ static NSString* PathFromURI (NSString* uri)
 		item.expanded = !item.expanded;
 		[_pendingIdentifiers addObject:item.identifier];
 		[self flushPendingItems];
+	}
+	else if([action isEqualToString:@"permission"] && item && !item.permissionResolved)
+	{
+		if([_actionDelegate respondsToSelector:@selector(transcriptView:selectPermissionOption:forItem:)])
+			[_actionDelegate transcriptView:self selectPermissionOption:parameters[@"option"] forItem:item];
 	}
 	else if([action isEqualToString:@"open"] && parameters[@"path"])
 	{

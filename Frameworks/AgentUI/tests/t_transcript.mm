@@ -96,3 +96,27 @@ void test_identifiers_are_unique ()
 	AgentTranscriptItem* c = [transcript addNotice:@"c"];
 	OAK_ASSERT(![c.identifier isEqualToString:a.identifier]);
 }
+
+void test_permission_items ()
+{
+	AgentTranscript* transcript = [[AgentTranscript alloc] init];
+	NSDictionary* params = @{
+		@"toolCall": @{ @"toolCallId": @"call-1", @"title": @"Run tests" },
+		@"options":  @[ @{ @"optionId": @"allow", @"name": @"Allow", @"kind": @"allow_once" }, @{ @"optionId": @"deny", @"name": @"Deny", @"kind": @"reject_once" } ],
+	};
+
+	AgentTranscriptItem* first  = [transcript addPermissionRequest:params];
+	AgentTranscriptItem* second = [transcript addPermissionRequest:params];
+	OAK_ASSERT_EQ((NSInteger)first.kind, (NSInteger)AgentTranscriptItemKindPermission);
+	OAK_ASSERT([first.permissionRequest[@"toolCall"][@"title"] isEqualToString:@"Run tests"]);
+	OAK_ASSERT_EQ(transcript.pendingPermissionItems.count, 2);
+
+	[transcript resolvePermissionItem:first selectedOptionId:@"allow"];
+	OAK_ASSERT(first.permissionResolved);
+	OAK_ASSERT([first.selectedOptionId isEqualToString:@"allow"]);
+	OAK_ASSERT_EQ(transcript.pendingPermissionItems.count, 1);
+
+	[transcript resolvePermissionItem:second selectedOptionId:nil]; // cancelled
+	OAK_ASSERT(second.permissionResolved && second.selectedOptionId == nil);
+	OAK_ASSERT_EQ(transcript.pendingPermissionItems.count, 0);
+}
