@@ -60,6 +60,8 @@ If cmark-gfm fails, the preview shows the built-in rendering with a notice expla
 
 Off by default: like GitHub, the GitHub renderer keeps safe HTML (`<b>`, `<i>`, `<kbd>`, `<sup>`, `<details>`, `<summary>`, `<br>`, `<img>`, tables, …) and removes the rest, such as forms, styles, scripts and event attributes; the text inside removed tags still shows. Links must be web, mail or relative links. Turn on **Render all HTML** in **Preferences ▸ Projects** to show all HTML as written, for documents you trust. Scripts in the document never run either way, and the preview never navigates away from the document.
 
+To show HTML tags as text instead, in either renderer, put them in backticks: `` `<b>bold</b>` `` shows `<b>bold</b>` in code style. A fenced code block (```` ``` ````) does the same for several lines of HTML.
+
 ### Your own Markdown command (`TM_MARKDOWN`)
 
 If `TM_MARKDOWN` is set (in **Preferences ▸ Variables** or a `.tm_properties` file), the GitHub renderer runs that command instead of cmark-gfm, as the Markdown bundle does. It gets the Markdown on standard input and must print HTML. For example, in `.tm_properties`:
