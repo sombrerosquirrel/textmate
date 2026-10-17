@@ -194,6 +194,7 @@ The checkbox was renamed from "Allow raw HTML" to "Render all HTML": the user re
 **Uninstalled cmark-gfm (2026-10-16, user testing):** after `brew uninstall cmark-gfm`, picking GitHub showed "cmark-gfm failed" instead of the install sheet: the path found earlier was kept for the window's lifetime. The path is now dropped when it's no longer executable, both when the renderer changes (so the sheet is offered) and before each render (so the header shows "isn't installed" with Install…).
 
 Checked by the user (2026-10-16): the install sheet's Cancel, Install with Homebrew and Locate…, after the fix above.
+Checked by the user (2026-10-16): Preferences ▸ Projects renderer popup switches an open preview; "Render all HTML" renders styles; the tooltip shows.
 
 ## Future work
 - [x] The `editorPanelsView` accessor lived in the agent category; moved to `DocumentWindowController+EditorPanels` (P3).
