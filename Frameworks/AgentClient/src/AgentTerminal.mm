@@ -86,6 +86,22 @@ static NSString* DisplayArgument (NSString* arg)
 @end
 
 @implementation AgentTerminal
+- (void)dealloc
+{
+	if(_readSource)
+		dispatch_source_cancel(_readSource);
+	if(_exitSource)
+	{
+		dispatch_source_cancel(_exitSource);
+		// Nobody is left to collect the exit status; reap it once it ends (killAll sent SIGTERM, then SIGKILL)
+		pid_t pid = _pid;
+		dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+			int status;
+			waitpid(pid, &status, 0);
+		});
+	}
+}
+
 - (NSString*)output
 {
 	return DecodeUTF8(_buffer);
@@ -336,7 +352,7 @@ static NSString* DisplayArgument (NSString* arg)
 	if(terminal->_readSource)
 		[self readAvailableOutputOfTerminal:terminal fileDescriptor:(int)dispatch_source_get_handle(terminal->_readSource)];
 
-	terminal->_exitSource = nil;
+	terminal->_exitSource = nil; // already cancelled
 	terminal.exitCode = WIFEXITED(status) ? @(WEXITSTATUS(status)) : nil;
 	terminal.signal   = WIFSIGNALED(status) ? SignalName(WTERMSIG(status)) : nil;
 	terminal.exited   = YES;
