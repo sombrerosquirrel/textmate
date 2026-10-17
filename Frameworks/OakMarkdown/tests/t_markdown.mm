@@ -311,3 +311,137 @@ void test_footnote_source_lines ()
 	NSAttributedString* str = [OakMarkdownRenderer attributedStringFromMarkdown:@"One[^1]\n\n[^1]: Note\n    more\n\nTwo\n" style:style baseURL:nil codeBlocks:nullptr codeBlockFooter:nil];
 	OAK_ASSERT_EQ(SourceLines(str), "1:O 6:T ");
 }
+
+// ========
+// = HTML =
+// ========
+
+static id AttributeAt (NSAttributedString* str, NSString* text, NSAttributedStringKey key)
+{
+	NSRange range = [str.string rangeOfString:text];
+	return range.location == NSNotFound ? nil : [str attribute:key atIndex:range.location effectiveRange:nullptr];
+}
+
+static NSAttributedString* RenderDetails (NSString* markdown, NSSet<NSNumber*>* toggledDetails)
+{
+	OakMarkdownStyle* style = [OakMarkdownStyle defaultStyle];
+	style.toggledDetails = toggledDetails;
+	return [OakMarkdownRenderer attributedStringFromMarkdown:markdown style:style baseURL:nil codeBlocks:nullptr codeBlockFooter:nil];
+}
+
+void test_html_inline_tags ()
+{
+	NSAttributedString* str = Render(@"a <b>bold</b> <i>it</i> <kbd>K</kbd> H<sub>2</sub>O x<sup>3</sup> <mark>m</mark> <u>u</u> <s>s</s> <b><i>both</i></b>");
+	OAK_ASSERT_EQ(String(str), "a bold it K H2O x3 m u s both");
+	OAK_ASSERT(IsBold(FontAt(str, @"bold")));
+	OAK_ASSERT(IsItalic(FontAt(str, @"it")));
+	OAK_ASSERT(IsMonospace(FontAt(str, @"K")));
+	OAK_ASSERT([AttributeAt(str, @"K", NSBackgroundColorAttributeName) isEqual:[OakMarkdownStyle defaultStyle].codeBackgroundColor]);
+	OAK_ASSERT([AttributeAt(str, @"2", NSBaselineOffsetAttributeName) doubleValue] < 0);
+	OAK_ASSERT([AttributeAt(str, @"3", NSBaselineOffsetAttributeName) doubleValue] > 0);
+	OAK_ASSERT(FontAt(str, @"3").pointSize < FontAt(str, @"x").pointSize);
+	OAK_ASSERT(AttributeAt(str, @"m", NSBackgroundColorAttributeName) != nil);
+	OAK_ASSERT([AttributeAt(str, @"u ", NSUnderlineStyleAttributeName) integerValue] != 0);
+	OAK_ASSERT([AttributeAt(str, @"s ", NSStrikethroughStyleAttributeName) integerValue] != 0);
+	OAK_ASSERT(IsBold(FontAt(str, @"both")) && IsItalic(FontAt(str, @"both")));
+
+	// Styles end with the tag, or at the end of the paragraph
+	OAK_ASSERT(!IsBold(FontAt(str, @"a ")));
+	NSAttributedString* unclosed = Render(@"<b>open\n\nnext");
+	OAK_ASSERT(IsBold(FontAt(unclosed, @"open")));
+	OAK_ASSERT(!IsBold(FontAt(unclosed, @"next")));
+}
+
+void test_html_line_break ()
+{
+	OAK_ASSERT_EQ(String(Render(@"one<br>two<br/>three")), "one two three");
+}
+
+void test_html_unknown_and_literal_tags ()
+{
+	OAK_ASSERT_EQ(String(Render(@"<span>a</span> <foo bar=\"1\">b</foo> <!-- note -->c")), "a b c");
+	OAK_ASSERT_EQ(String(Render(@"x <script>alert(1)</script> y")), "x <script>alert(1)</script> y");
+	OAK_ASSERT_EQ(String(Render(@"a < b > c")), "a < b > c");
+
+	// In code, tags are text
+	NSAttributedString* code = Render(@"`<b>x</b>`");
+	OAK_ASSERT_EQ(String(code), "<b>x</b>");
+	OAK_ASSERT(IsMonospace(FontAt(code, @"x")));
+}
+
+void test_html_links ()
+{
+	NSAttributedString* str = RenderDocument(@"<a href=\"https://example.com\">web</a> <a href=\"javascript:alert(1)\">js</a> <a href=\"other.md\">rel</a>", [NSURL fileURLWithPath:@"/docs/README.md"]);
+	OAK_ASSERT_EQ(String(str), "web js rel");
+	OAK_ASSERT_EQ(S([AttributeAt(str, @"web", NSLinkAttributeName) absoluteString]), "https://example.com");
+	OAK_ASSERT(AttributeAt(str, @"js", NSLinkAttributeName) == nil);
+	OAK_ASSERT_EQ(S([AttributeAt(str, @"rel", NSLinkAttributeName) absoluteString]), "file:///docs/other.md");
+}
+
+void test_html_blocks ()
+{
+	NSAttributedString* str = Render(@"<div align=\"center\">\n<b>Title</b> &amp; <i>more</i>\n</div>\n\nAfter");
+	OAK_ASSERT_EQ(String(str), "Title & more\nAfter");
+	OAK_ASSERT(IsBold(FontAt(str, @"Title")));
+	OAK_ASSERT(ParagraphStyleAt(str, @"Title").alignment == NSTextAlignmentCenter);
+	OAK_ASSERT(ParagraphStyleAt(str, @"After").alignment == NSTextAlignmentNatural);
+
+	// Markdown inside an HTML block
+	NSAttributedString* wrapped = Render(@"<p align=\"right\">\n\n**x**\n\n</p>\n\ny");
+	OAK_ASSERT_EQ(String(wrapped), "x\ny");
+	OAK_ASSERT(ParagraphStyleAt(wrapped, @"x").alignment == NSTextAlignmentRight);
+	OAK_ASSERT(ParagraphStyleAt(wrapped, @"y").alignment == NSTextAlignmentNatural);
+
+	NSAttributedString* heading = Render(@"<h1 align=\"center\">Name</h1>\n<p>Text &lt;tag&gt; &#x263A;</p>");
+	OAK_ASSERT_EQ(String(heading), "Name\nText <tag> ☺");
+	OAK_ASSERT(FontAt(heading, @"Name").pointSize > FontAt(heading, @"Text").pointSize);
+
+	OAK_ASSERT_EQ(String(Render(@"<ul>\n<li>One</li>\n<li>Two</li>\n</ul>\n\n<ol start=\"3\">\n<li>Three</li>\n</ol>")), "•\tOne\n•\tTwo\n3.\tThree");
+	OAK_ASSERT_EQ(String(Render(@"<pre>\nline 1\n  line 2</pre>")), "line 1   line 2");
+}
+
+void test_html_image ()
+{
+	NSURL* folder = MakeImageFolder();
+	NSURL* document = [folder URLByAppendingPathComponent:@"README.md"];
+
+	NSTextAttachment* attachment = FirstAttachment(RenderDocument(@"<p align=\"center\">\n  <img src=\"pic.png\" width=\"100\" alt=\"Logo\">\n</p>", document));
+	OAK_ASSERT(attachment != nil);
+	OAK_ASSERT_EQ(NSWidth(attachment.bounds), 100);
+	OAK_ASSERT_EQ(NSHeight(attachment.bounds), 50);
+
+	OAK_ASSERT(FirstAttachment(RenderDocument(@"Inline <img src=\"pic.png\"> image", document)) != nil);
+	OAK_ASSERT(FirstAttachment(RenderDocument(@"<img src=\"javascript:x\">", document)) == nil);
+
+	[NSFileManager.defaultManager removeItemAtURL:folder error:nil];
+}
+
+void test_html_details ()
+{
+	NSString* markdown = @"<details>\n<summary>More</summary>\n\nHidden *text*\n\n</details>\n\nEnd";
+
+	// Without toggling (agent chat): open, summary isn’t a link
+	NSAttributedString* open = RenderDetails(markdown, nil);
+	OAK_ASSERT_EQ(String(open), "▾ More\nHidden text\nEnd");
+	OAK_ASSERT(AttributeAt(open, @"More", NSLinkAttributeName) == nil);
+
+	// Closed by default, the summary toggles it
+	NSAttributedString* closed = RenderDetails(markdown, [NSSet set]);
+	OAK_ASSERT_EQ(String(closed), "▸ More\nEnd");
+	OAK_ASSERT([AttributeAt(closed, @"More", NSLinkAttributeName) isEqual:OakMarkdownDetailsURL(0)]);
+	OAK_ASSERT([AttributeAt(closed, @"▸", NSLinkAttributeName) isEqual:OakMarkdownDetailsURL(0)]);
+
+	OAK_ASSERT_EQ(String(RenderDetails(markdown, [NSSet setWithObject:@0])), "▾ More\nHidden text\nEnd");
+
+	// `open`, and the second one toggled
+	NSString* two = @"<details open><summary>A</summary>\n\na\n\n</details>\n\n<details><summary>B</summary>\n\nb\n\n</details>";
+	OAK_ASSERT_EQ(String(RenderDetails(two, [NSSet set])), "▾ A\na\n▸ B");
+	OAK_ASSERT_EQ(String(RenderDetails(two, [NSSet setWithObjects:@0, @1, nil])), "▸ A\n▾ B\nb");
+
+	// Without a summary, and nested in a closed one
+	OAK_ASSERT_EQ(String(RenderDetails(@"<details>\n\nx\n\n</details>", [NSSet set])), "▸ Details");
+	OAK_ASSERT_EQ(String(RenderDetails(@"<details><summary>Outer</summary>\n<details><summary>Inner</summary>\n\nx\n\n</details>\n</details>\n\nEnd", [NSSet set])), "▸ Outer\nEnd");
+
+	OAK_ASSERT_EQ(OakMarkdownDetailsIndexForURL(OakMarkdownDetailsURL(12)), 12);
+	OAK_ASSERT_EQ(OakMarkdownDetailsIndexForURL([NSURL URLWithString:@"https://example.com"]), -1);
+}

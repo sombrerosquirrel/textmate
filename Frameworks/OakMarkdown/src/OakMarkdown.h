@@ -3,6 +3,12 @@
 // block quotes, tables, task lists, horizontal rules, local images, footnotes,
 // and inline emphasis, code, strikethrough and links.
 //
+// HTML in the Markdown is rendered where a text view can show it, like the
+// safe tags GitHub allows: <b>, <i>, <kbd>, <sup>, <mark>, <br>, <img>,
+// <a href>, <details>/<summary>, headings, lists and alignment (e.g. <div
+// align="center">). Other tags are left out with their text kept; <script>,
+// <style> and the like are shown as text.
+//
 // Foundation’s parser only labels block structure (NSPresentationIntent); this
 // turns those labels into separators, indentation, fonts and text blocks.
 
@@ -15,6 +21,11 @@
 @property (nonatomic) NSColor* borderColor;
 @property (nonatomic) CGFloat maximumImageWidth; // local images are scaled down to fit; 0 for no limit
 @property (nonatomic) BOOL marksSourceLines;      // add OakMarkdownSourceLineAttributeName, e.g. for scroll sync
+
+// nil: every <details> is shown open. Otherwise each starts as written (closed
+// unless it has `open`), the other way round if its index (0 for the first in
+// the document) is in the set, and its summary links to OakMarkdownDetailsURL().
+@property (nonatomic, copy) NSSet<NSNumber*>* toggledDetails;
 + (instancetype)defaultStyle;
 @end
 
@@ -34,6 +45,10 @@ extern NSAttributedStringKey const OakMarkdownSourceLineAttributeName;
 // use (NSString, “fn-1” or “fnref-1”). Footnote links are “#fn-1” resolved
 // against the base URL.
 extern NSAttributedStringKey const OakMarkdownAnchorAttributeName;
+
+// The link on the summary of the `index`th <details>, to open or close it
+NSURL* OakMarkdownDetailsURL (NSUInteger index);
+NSInteger OakMarkdownDetailsIndexForURL (NSURL* url); // -1 if it isn’t such a link
 
 @interface OakMarkdownRenderer : NSObject
 // `codeBlockFooter`, if given, is called after each code block and its result

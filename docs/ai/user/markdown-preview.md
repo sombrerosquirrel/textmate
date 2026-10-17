@@ -37,7 +37,7 @@ Pick one in the popup at the top right of the preview, or in **Preferences ▸ P
 | Looks like | TextMate's agent chat | GitHub |
 | Tables, task lists, strikethrough, bare URLs as links | Yes | Yes |
 | Footnotes | Yes | Yes |
-| Raw HTML (`<b>`, `<details>`, …) | Shown as text | Safe tags rendered, as on GitHub; all of it with **Render all HTML** |
+| HTML (`<b>`, `<details>`, …) | Common safe tags rendered (see [HTML in the built-in renderer](#html-in-the-built-in-renderer)) | Safe tags rendered, as on GitHub; all of it with **Render all HTML** |
 | Local images | Yes | Yes, from the project folder (or the document's folder if it's outside the project) |
 | Remote images | Never loaded; shown as a link | Loaded, as on GitHub |
 | Find (⌘F) | Yes | Not yet |
@@ -60,7 +60,18 @@ If cmark-gfm fails, the preview shows the built-in rendering with a notice expla
 
 Off by default: like GitHub, the GitHub renderer keeps safe HTML (`<b>`, `<i>`, `<kbd>`, `<sup>`, `<details>`, `<summary>`, `<br>`, `<img>`, tables, …) and removes the rest, such as forms, styles, scripts and event attributes; the text inside removed tags still shows. Links must be web, mail or relative links. Turn on **Render all HTML** in **Preferences ▸ Projects** to show all HTML as written, for documents you trust. Scripts in the document never run either way, and the preview never navigates away from the document.
 
-To show HTML tags as text in the GitHub renderer, put them in backticks: `` `<b>bold</b>` `` shows `<b>bold</b>` in code style. A fenced code block (```` ``` ````) does the same for several lines of HTML. The built-in renderer always shows HTML tags as text.
+To show HTML tags as text, put them in backticks: `` `<b>bold</b>` `` shows `<b>bold</b>` in code style. A fenced code block (```` ``` ````) does the same for several lines of HTML. This works in both renderers.
+
+### HTML in the built-in renderer
+
+The built-in renderer shows the HTML a text view can, much like GitHub's safe tags:
+
+- **Text styles:** `<b>`/`<strong>`, `<i>`/`<em>`, `<u>`, `<s>`/`<del>`, `<mark>`, `<small>`, `<sup>`, `<sub>`, `<code>`, `<kbd>`, and `<br>` for a line break.
+- **Links and images:** `<a href>` (web, mail and relative links only) and `<img src>` with an optional `width`. As for Markdown images, only local images load.
+- **Layout:** `<p>`, `<div>`, headings (`<h1>`–`<h6>`), `<ul>`/`<ol>`/`<li>`, `<pre>`, `<hr>`, and `align="center"` / `"right"` (also around Markdown, e.g. a centered logo at the top of a README).
+- **`<details>` / `<summary>`:** closed unless written with `open`; click the summary to open or close it. TextMate remembers which ones you opened until you switch documents.
+
+Other tags are left out and their text is kept. `<script>`, `<style>` and the like are shown as text. HTML tables lay out as lines of tab-separated cells, and `style` attributes, forms and colors aren't supported; use the GitHub renderer for those. In the agent chat, `<details>` sections are always shown open.
 
 ### Your own Markdown command (`TM_MARKDOWN`)
 

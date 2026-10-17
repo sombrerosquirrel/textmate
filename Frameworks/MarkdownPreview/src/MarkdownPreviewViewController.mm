@@ -23,6 +23,7 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 
 	NSString* _markdown;
 	NSURL* _baseURL;
+	NSMutableSet<NSNumber*>* _toggledDetails; // <details> opened or closed by the user
 	CGFloat _renderedWidth;
 	std::vector<std::pair<CGFloat, CGFloat>> _anchors; // source line → y in the text view, both increasing
 }
@@ -207,6 +208,8 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 - (void)showMarkdown:(NSString*)markdown baseURL:(NSURL*)baseURL
 {
 	[self view];
+	if(!_toggledDetails || !(baseURL == _baseURL || [baseURL isEqual:_baseURL]))
+		_toggledDetails = [NSMutableSet set];
 	_markdown = [markdown copy];
 	_baseURL  = baseURL;
 	[self render];
@@ -261,6 +264,7 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 
 	_renderedWidth = [self availableWidth];
 	_style.maximumImageWidth = _renderedWidth;
+	_style.toggledDetails    = _toggledDetails;
 
 	NSPoint scrollOrigin = _scrollView.contentView.bounds.origin;
 	[_textView.textStorage setAttributedString:[OakMarkdownRenderer attributedStringFromMarkdown:_markdown style:_style baseURL:_baseURL codeBlocks:nullptr codeBlockFooter:nil]];
@@ -385,6 +389,18 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 - (BOOL)textView:(NSTextView*)textView clickedOnLink:(id)link atIndex:(NSUInteger)charIndex
 {
 	NSURL* url = [link isKindOfClass:[NSURL class]] ? link : [NSURL URLWithString:[link description] relativeToURL:_baseURL];
+
+	// A <details> summary: open or close it
+	NSInteger details = OakMarkdownDetailsIndexForURL(url);
+	if(details >= 0)
+	{
+		NSNumber* index = @(details);
+		if([_toggledDetails containsObject:index])
+			[_toggledDetails removeObject:index];
+		else	[_toggledDetails addObject:index];
+		[self render];
+		return YES;
+	}
 	if(url.fragment && [self scrollToAnchor:url.fragment ofURL:url])
 		return YES;
 	if(url)

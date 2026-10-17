@@ -196,6 +196,14 @@ The checkbox was renamed from "Allow raw HTML" to "Render all HTML": the user re
 Checked by the user (2026-10-16): the install sheet's Cancel, Install with Homebrew and Locate…, after the fix above.
 Checked by the user (2026-10-16): Preferences ▸ Projects renderer popup switches an open preview; "Render all HTML" renders styles; the tooltip shows.
 
+**HTML in the built-in renderer (2026-10-16, user request):** the built-in renderer showed HTML tags as text. The user asked for it to match GitHub; a text view can't lay out arbitrary HTML, so it now renders the common safe tags (option 1 of three; revisit at the end of the Markdown phases). Foundation's parser marks inline HTML (`NSInlinePresentationIntentInlineHTML`, one run per tag, adjacent tags merged into one run) and HTML blocks (`…BlockHTML`, one run per block), so OakMarkdown handles them while rendering, without rewriting the Markdown:
+- Tags are parsed in `OakMarkdown.mm` (`ParseTag`, `DecodeEntities`, `SafeURL`). Inline tags (`<b>`, `<i>`, `<code>`/`<kbd>`, `<sup>`/`<sub>`, `<mark>`, `<u>`, `<s>`, `<small>`, `<a href>`, `title` as tooltip) style the text until they close or the block ends. Block tags (`<p>`, `<div>`, headings, lists, `<pre>`, `<blockquote>`, `<hr>`, `<details>`, `<summary>`) start paragraphs and stay open across Markdown blocks, so `align` applies to Markdown inside a `<div align="center">`.
+- `<img>` uses the Markdown image path, with `width`. `<br>` is a line separator (U+2028). Whitespace is collapsed as in a browser and only added between content.
+- `<details>`: `OakMarkdownStyle.toggledDetails` nil (agent chat) shows all open; otherwise each is closed unless `open`, flipped if its index is in the set, and the summary (▸/▾) links to `OakMarkdownDetailsURL(index)`. The preview keeps the set per document and re-renders on click. Content of a closed one, Markdown included, is skipped; a missing summary becomes "Details".
+- Unknown tags are left out with their text; tagfilter's tags (`<script>`, `<style>`, …) are shown as text, as on GitHub.
+- Not supported: HTML tables (cells separated by tabs), `style`, forms, colors.
+- 7 new OakMarkdown tests (26); ctest 28/28. Checked visually by rendering a sample offscreen (README-style centered logo and heading, inline styles, open and closed details, HTML list).
+
 ## Future work
 - [x] The `editorPanelsView` accessor lived in the agent category; moved to `DocumentWindowController+EditorPanels` (P3).
 - [ ] Save the preview's (and agent panel's) visibility in the session.
@@ -203,5 +211,6 @@ Checked by the user (2026-10-16): Preferences ▸ Projects renderer popup switch
 - [x] Precise scroll sync by source line for the GitHub renderer (P4).
 - [x] Precise scroll sync for the built-in renderer (source positions from Foundation's parser).
 - [ ] ⌘F find in the GitHub renderer's web view.
+- [ ] Revisit HTML in the built-in renderer at the end of the Markdown phases (user, 2026-10-16): options were more tags, bundling cmark-gfm, or leaving it.
 - [ ] Footnote links in the agent chat: they render, but clicking one does nothing (the transcript has no anchor scrolling).
 - [ ] **Revisit scroll smoothness** (user, 2026-10-15: "Much smoother now, make a note to revisit this later after completion and when doing UX"). With the UX pass at the end. Ideas: time-based easing toward the target; measure the GitHub renderer live (a probe that doesn't block the main queue); update the page's anchors when images finish loading; check the speed-up through paragraphs that are much taller in the preview than in the editor.

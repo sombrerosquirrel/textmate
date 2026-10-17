@@ -4,6 +4,21 @@ NSAttributedStringKey const OakMarkdownCodeBlockAttributeName = @"OakMarkdownCod
 NSAttributedStringKey const OakMarkdownSourceLineAttributeName = @"OakMarkdownSourceLine";
 NSAttributedStringKey const OakMarkdownAnchorAttributeName = @"OakMarkdownAnchor";
 
+static NSString* const kDetailsURLScheme = @"x-oak-markdown-details";
+
+NSURL* OakMarkdownDetailsURL (NSUInteger index)
+{
+	return [NSURL URLWithString:[NSString stringWithFormat:@"%@:%lu", kDetailsURLScheme, index]];
+}
+
+NSInteger OakMarkdownDetailsIndexForURL (NSURL* url)
+{
+	if(![url.scheme isEqualToString:kDetailsURLScheme])
+		return -1;
+	NSString* index = url.resourceSpecifier;
+	return index.length && [index rangeOfCharacterFromSet:NSCharacterSet.decimalDigitCharacterSet.invertedSet].location == NSNotFound ? index.integerValue : -1;
+}
+
 static CGFloat const kListIndent  = 18;
 static CGFloat const kQuoteIndent = 12;
 
@@ -90,9 +105,179 @@ namespace
 		bool thematicBreak = false;
 	};
 
+	// ========
+	// = HTML =
+	// ========
+
+	NSSet<NSString*>* HTMLBlockTags ()
+	{
+		static NSSet<NSString*>* const res = [NSSet setWithArray:@[
+			@"address", @"article", @"aside", @"blockquote", @"caption", @"center", @"dd", @"details", @"div", @"dl", @"dt",
+			@"figcaption", @"figure", @"footer", @"h1", @"h2", @"h3", @"h4", @"h5", @"h6", @"header", @"li", @"main",
+			@"nav", @"ol", @"p", @"pre", @"section", @"summary", @"table", @"tbody", @"tfoot", @"thead", @"tr", @"ul",
+		]];
+		return res;
+	}
+
+	NSSet<NSString*>* HTMLInlineTags ()
+	{
+		static NSSet<NSString*>* const res = [NSSet setWithArray:@[
+			@"a", @"abbr", @"b", @"bdi", @"bdo", @"cite", @"code", @"del", @"dfn", @"em", @"i", @"ins", @"kbd", @"mark",
+			@"q", @"s", @"samp", @"small", @"span", @"strike", @"strong", @"sub", @"sup", @"td", @"th", @"time", @"tt",
+			@"u", @"var",
+		]];
+		return res;
+	}
+
+	// Shown as text, as GitHub’s tagfilter does
+	NSSet<NSString*>* HTMLLiteralTags ()
+	{
+		static NSSet<NSString*>* const res = [NSSet setWithArray:@[
+			@"iframe", @"noembed", @"noframes", @"plaintext", @"script", @"style", @"textarea", @"title", @"xmp",
+		]];
+		return res;
+	}
+
+	struct html_tag_t
+	{
+		NSString* name; // lowercase
+		bool end = false;
+		NSMutableDictionary<NSString*, NSString*>* attributes;
+	};
+
+	bool IsHTMLSpace (unichar ch)
+	{
+		return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' || ch == '\f';
+	}
+
+	bool IsASCIIAlpha (unichar ch)
+	{
+		return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z');
+	}
+
+	NSString* DecodeEntities (NSString* str)
+	{
+		if(![str containsString:@"&"])
+			return str;
+
+		static NSDictionary<NSString*, NSString*>* const named = @{
+			@"amp": @"&", @"lt": @"<", @"gt": @">", @"quot": @"\"", @"apos": @"'", @"nbsp": @"\u00A0",
+			@"copy": @"©", @"reg": @"®", @"trade": @"™", @"hellip": @"…", @"mdash": @"—", @"ndash": @"–",
+			@"middot": @"·", @"times": @"×", @"larr": @"←", @"rarr": @"→", @"uarr": @"↑", @"darr": @"↓",
+		};
+		static NSRegularExpression* const regex = [NSRegularExpression regularExpressionWithPattern:@"&(#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[a-zA-Z]{2,8});" options:0 error:nil];
+
+		NSMutableString* res = [NSMutableString string];
+		NSUInteger last = 0;
+		for(NSTextCheckingResult* match in [regex matchesInString:str options:0 range:NSMakeRange(0, str.length)])
+		{
+			NSString* entity = [str substringWithRange:[match rangeAtIndex:1]];
+			NSString* replacement = named[entity];
+			if([entity hasPrefix:@"#"])
+			{
+				BOOL hex = [entity hasPrefix:@"#x"] || [entity hasPrefix:@"#X"];
+				unsigned long code = strtoul(entity.UTF8String + (hex ? 2 : 1), nullptr, hex ? 16 : 10);
+				if(code > 0 && code <= 0x10FFFF && (code < 0xD800 || code > 0xDFFF))
+				{
+					UTF32Char ch = (UTF32Char)code;
+					replacement = [[NSString alloc] initWithBytes:&ch length:sizeof(ch) encoding:NSUTF32LittleEndianStringEncoding];
+				}
+			}
+
+			if(replacement)
+			{
+				[res appendString:[str substringWithRange:NSMakeRange(last, match.range.location - last)]];
+				[res appendString:replacement];
+				last = NSMaxRange(match.range);
+			}
+		}
+		[res appendString:[str substringFromIndex:last]];
+		return res;
+	}
+
+	// Parses the tag at `str[from]` (“<”) and returns the index after it, or
+	// NSNotFound if it isn’t a tag
+	NSUInteger ParseTag (NSString* str, NSUInteger from, html_tag_t& tag)
+	{
+		NSUInteger const length = str.length;
+		NSUInteger i = from + 1;
+		tag.end = i < length && [str characterAtIndex:i] == '/';
+		if(tag.end)
+			++i;
+		if(i == length || !IsASCIIAlpha([str characterAtIndex:i]))
+			return NSNotFound;
+
+		NSUInteger const nameStart = i;
+		while(i < length && (IsASCIIAlpha([str characterAtIndex:i]) || isdigit([str characterAtIndex:i]) || [str characterAtIndex:i] == '-'))
+			++i;
+		tag.name       = [str substringWithRange:NSMakeRange(nameStart, i - nameStart)].lowercaseString;
+		tag.attributes = [NSMutableDictionary dictionary];
+
+		while(true)
+		{
+			while(i < length && IsHTMLSpace([str characterAtIndex:i]))
+				++i;
+			if(i == length)
+				return NSNotFound;
+
+			unichar ch = [str characterAtIndex:i];
+			if(ch == '>')
+				return i + 1;
+			if(ch == '/')
+			{
+				++i;
+				continue;
+			}
+
+			NSUInteger const attributeStart = i;
+			while(i < length && !IsHTMLSpace(ch = [str characterAtIndex:i]) && ch != '/' && ch != '>' && ch != '=')
+				++i;
+			NSString* name = [str substringWithRange:NSMakeRange(attributeStart, i - attributeStart)].lowercaseString;
+
+			while(i < length && IsHTMLSpace([str characterAtIndex:i]))
+				++i;
+
+			NSString* value = @"";
+			if(i < length && [str characterAtIndex:i] == '=')
+			{
+				++i;
+				while(i < length && IsHTMLSpace([str characterAtIndex:i]))
+					++i;
+				if(i < length && ((ch = [str characterAtIndex:i]) == '"' || ch == '\''))
+				{
+					NSRange close = [str rangeOfString:(ch == '"' ? @"\"" : @"'") options:0 range:NSMakeRange(i + 1, length - i - 1)];
+					if(close.location == NSNotFound)
+						return NSNotFound;
+					value = [str substringWithRange:NSMakeRange(i + 1, close.location - i - 1)];
+					i = NSMaxRange(close);
+				}
+				else
+				{
+					NSUInteger const valueStart = i;
+					while(i < length && !IsHTMLSpace(ch = [str characterAtIndex:i]) && ch != '>')
+						++i;
+					value = [str substringWithRange:NSMakeRange(valueStart, i - valueStart)];
+				}
+			}
+
+			if(name.length && !tag.attributes[name])
+				tag.attributes[name] = DecodeEntities(value);
+		}
+	}
+
+	// Web, mail and relative links only, as on GitHub
+	NSURL* SafeURL (NSString* value, NSURL* baseURL)
+	{
+		NSString* str = [value stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+		NSURL* url = str.length ? [NSURL URLWithString:str] : nil;
+		if(!url || (url.scheme && ![@[ @"http", @"https", @"mailto" ] containsObject:url.scheme.lowercaseString]))
+			return nil;
+		return url.scheme ? url : [NSURL URLWithString:str relativeToURL:baseURL].absoluteURL;
+	}
+
 	struct renderer_t
 	{
-		renderer_t (OakMarkdownStyle* style, NSAttributedString*(^footer)(NSUInteger)) : style(style), footer(footer)
+		renderer_t (OakMarkdownStyle* style, NSURL* baseURL, NSAttributedString*(^footer)(NSUInteger)) : style(style), baseURL(baseURL), footer(footer)
 		{
 			output     = [[NSMutableAttributedString alloc] init];
 			codeBlocks = [NSMutableArray array];
@@ -102,11 +287,27 @@ namespace
 
 		void append_run (NSString* text, NSDictionary* attributes)
 		{
+			NSUInteger const inlineIntent = [attributes[NSInlinePresentationIntentAttributeName] unsignedIntegerValue];
+			if(inlineIntent & NSInlinePresentationIntentBlockHTML)
+				return append_block_html(text);
+
 			block_info_t block(attributes[NSPresentationIntentAttributeName]);
 			droppedPrefix = 0;
 
+			// Markdown inside a closed <details>
+			ensure_summary();
+			if(hidden())
+			{
+				textStart = output.length;
+				return;
+			}
+
 			if(block.identity != lastIdentity)
 			{
+				inlineTags.clear(); // inline HTML doesn’t continue into the next block
+				needsParagraph = false;
+				pendingSpace   = false;
+
 				// GitHub task list items: Foundation’s parser leaves “[ ] ” / “[x] ” in the text
 				taskState = kNotATask;
 				if(block.listItem && block.listItem.identity != lastListItemIdentity && text.length >= 4 && [text characterAtIndex:0] == '[' && [text characterAtIndex:2] == ']' && [text characterAtIndex:3] == ' ')
@@ -130,6 +331,10 @@ namespace
 			textStart = output.length;
 			if(block.thematicBreak)
 				return append(@" ", @{ NSParagraphStyleAttributeName: paragraphStyle, NSFontAttributeName: [NSFont systemFontOfSize:1] });
+
+			// Tags (adjacent ones are one run); the text between them comes as ordinary runs
+			if(inlineIntent & NSInlinePresentationIntentInlineHTML)
+				return append_html(text, attributes);
 
 			if(NSURL* imageURL = attributes[NSImageURLAttributeName])
 				return append_image(imageURL, text, inline_attributes(attributes, block));
@@ -171,7 +376,7 @@ namespace
 			[output appendAttributedString:[[NSAttributedString alloc] initWithString:text attributes:attributes]];
 		}
 
-		void append_image (NSURL* url, NSString* alt, NSDictionary* attributes)
+		void append_image (NSURL* url, NSString* alt, NSDictionary* attributes, CGFloat width = 0)
 		{
 			url = url.absoluteURL;
 			alt = [alt stringByReplacingOccurrencesOfString:@"\uFFFC" withString:@""]; // the parser’s text for an image without alt text
@@ -186,6 +391,8 @@ namespace
 			}
 
 			NSSize size = image.size;
+			if(width > 0)
+				size = NSMakeSize(width, round(size.height * width / size.width));
 			if(style.maximumImageWidth > 0 && size.width > style.maximumImageWidth)
 				size = NSMakeSize(style.maximumImageWidth, round(size.height * style.maximumImageWidth / size.width));
 
@@ -204,6 +411,7 @@ namespace
 		{
 			NSMutableParagraphStyle* paragraph = [[NSMutableParagraphStyle alloc] init];
 			paragraph.paragraphSpacing = 6;
+			paragraph.alignment        = html_alignment(); // e.g. Markdown inside <div align="center">
 
 			CGFloat indent = block.quoteDepth * kQuoteIndent;
 			NSString* prefix = nil;
@@ -306,24 +514,27 @@ namespace
 			}
 
 			if(block.thematicBreak)
-			{
-				// A full-width line: the bottom border of an (almost) empty block
-				NSTextBlock* rule = [[NSTextBlock alloc] init];
-				[rule setValue:100 type:NSTextBlockPercentageValueType forDimension:NSTextBlockWidth];
-				[rule setWidth:1 type:NSTextBlockAbsoluteValueType forLayer:NSTextBlockBorder edge:NSMaxYEdge];
-				[rule setBorderColor:style.borderColor forEdge:NSMaxYEdge];
-				[rule setWidth:8 type:NSTextBlockAbsoluteValueType forLayer:NSTextBlockMargin edge:NSMinYEdge];
-				[rule setWidth:8 type:NSTextBlockAbsoluteValueType forLayer:NSTextBlockMargin edge:NSMaxYEdge];
-				[rule setWidth:indent type:NSTextBlockAbsoluteValueType forLayer:NSTextBlockMargin edge:NSMinXEdge];
-				paragraph.textBlocks          = @[ rule ];
-				paragraph.firstLineHeadIndent = 0;
-				paragraph.headIndent          = 0;
-				paragraph.paragraphSpacing    = 0;
-			}
+				make_rule(paragraph, indent);
 
 			paragraphStyle = paragraph;
 			if(prefix)
 				append(prefix, @{ NSParagraphStyleAttributeName: paragraph, NSForegroundColorAttributeName: style.textColor, NSFontAttributeName: style.font });
+		}
+
+		// A full-width line: the bottom border of an (almost) empty block
+		void make_rule (NSMutableParagraphStyle* paragraph, CGFloat indent)
+		{
+			NSTextBlock* rule = [[NSTextBlock alloc] init];
+			[rule setValue:100 type:NSTextBlockPercentageValueType forDimension:NSTextBlockWidth];
+			[rule setWidth:1 type:NSTextBlockAbsoluteValueType forLayer:NSTextBlockBorder edge:NSMaxYEdge];
+			[rule setBorderColor:style.borderColor forEdge:NSMaxYEdge];
+			[rule setWidth:8 type:NSTextBlockAbsoluteValueType forLayer:NSTextBlockMargin edge:NSMinYEdge];
+			[rule setWidth:8 type:NSTextBlockAbsoluteValueType forLayer:NSTextBlockMargin edge:NSMaxYEdge];
+			[rule setWidth:indent type:NSTextBlockAbsoluteValueType forLayer:NSTextBlockMargin edge:NSMinXEdge];
+			paragraph.textBlocks          = @[ rule ];
+			paragraph.firstLineHeadIndent = 0;
+			paragraph.headIndent          = 0;
+			paragraph.paragraphSpacing    = 0;
 		}
 
 		void finish_code_block_if_needed (block_info_t const& next)
@@ -359,35 +570,478 @@ namespace
 		NSDictionary* inline_attributes (NSDictionary* attributes, block_info_t const& block)
 		{
 			NSUInteger inlineIntent = [attributes[NSInlinePresentationIntentAttributeName] unsignedIntegerValue];
+			html_style_t html = html_style();
+
+			NSInteger const headerLevel = block.headerLevel ?: html.headerLevel;
+			bool const code = block.codeBlock || (inlineIntent & NSInlinePresentationIntentCode) || html.code;
 
 			NSFont* font = style.font;
-			if(block.codeBlock || (inlineIntent & NSInlinePresentationIntentCode))
+			if(code)
 				font = style.codeFont;
-			if(block.headerLevel)
-				font = [NSFont systemFontOfSize:style.font.pointSize + std::max<NSInteger>(0, 8 - 2 * block.headerLevel) weight:NSFontWeightSemibold];
-			if((inlineIntent & NSInlinePresentationIntentStronglyEmphasized) || block.headerRow)
+			if(headerLevel)
+				font = [NSFont systemFontOfSize:style.font.pointSize + std::max<NSInteger>(0, 8 - 2 * headerLevel) weight:NSFontWeightSemibold];
+			if((inlineIntent & NSInlinePresentationIntentStronglyEmphasized) || block.headerRow || html.bold)
 				font = FontWithTrait(font, NSFontDescriptorTraitBold);
-			if(inlineIntent & NSInlinePresentationIntentEmphasized)
+			if((inlineIntent & NSInlinePresentationIntentEmphasized) || html.italic)
 				font = FontWithTrait(font, NSFontDescriptorTraitItalic);
+
+			CGFloat const pointSize = font.pointSize;
+			if(html.small || html.superscript || html.subscript)
+				font = [NSFont fontWithDescriptor:font.fontDescriptor size:round(pointSize * (html.small ? 0.85 : 0.75))] ?: font;
 
 			NSMutableDictionary* res = [NSMutableDictionary dictionaryWithDictionary:@{
 				NSFontAttributeName:            font,
-				NSForegroundColorAttributeName: block.quoteDepth ? style.secondaryTextColor : style.textColor,
+				NSForegroundColorAttributeName: block.quoteDepth || html.quote ? style.secondaryTextColor : style.textColor,
 				NSParagraphStyleAttributeName:  paragraphStyle,
 			}];
 
 			if(block.codeBlock)
 				res[OakMarkdownCodeBlockAttributeName] = @(codeBlocks.count);
-			else if(inlineIntent & NSInlinePresentationIntentCode)
+			else if(code)
 				res[NSBackgroundColorAttributeName] = style.codeBackgroundColor;
-			if(inlineIntent & NSInlinePresentationIntentStrikethrough)
+			if(html.mark)
+				res[NSBackgroundColorAttributeName] = [NSColor.systemYellowColor colorWithAlphaComponent:0.35];
+			if((inlineIntent & NSInlinePresentationIntentStrikethrough) || html.strikethrough)
 				res[NSStrikethroughStyleAttributeName] = @(NSUnderlineStyleSingle);
+			if(html.underline)
+				res[NSUnderlineStyleAttributeName] = @(NSUnderlineStyleSingle);
+			if(html.superscript || html.subscript)
+				res[NSBaselineOffsetAttributeName] = @(round(pointSize * (html.superscript ? 0.35 : -0.15)));
+			if(html.toolTip)
+				res[NSToolTipAttributeName] = html.toolTip;
 			if(id link = attributes[NSLinkAttributeName])
 				res[NSLinkAttributeName] = [link isKindOfClass:[NSURL class]] ? [(NSURL*)link absoluteURL] : link; // relative links resolved against the base URL
+			else if(html.link)
+				res[NSLinkAttributeName] = html.link;
 			return res;
 		}
 
+		// ========
+		// = HTML =
+		// ========
+
+		struct open_tag_t
+		{
+			NSString* name;
+			NSDictionary<NSString*, NSString*>* attributes;
+			NSURL* link = nil;
+			NSInteger itemCount = 0; // for <ol>
+		};
+
+		struct details_t
+		{
+			bool open;
+			NSUInteger index;        // in the document
+			bool inSummary   = false;
+			bool summaryDone = false;
+		};
+
+		struct html_style_t
+		{
+			bool bold = false, italic = false, code = false, strikethrough = false, underline = false;
+			bool mark = false, small = false, superscript = false, subscript = false, quote = false;
+			NSInteger headerLevel = 0;
+			NSURL* link = nil;
+			NSString* toolTip = nil;
+		};
+
+		html_style_t html_style () const
+		{
+			html_style_t res;
+			for(auto const* tags : { &blockTags, &inlineTags })
+			{
+				for(auto const& tag : *tags)
+				{
+					NSString* name = tag.name;
+					if([name isEqualToString:@"b"] || [name isEqualToString:@"strong"] || [name isEqualToString:@"th"] || [name isEqualToString:@"dt"])
+						res.bold = true;
+					else if([name isEqualToString:@"i"] || [name isEqualToString:@"em"] || [name isEqualToString:@"cite"] || [name isEqualToString:@"dfn"] || [name isEqualToString:@"var"] || [name isEqualToString:@"address"])
+						res.italic = true;
+					else if([name isEqualToString:@"code"] || [name isEqualToString:@"kbd"] || [name isEqualToString:@"samp"] || [name isEqualToString:@"tt"] || [name isEqualToString:@"pre"])
+						res.code = true;
+					else if([name isEqualToString:@"s"] || [name isEqualToString:@"del"] || [name isEqualToString:@"strike"])
+						res.strikethrough = true;
+					else if([name isEqualToString:@"u"] || [name isEqualToString:@"ins"])
+						res.underline = true;
+					else if([name isEqualToString:@"mark"])
+						res.mark = true;
+					else if([name isEqualToString:@"small"])
+						res.small = true;
+					else if([name isEqualToString:@"sup"])
+						res.superscript = true;
+					else if([name isEqualToString:@"sub"])
+						res.subscript = true;
+					else if([name isEqualToString:@"blockquote"])
+						res.quote = true;
+					else if(name.length == 2 && [name characterAtIndex:0] == 'h' && [name characterAtIndex:1] >= '1' && [name characterAtIndex:1] <= '6')
+						res.headerLevel = [name characterAtIndex:1] - '0';
+
+					if(tag.link)
+						res.link = tag.link;
+					if(NSString* title = tag.attributes[@"title"])
+						res.toolTip = title;
+				}
+			}
+			return res;
+		}
+
+		NSTextAlignment html_alignment () const
+		{
+			for(auto tag = blockTags.rbegin(); tag != blockTags.rend(); ++tag)
+			{
+				if([tag->name isEqualToString:@"center"])
+					return NSTextAlignmentCenter;
+
+				NSString* align = tag->attributes[@"align"].lowercaseString;
+				if([align isEqualToString:@"center"])  return NSTextAlignmentCenter;
+				if([align isEqualToString:@"right"])   return NSTextAlignmentRight;
+				if([align isEqualToString:@"left"])    return NSTextAlignmentLeft;
+				if([align isEqualToString:@"justify"]) return NSTextAlignmentJustified;
+			}
+			return NSTextAlignmentNatural;
+		}
+
+		bool html_inside (NSString* name) const
+		{
+			for(auto const& tag : blockTags)
+			{
+				if([tag.name isEqualToString:name])
+					return true;
+			}
+			return false;
+		}
+
+		// Inside a closed <details>, other than its summary
+		bool hidden () const
+		{
+			for(size_t i = 0; i < details.size(); ++i)
+			{
+				if(!details[i].open && (i + 1 < details.size() || !details[i].inSummary))
+					return true;
+			}
+			return false;
+		}
+
+		bool at_line_start () const
+		{
+			if(!output.length)
+				return true;
+			unichar ch = [output.string characterAtIndex:output.length - 1];
+			return ch == '\n' || ch == 0x2028;
+		}
+
+		// Starts the paragraph that block tags (<p>, <div>, <li>, …) asked for
+		void ensure_paragraph (bool listItem = false, bool rule = false)
+		{
+			if(!needsParagraph)
+				return;
+			needsParagraph = false;
+			pendingSpace   = false;
+
+			NSUInteger const before = output.length;
+			if(output.length && !at_line_start())
+				append(@"\n", @{ NSParagraphStyleAttributeName: paragraphStyle });
+
+			NSInteger lists = 0, quotes = 0;
+			for(auto const& tag : blockTags)
+			{
+				if([tag.name isEqualToString:@"ul"] || [tag.name isEqualToString:@"ol"] || [tag.name isEqualToString:@"dd"])
+					++lists;
+				else if([tag.name isEqualToString:@"blockquote"])
+					++quotes;
+			}
+			CGFloat const indent = lists * kListIndent + quotes * kQuoteIndent;
+
+			NSMutableParagraphStyle* paragraph = [[NSMutableParagraphStyle alloc] init];
+			paragraph.paragraphSpacing    = 6;
+			paragraph.alignment           = html_alignment();
+			paragraph.firstLineHeadIndent = listItem ? std::max<CGFloat>(indent - kListIndent, 0) : indent;
+			paragraph.headIndent          = indent;
+			if(listItem)
+			{
+				paragraph.paragraphSpacing = 3;
+				paragraph.tabStops = @[ [[NSTextTab alloc] initWithTextAlignment:NSTextAlignmentLeft location:indent options:@{ }] ];
+			}
+			if(html_style().headerLevel)
+			{
+				paragraph.paragraphSpacingBefore = 6;
+				paragraph.paragraphSpacing       = 4;
+			}
+			if(rule)
+				make_rule(paragraph, indent);
+			paragraphStyle = paragraph;
+
+			if(textStart == before)
+				textStart = output.length;
+		}
+
+		// Whitespace between tags and text is collapsed to one space, which is
+		// only added between two pieces of content in the same paragraph
+		void append_html_text (NSString* text)
+		{
+			bool trailingSpace = false;
+			if(html_inside(@"pre"))
+			{
+				text = [text stringByReplacingOccurrencesOfString:@"\r\n" withString:@"\n"];
+				if(needsParagraph && [text hasPrefix:@"\n"])
+					text = [text substringFromIndex:1]; // as in a browser, a newline right after <pre> is left out
+				text = [text stringByReplacingOccurrencesOfString:@"\n" withString:@"\u2028"];
+			}
+			else
+			{
+				static NSRegularExpression* const whitespace = [NSRegularExpression regularExpressionWithPattern:@"[ \\t\\n\\r\\f]+" options:0 error:nil];
+				text = [whitespace stringByReplacingMatchesInString:text options:0 range:NSMakeRange(0, text.length) withTemplate:@" "];
+				if([text hasPrefix:@" "])
+				{
+					pendingSpace = true;
+					text = [text substringFromIndex:1];
+				}
+				if([text hasSuffix:@" "])
+				{
+					trailingSpace = true;
+					text = [text substringToIndex:text.length - 1];
+				}
+			}
+
+			if(!text.length)
+				return;
+
+			ensure_summary();
+			if(hidden())
+				return;
+
+			start_inline_content();
+			append(text, inline_attributes(@{ }, block_info_t(nil)));
+			pendingSpace = trailingSpace;
+		}
+
+		// Before text, an image or a line break
+		void start_inline_content ()
+		{
+			if(needsParagraph)
+				ensure_paragraph();
+			else if(pendingSpace && !at_line_start())
+			{
+				// The space may come before a tag, e.g. “ <a…>”, so it gets none of its decoration
+				NSMutableDictionary* attributes = [inline_attributes(@{ }, block_info_t(nil)) mutableCopy];
+				[attributes removeObjectsForKeys:@[ NSLinkAttributeName, NSUnderlineStyleAttributeName, NSStrikethroughStyleAttributeName, NSBackgroundColorAttributeName, NSToolTipAttributeName ]];
+				append(@" ", attributes);
+			}
+			pendingSpace = false;
+		}
+
+		// A <details> without <summary> gets one, as in a browser
+		void ensure_summary ()
+		{
+			if(details.empty() || details.back().summaryDone || details.back().inSummary)
+				return;
+			open_summary(@{ });
+			append_html_text(@"Details");
+			close_tag(@"summary");
+		}
+
+		void open_summary (NSDictionary<NSString*, NSString*>* attributes)
+		{
+			details_t& current = details.back();
+			current.inSummary = true;
+			needsParagraph = true;
+
+			open_tag_t tag{ @"summary", attributes };
+			if(style.toggledDetails)
+				tag.link = OakMarkdownDetailsURL(current.index);
+			blockTags.push_back(tag);
+
+			if(!hidden())
+			{
+				ensure_paragraph();
+				append(current.open ? @"▾ " : @"▸ ", inline_attributes(@{ }, block_info_t(nil)));
+			}
+		}
+
+		void close_tag (NSString* name)
+		{
+			auto close = [&](std::vector<open_tag_t>& tags) -> bool {
+				for(size_t i = tags.size(); i-- > 0; )
+				{
+					if([tags[i].name isEqualToString:name])
+					{
+						tags.erase(tags.begin() + i, tags.end());
+						return true;
+					}
+				}
+				return false;
+			};
+
+			if(close(inlineTags))
+				return;
+
+			if([name isEqualToString:@"details"] && !details.empty())
+			{
+				ensure_summary();
+				details.pop_back();
+			}
+			else if([name isEqualToString:@"summary"] && !details.empty() && details.back().inSummary)
+			{
+				details.back().inSummary   = false;
+				details.back().summaryDone = true;
+			}
+
+			if(close(blockTags) || [HTMLBlockTags() containsObject:name])
+				needsParagraph = true;
+		}
+
+		void handle_tag (html_tag_t const& tag, NSString* source, NSDictionary* inlineAttributes)
+		{
+			NSString* name = tag.name;
+			if([HTMLLiteralTags() containsObject:name])
+				return append_html_text(source);
+			if(tag.end)
+				return close_tag(name);
+
+			if([name isEqualToString:@"br"])
+			{
+				if(!hidden())
+				{
+					ensure_paragraph();
+					pendingSpace = false;
+					append(@"\u2028", inline_attributes(inlineAttributes, block_info_t(nil)));
+				}
+			}
+			else if([name isEqualToString:@"img"])
+			{
+				ensure_summary();
+				NSURL* url = SafeURL(tag.attributes[@"src"], baseURL);
+				if(url && !hidden())
+				{
+					start_inline_content();
+					append_image(url, tag.attributes[@"alt"] ?: @"", inline_attributes(inlineAttributes, block_info_t(nil)), [tag.attributes[@"width"] doubleValue]);
+				}
+			}
+			else if([name isEqualToString:@"hr"])
+			{
+				ensure_summary();
+				if(!hidden())
+				{
+					needsParagraph = true;
+					ensure_paragraph(false, true);
+					append(@" ", @{ NSParagraphStyleAttributeName: paragraphStyle, NSFontAttributeName: [NSFont systemFontOfSize:1] });
+					needsParagraph = true;
+				}
+			}
+			else if([name isEqualToString:@"input"])
+			{
+				if([tag.attributes[@"type"].lowercaseString isEqualToString:@"checkbox"])
+					append_html_text(tag.attributes[@"checked"] ? @"☑ " : @"☐ ");
+			}
+			else if([name isEqualToString:@"details"])
+			{
+				bool open = !style.toggledDetails || tag.attributes[@"open"];
+				if([style.toggledDetails containsObject:@(detailsCount)])
+					open = !open;
+				details.push_back({ open, detailsCount++ });
+				blockTags.push_back({ name, tag.attributes });
+				needsParagraph = true;
+			}
+			else if([name isEqualToString:@"summary"])
+			{
+				if(!details.empty() && !details.back().summaryDone && !details.back().inSummary)
+					open_summary(tag.attributes);
+			}
+			else if([name isEqualToString:@"li"])
+			{
+				blockTags.push_back({ name, tag.attributes });
+				needsParagraph = true;
+				ensure_summary();
+				if(!hidden())
+				{
+					NSString* marker = @"•\t";
+					for(auto list = blockTags.rbegin(); list != blockTags.rend(); ++list)
+					{
+						if([list->name isEqualToString:@"ol"])
+						{
+							marker = [NSString stringWithFormat:@"%ld.\t", (long)(list->itemCount++ + std::max<NSInteger>([list->attributes[@"start"] integerValue], 1))];
+							break;
+						}
+						if([list->name isEqualToString:@"ul"])
+							break;
+					}
+					ensure_paragraph(true);
+					append(marker, inline_attributes(@{ }, block_info_t(nil)));
+				}
+			}
+			else if([HTMLBlockTags() containsObject:name])
+			{
+				blockTags.push_back({ name, tag.attributes });
+				needsParagraph = true;
+			}
+			else if([HTMLInlineTags() containsObject:name])
+			{
+				open_tag_t open{ name, tag.attributes };
+				if([name isEqualToString:@"a"] && tag.attributes[@"href"])
+					open.link = SafeURL(tag.attributes[@"href"], baseURL);
+				if(([name isEqualToString:@"td"] || [name isEqualToString:@"th"]) && !at_line_start() && !needsParagraph && !hidden())
+					append(@"\t", inline_attributes(inlineAttributes, block_info_t(nil)));
+				inlineTags.push_back(open);
+			}
+			// Other tags are left out; their text is kept
+		}
+
+		// Tags and text, from inline HTML or an HTML block
+		void append_html (NSString* html, NSDictionary* inlineAttributes)
+		{
+			NSUInteger const length = html.length;
+			for(NSUInteger i = 0; i < length; )
+			{
+				NSRange lt = [html rangeOfString:@"<" options:0 range:NSMakeRange(i, length - i)];
+				NSUInteger const stop = lt.location == NSNotFound ? length : lt.location;
+				if(stop > i)
+					append_html_text(DecodeEntities([html substringWithRange:NSMakeRange(i, stop - i)]));
+				if(stop == length)
+					break;
+
+				if(stop + 4 <= length && [[html substringWithRange:NSMakeRange(stop, 4)] isEqualToString:@"<!--"])
+				{
+					NSRange close = [html rangeOfString:@"-->" options:0 range:NSMakeRange(stop + 4, length - stop - 4)];
+					i = close.location == NSNotFound ? length : NSMaxRange(close);
+					continue;
+				}
+
+				html_tag_t tag;
+				NSUInteger const end = ParseTag(html, stop, tag);
+				if(end == NSNotFound)
+				{
+					append_html_text(@"<");
+					i = stop + 1;
+					continue;
+				}
+				handle_tag(tag, [html substringWithRange:NSMakeRange(stop, end - stop)], inlineAttributes);
+				i = end;
+			}
+		}
+
+		void append_block_html (NSString* html)
+		{
+			finish_code_block_if_needed(block_info_t(nil));
+			lastIdentity   = kHTMLBlockIdentity; // the next Markdown block starts a new paragraph
+			needsParagraph = true;
+			textStart      = output.length;
+			droppedPrefix  = 0;
+
+			html = [html stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+			append_html(html, @{ });
+		}
+
+		static NSInteger const kHTMLBlockIdentity = NSNotFound - 2;
+
+		std::vector<open_tag_t> blockTags;  // kept across blocks, e.g. a <div> around Markdown
+		std::vector<open_tag_t> inlineTags; // until the end of the block
+		std::vector<details_t> details;
+		NSUInteger detailsCount = 0;
+		bool needsParagraph = false;
+		bool pendingSpace   = false; // collapsed whitespace not yet added
+
 		OakMarkdownStyle* style;
+		NSURL* baseURL;
 		NSAttributedString*(^footer)(NSUInteger);
 		NSMutableAttributedString* output;
 		NSParagraphStyle* paragraphStyle = [NSParagraphStyle defaultParagraphStyle];
@@ -696,7 +1350,7 @@ static NSMutableAttributedString* Render (NSString* markdown, OakMarkdownStyle* 
 	options.failurePolicy     = NSAttributedStringMarkdownParsingFailureReturnPartiallyParsedIfPossible;
 	options.appliesSourcePositionAttributes = marksSourceLines;
 
-	renderer_t renderer(style, codeBlockFooter);
+	renderer_t renderer(style, baseURL, codeBlockFooter);
 	renderer_t* rendererPtr = &renderer; // blocks would capture the C++ object by copy
 
 	NSAttributedString* parsed = [[NSAttributedString alloc] initWithMarkdownString:markdown options:options baseURL:baseURL error:nil];
