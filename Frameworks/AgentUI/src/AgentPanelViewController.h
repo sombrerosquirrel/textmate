@@ -14,6 +14,9 @@
 - (AgentAttachment*)selectionAttachmentForAgentPanel:(AgentPanelViewController*)agentPanel; // nil without a selection
 - (NSArray<AgentAttachment*>*)openFileAttachmentsForAgentPanel:(AgentPanelViewController*)agentPanel;
 - (void)agentPanel:(AgentPanelViewController*)agentPanel insertText:(NSString*)text;
+// Replaces the editor’s selection, or the whole document without one, as one
+// undoable edit. Returns { path (if saved), originalText, currentText }, or nil.
+- (NSDictionary*)agentPanel:(AgentPanelViewController*)agentPanel applyText:(NSString*)text;
 - (void)agentPanel:(AgentPanelViewController*)agentPanel openFile:(NSString*)path line:(NSUInteger)line;
 // Shows `diff` (unified diff text) in a new document.
 - (void)agentPanel:(AgentPanelViewController*)agentPanel showDiff:(NSString*)diff title:(NSString*)title;

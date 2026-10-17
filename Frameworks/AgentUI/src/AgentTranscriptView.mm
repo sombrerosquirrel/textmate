@@ -6,6 +6,7 @@
 static NSString* const kActionScheme      = @"textmate-agent";
 static NSTimeInterval const kCoalesceDelay = 0.05;
 static NSUInteger const kDiffPreviewLines   = 12;
+static NSUInteger const kOutputPreviewLines = 12;
 
 static NSFont* SmallFont ()          { return [NSFont systemFontOfSize:NSFont.smallSystemFontSize]; }
 static NSFont* SmallMonospaceFont () { return [NSFont monospacedSystemFontOfSize:NSFont.smallSystemFontSize weight:NSFontWeightRegular]; }
@@ -50,6 +51,23 @@ static NSString* CommandOfToolCall (NSDictionary* toolCall)
 	if([command isKindOfClass:[NSArray class]])
 		command = [command componentsJoinedByString:@" "];
 	return [command isKindOfClass:[NSString class]] && [command length] ? command : nil;
+}
+
+// Terminal output as shown: escape sequences (colours, cursor movement)
+// removed, and a line rewritten with carriage returns shows its last version
+static NSString* DisplayTerminalOutput (NSString* output)
+{
+	static NSRegularExpression* const escapes = [NSRegularExpression regularExpressionWithPattern:@"\\x1B(?:\\[[0-?]*[ -/]*[@-~]|\\][^\\x07\\x1B]*(?:\\x07|\\x1B\\\\)|[@-Z\\\\-_])" options:0 error:nullptr];
+	output = [escapes stringByReplacingMatchesInString:output options:0 range:NSMakeRange(0, output.length) withTemplate:@""];
+
+	NSMutableArray* lines = [NSMutableArray array];
+	for(NSString* line in [output componentsSeparatedByString:@"\n"])
+	{
+		NSString* trimmed = [line hasSuffix:@"\r"] ? [line substringToIndex:line.length - 1] : line;
+		NSRange lastReturn = [trimmed rangeOfString:@"\r" options:NSBackwardsSearch];
+		[lines addObject:lastReturn.location != NSNotFound ? [trimmed substringFromIndex:NSMaxRange(lastReturn)] : trimmed];
+	}
+	return [lines componentsJoinedByString:@"\n"];
 }
 
 static NSString* PathFromURI (NSString* uri)
@@ -305,6 +323,8 @@ static NSString* PathFromURI (NSString* uri)
 		[footer appendAttributedString:[self link:@"Copy" url:[self actionURL:@"copy" item:item parameters:parameters]]];
 		[footer appendAttributedString:[self text:@"   " font:SmallFont() color:NSColor.secondaryLabelColor]];
 		[footer appendAttributedString:[self link:@"Insert at Cursor" url:[self actionURL:@"insert" item:item parameters:parameters]]];
+		[footer appendAttributedString:[self text:@"   " font:SmallFont() color:NSColor.secondaryLabelColor]];
+		[footer appendAttributedString:[self link:@"Apply in Editor" url:[self actionURL:@"apply" item:item parameters:parameters]]];
 		return footer;
 	}];
 	_codeBlocks[item.identifier] = codeBlocks;
@@ -353,7 +373,7 @@ static NSString* PathFromURI (NSString* uri)
 		}
 		else if([type isEqualToString:@"terminal"])
 		{
-			[res appendAttributedString:[self text:@"\n    Terminal" font:SmallFont() color:NSColor.secondaryLabelColor]];
+			[self appendTerminal:[_terminalManager terminalWithIdentifier:content[@"terminalId"]] item:item into:res];
 		}
 		else if([type isEqualToString:@"content"] && [content[@"content"][@"type"] isEqualToString:@"text"])
 		{
@@ -426,6 +446,58 @@ static NSString* PathFromURI (NSString* uri)
 		NSString* title = item.expanded ? @"Show less" : [NSString stringWithFormat:@"Show all %lu lines", total];
 		[res appendAttributedString:[self text:@"\n    " font:SmallFont() color:NSColor.secondaryLabelColor]];
 		[res appendAttributedString:[self link:title url:[self actionURL:@"toggle" item:item parameters:@{ }]]];
+	}
+}
+
+// Command line, the end of the output (all of it when expanded), and the exit status or a Stop link
+- (void)appendTerminal:(AgentTerminal*)terminal item:(AgentTranscriptItem*)item into:(NSMutableAttributedString*)res
+{
+	if(!terminal)
+	{
+		[res appendAttributedString:[self text:@"\n    Terminal" font:SmallFont() color:NSColor.secondaryLabelColor]];
+		return;
+	}
+
+	NSMutableParagraphStyle* paragraph = [[NSMutableParagraphStyle alloc] init];
+	paragraph.firstLineHeadIndent = paragraph.headIndent = 20;
+	NSDictionary* commandAttributes = @{ NSFontAttributeName: SmallMonospaceFont(), NSForegroundColorAttributeName: NSColor.labelColor, NSParagraphStyleAttributeName: paragraph };
+	NSDictionary* outputAttributes  = @{ NSFontAttributeName: SmallMonospaceFont(), NSForegroundColorAttributeName: NSColor.secondaryLabelColor, NSParagraphStyleAttributeName: paragraph };
+
+	[res appendAttributedString:[[NSAttributedString alloc] initWithString:[@"\n$ " stringByAppendingString:terminal.commandLine] attributes:commandAttributes]];
+
+	NSString* output = DisplayTerminalOutput(terminal.output);
+	if([output hasSuffix:@"\n"])
+		output = [output substringToIndex:output.length - 1];
+	NSArray<NSString*>* lines = output.length ? [output componentsSeparatedByString:@"\n"] : @[ ];
+	BOOL cut = !item.expanded && lines.count > kOutputPreviewLines;
+	if(cut)
+		lines = [lines subarrayWithRange:NSMakeRange(lines.count - kOutputPreviewLines, kOutputPreviewLines)];
+	if(cut || terminal.truncated)
+		[res appendAttributedString:[[NSAttributedString alloc] initWithString:@"\n⋯" attributes:outputAttributes]];
+	if(lines.count)
+		[res appendAttributedString:[[NSAttributedString alloc] initWithString:[@"\n" stringByAppendingString:[lines componentsJoinedByString:@"\n"]] attributes:outputAttributes]];
+
+	[res appendAttributedString:[self text:@"\n    " font:SmallFont() color:NSColor.secondaryLabelColor]];
+	if(!terminal.exited)
+	{
+		[res appendAttributedString:[self text:@"Running…   " font:SmallFont() color:NSColor.secondaryLabelColor]];
+		if(!terminal.released)
+			[res appendAttributedString:[self link:@"Stop" url:[self actionURL:@"kill" item:item parameters:@{ @"terminal": terminal.terminalId }]]];
+	}
+	else if(terminal.signal)
+	{
+		[res appendAttributedString:[self text:[NSString stringWithFormat:@"Stopped (%@)", terminal.signal] font:SmallFont() color:NSColor.secondaryLabelColor]];
+	}
+	else
+	{
+		NSInteger exitCode = terminal.exitCode.integerValue;
+		[res appendAttributedString:[self text:[NSString stringWithFormat:@"Exit code %ld", exitCode] font:SmallFont() color:(exitCode == 0 ? NSColor.systemGreenColor : NSColor.systemRedColor)]];
+	}
+
+	if(item.expanded || cut)
+	{
+		[res appendAttributedString:[self text:@"   " font:SmallFont() color:NSColor.secondaryLabelColor]];
+		[res appendAttributedString:[self link:(item.expanded ? @"Show less" : @"Show all output") url:[self actionURL:@"toggle" item:item parameters:@{ }]]];
 	}
 }
 
@@ -549,7 +621,7 @@ static NSString* PathFromURI (NSString* uri)
 	AgentTranscriptItem* item = [self itemWithIdentifier:parameters[@"item"]];
 	NSString* action = url.host;
 
-	if([action isEqualToString:@"copy"] || [action isEqualToString:@"insert"])
+	if([action isEqualToString:@"copy"] || [action isEqualToString:@"insert"] || [action isEqualToString:@"apply"])
 	{
 		NSArray<OakMarkdownCodeBlock*>* codeBlocks = _codeBlocks[parameters[@"item"]];
 		NSUInteger index = parameters[@"block"].integerValue;
@@ -561,6 +633,11 @@ static NSString* PathFromURI (NSString* uri)
 		{
 			[NSPasteboard.generalPasteboard clearContents];
 			[NSPasteboard.generalPasteboard setString:code forType:NSPasteboardTypeString];
+		}
+		else if([action isEqualToString:@"apply"])
+		{
+			if([_actionDelegate respondsToSelector:@selector(transcriptView:applyCode:)])
+				[_actionDelegate transcriptView:self applyCode:code];
 		}
 		else if([_actionDelegate respondsToSelector:@selector(transcriptView:insertCode:)])
 		{
@@ -584,6 +661,11 @@ static NSString* PathFromURI (NSString* uri)
 			NSString* newText = [content[@"newText"] isKindOfClass:[NSString class]] ? content[@"newText"] : @"";
 			[_actionDelegate transcriptView:self showDiffOfFile:content[@"path"] oldText:oldText newText:newText];
 		}
+	}
+	else if([action isEqualToString:@"kill"] && parameters[@"terminal"])
+	{
+		if(AgentTerminal* terminal = [_terminalManager terminalWithIdentifier:parameters[@"terminal"]])
+			[_terminalManager killTerminal:terminal];
 	}
 	else if([action isEqualToString:@"permission"] && item && !item.permissionResolved)
 	{

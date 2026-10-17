@@ -1,4 +1,5 @@
 #import "AgentTranscript.h"
+#import <AgentClient/AgentTerminal.h>
 
 // Renders an AgentTranscript in a single, selectable text view (TextKit 1, for
 // text blocks and tables). Items are re-rendered in place as they change;
@@ -10,6 +11,7 @@
 @protocol AgentTranscriptViewDelegate <NSObject>
 @optional
 - (void)transcriptView:(AgentTranscriptView*)transcriptView insertCode:(NSString*)code;
+- (void)transcriptView:(AgentTranscriptView*)transcriptView applyCode:(NSString*)code;
 - (void)transcriptView:(AgentTranscriptView*)transcriptView openFile:(NSString*)path line:(NSUInteger)line;
 // `oldText` nil: a new file.
 - (void)transcriptView:(AgentTranscriptView*)transcriptView showDiffOfFile:(NSString*)path oldText:(NSString*)oldText newText:(NSString*)newText;
@@ -23,6 +25,7 @@
 @property (nonatomic) AgentTranscript* transcript;
 @property (nonatomic, weak) id<AgentTranscriptViewDelegate> actionDelegate;
 @property (nonatomic) NSString* emptyStateString; // shown while the transcript is empty
+@property (nonatomic) AgentTerminalManager* terminalManager; // output of tool calls with terminal content
 
 - (void)setNeedsDisplayItem:(AgentTranscriptItem*)item; // coalesced re-render
 - (void)reloadData;                                       // re-render everything now

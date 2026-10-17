@@ -50,12 +50,13 @@ static NSView* Separator ()
 	return box;
 }
 
-@interface AgentPanelViewController () <AgentSessionDelegate, AgentPromptViewDelegate, AgentTranscriptViewDelegate, AgentFileSystemDelegate, AgentChangesViewDelegate>
+@interface AgentPanelViewController () <AgentSessionDelegate, AgentPromptViewDelegate, AgentTranscriptViewDelegate, AgentFileSystemDelegate, AgentChangesViewDelegate, AgentTerminalManagerDelegate>
 {
 	AgentDescriptor* _agent;
 	AgentSession* _session;
 	BOOL _creatingSession;
 	AgentFileSystem* _fileSystem;              // one per chat, so its changes outlive an agent restart
+	AgentTerminalManager* _terminals;          // one per chat, so output stays visible after a restart
 	NSMutableDictionary<NSString*, void(^)(NSDictionary*)>* _permissionReplies; // transcript item identifier → reply
 
 	AgentTranscript* _transcript;
@@ -215,6 +216,7 @@ static NSView* Separator ()
 		_session = session;
 		_session.delegate   = self;
 		_session.fileSystem = [self fileSystemForProjectPath:projectPath];
+		_session.terminals  = [self terminalsForProjectPath:projectPath environment:session.connection.environment];
 		[session startWithCompletion:^(NSError* error){
 			if(session != _session)
 				return;
@@ -248,6 +250,19 @@ static NSView* Separator ()
 	return _fileSystem;
 }
 
+- (AgentTerminalManager*)terminalsForProjectPath:(NSString*)projectPath environment:(NSDictionary*)environment
+{
+	if(![_terminals.workingDirectory isEqualToString:projectPath])
+	{
+		[_terminals killAll];
+		_terminals = [[AgentTerminalManager alloc] initWithWorkingDirectory:projectPath queue:dispatch_get_main_queue()];
+		_terminals.delegate = self;
+		_transcriptView.terminalManager = _terminals;
+	}
+	_terminals.environment = environment;
+	return _terminals;
+}
+
 - (void)closeSession
 {
 	[self cancelPendingPermissionRequests];
@@ -268,6 +283,9 @@ static NSView* Separator ()
 {
 	[self closeSession];
 	_fileSystem = nil;
+	[_terminals killAll];
+	_terminals = nil;
+	_transcriptView.terminalManager = nil;
 	_changesView.changes = @[ ];
 	[_transcript removeAllItems];
 	[_transcriptView reloadData];
@@ -658,6 +676,22 @@ static NSView* Separator ()
 		[self resolvePermissionItem:item selectedOptionId:nil];
 }
 
+- (void)agentTerminalManager:(AgentTerminalManager*)manager didUpdateTerminal:(AgentTerminal*)terminal
+{
+	if(manager != _terminals)
+		return;
+
+	for(AgentTranscriptItem* item in _transcript.items)
+	{
+		NSArray* contents = item.kind == AgentTranscriptItemKindToolCall && [item.toolCall[@"content"] isKindOfClass:[NSArray class]] ? item.toolCall[@"content"] : @[ ];
+		for(NSDictionary* content in contents)
+		{
+			if([content isKindOfClass:[NSDictionary class]] && [content[@"terminalId"] isEqual:terminal.terminalId])
+				[self showItem:item];
+		}
+	}
+}
+
 - (void)agentSession:(AgentSession*)session didReceiveStandardError:(NSString*)text
 {
 	NSLog(@"[Agent %@] %@", _agent.identifier, [text stringByTrimmingCharactersInSet:NSCharacterSet.newlineCharacterSet]);
@@ -671,6 +705,20 @@ static NSView* Separator ()
 {
 	if([_delegate respondsToSelector:@selector(agentPanel:insertText:)])
 		[_delegate agentPanel:self insertText:code];
+}
+
+- (void)transcriptView:(AgentTranscriptView*)transcriptView applyCode:(NSString*)code
+{
+	if(![_delegate respondsToSelector:@selector(agentPanel:applyText:)])
+		return;
+
+	NSDictionary* result = [_delegate agentPanel:self applyText:code];
+	if(!result)
+		return [self showError:@"There is no document to apply the code to."];
+
+	// Listed with the agent’s changes, to review or undo
+	if([result[@"path"] isKindOfClass:[NSString class]])
+		[_fileSystem recordChangeAtPath:[result[@"path"] stringByStandardizingPath] originalText:result[@"originalText"] currentText:result[@"currentText"]];
 }
 
 - (void)transcriptView:(AgentTranscriptView*)transcriptView showDiffOfFile:(NSString*)path oldText:(NSString*)oldText newText:(NSString*)newText

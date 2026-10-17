@@ -134,6 +134,8 @@ static NSUInteger const kMaxStandardErrorLineLength = 300;
 	NSMutableDictionary* res = [NSMutableDictionary dictionaryWithDictionary:self.clientCapabilities ?: @{ }];
 	if(_fileSystem)
 		res[@"fs"] = @{ @"readTextFile": @YES, @"writeTextFile": @YES };
+	if(_terminals)
+		res[@"terminal"] = @YES;
 	return res;
 }
 
@@ -165,6 +167,7 @@ static NSUInteger const kMaxStandardErrorLineLength = 300;
 {
 	[self performOnQueue:^{
 		[self answerPendingPermissionRequestsAsCancelled];
+		[_terminals killAll];
 		[_connection terminateWithGracePeriod:kTerminationGracePeriod];
 	}];
 }
@@ -349,6 +352,10 @@ static NSUInteger const kMaxStandardErrorLineLength = 300;
 	{
 		[_fileSystem handleRequest:method params:params reply:reply];
 	}
+	else if(_terminals && [method hasPrefix:@"terminal/"])
+	{
+		[_terminals handleRequest:method params:params reply:reply];
+	}
 	else if([self.delegate respondsToSelector:@selector(agentSession:didReceiveRequest:params:reply:)])
 	{
 		[self.delegate agentSession:self didReceiveRequest:method params:params reply:reply];
@@ -395,6 +402,7 @@ static NSUInteger const kMaxStandardErrorLineLength = 300;
 - (void)agentConnectionDidTerminate:(AgentConnection*)connection
 {
 	[self answerPendingPermissionRequestsAsCancelled];
+	[_terminals killAll];
 	if(self.state == AgentSessionStateStarting)
 		self.error = [NSError errorWithDomain:AgentConnectionErrorDomain code:AgentConnectionErrorTerminated userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Agent exited with status %d during startup", connection.terminationStatus] }];
 	if(self.state != AgentSessionStateFailed)

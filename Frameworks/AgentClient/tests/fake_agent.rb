@@ -12,6 +12,8 @@
 #   “garbage”     — write a non-JSON line to stdout, then answer normally
 #   “read PATH [LINE LIMIT]” — fs/read_text_file, stream “Read: <content>”
 #   “write PATH TEXT”        — fs/write_text_file, stream “Wrote”
+#   “run COMMAND”            — terminal/create (no args), wait_for_exit,
+#                              output, release; stream “Exit: <code> <output>”
 #                              (both stream “Error: <code>” on failure, and
 #                              “Error: no capability” if the client didn’t
 #                              advertise it)
@@ -135,7 +137,33 @@ $stdin.each_line do |line|
 			send_message('id' => request_id, 'method' => method, 'params' => client_params.merge('sessionId' => session_id))
 		end
 
+		call_client = proc do |method, client_params, &on_reply|
+			request_id = (next_id += 1)
+			pending_replies[request_id] = on_reply
+			send_message('id' => request_id, 'method' => method, 'params' => client_params.merge('sessionId' => session_id))
+		end
+		finish = proc do |reply_text|
+			update(session_id, text_chunk(reply_text))
+			send_message('id' => id, 'result' => { 'stopReason' => 'end_turn' })
+		end
+
 		case text
+		when /\Arun (.+)\z/m
+			if client_caps['terminal']
+				call_client.call('terminal/create', 'command' => $1) do |created|
+					next finish.call("Error: #{created['error']['code']}") if created['error']
+					terminal_id = created['result']['terminalId']
+					call_client.call('terminal/wait_for_exit', 'terminalId' => terminal_id) do |exited|
+						call_client.call('terminal/output', 'terminalId' => terminal_id) do |output|
+							call_client.call('terminal/release', 'terminalId' => terminal_id) do
+								finish.call("Exit: #{exited['result']['exitCode']} #{output['result']['output']}")
+							end
+						end
+					end
+				end
+			else
+				finish.call('Error: no capability')
+			end
 		when /\Aread (\S+)(?: (\d+) (\d+))?\z/
 			if client_caps.dig('fs', 'readTextFile')
 				read_params = { 'path' => $1 }

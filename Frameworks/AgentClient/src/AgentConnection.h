@@ -52,6 +52,7 @@ typedef void(^AgentReplyHandler)(id result, NSError* error); // pass an error in
 
 @property (nonatomic, readonly) NSString* executablePath;
 @property (nonatomic, readonly) NSArray<NSString*>* arguments;
+@property (nonatomic, readonly) NSDictionary<NSString*, NSString*>* environment;
 @property (nonatomic, readonly, getter = isRunning) BOOL running;
 @property (nonatomic, readonly) int terminationStatus;
 

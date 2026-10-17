@@ -242,6 +242,9 @@ void test_standard_error_while_running ()
 
 	OAK_ASSERT(t.standardError() == nil);
 	OAK_ASSERT([t.prompt(@"stderr") isEqualToString:@"end_turn"]);
+	// stderr is a separate pipe, so it can arrive after the reply
+	for(int i = 0; i < 50 && !t.standardError(); ++i)
+		usleep(20000);
 	OAK_ASSERT([t.standardError() isEqualToString:@"fake agent: stderr line"]);
 }
 

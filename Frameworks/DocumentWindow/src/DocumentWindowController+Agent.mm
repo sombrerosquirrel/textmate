@@ -246,6 +246,27 @@ static BOOL IsSameFile (NSString* lhs, NSString* rhs)
 	[self.textView insertSnippetWithOptions:@{ @"content": EscapeSnippetText(text) }];
 }
 
+- (NSDictionary*)agentPanel:(AgentPanelViewController*)agentPanel applyText:(NSString*)text
+{
+	OakDocument* document = self.selectedDocument;
+	OakTextView* textView = self.textView;
+	if(!document.isLoaded || !textView)
+		return nil;
+
+	NSString* originalText = document.content ?: @"";
+	NSRange range = textView.hasSelection ? textView.selectedRange : NSMakeRange(0, originalText.length);
+	if(NSMaxRange(range) > originalText.length)
+		return nil;
+
+	NSString* currentText = [originalText stringByReplacingCharactersInRange:range withString:text];
+	auto const replacement = ChangedRange(to_s(originalText), to_s(currentText));
+	if(replacement.first.first != replacement.first.second || !replacement.second.empty())
+		[document performReplacements:{ replacement } checksum:0];
+	[self.window makeFirstResponder:textView];
+
+	return @{ @"path": document.path ?: [NSNull null], @"originalText": originalText, @"currentText": currentText };
+}
+
 - (void)agentPanel:(AgentPanelViewController*)agentPanel showDiff:(NSString*)diff title:(NSString*)title
 {
 	OakDocument* document = [OakDocument documentWithString:diff fileType:@"source.diff" customName:title];

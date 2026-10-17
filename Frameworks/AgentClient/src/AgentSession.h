@@ -1,5 +1,6 @@
 #import "AgentConnection.h"
 #import "AgentFileSystem.h"
+#import "AgentTerminal.h"
 
 // One Agent Client Protocol (ACP) session with an agent: the initialize
 // handshake, session/new, prompt turns, cancellation, and dispatch of
@@ -63,6 +64,10 @@ typedef NS_ENUM(NSInteger, AgentSessionState) {
 // Handles fs/* requests when set before -startWithCompletion:, which then
 // also advertises the fs capabilities.
 @property (nonatomic) AgentFileSystem* fileSystem;
+// Handles terminal/* requests when set before -startWithCompletion:, which
+// then also advertises the terminal capability. Its commands are killed
+// when the session closes or the agent exits.
+@property (nonatomic) AgentTerminalManager* terminals;
 
 @property (nonatomic, readonly) AgentSessionState state;
 @property (nonatomic, readonly) NSError* error; // reason for AgentSessionStateFailed
