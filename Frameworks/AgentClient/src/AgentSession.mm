@@ -101,7 +101,7 @@ static NSUInteger const kMaxStandardErrorLineLength = 300;
 
 		NSDictionary* params = @{
 			@"protocolVersion":    @(AgentClientProtocolVersion),
-			@"clientCapabilities": self.clientCapabilities ?: @{ },
+			@"clientCapabilities": self.effectiveClientCapabilities,
 			@"clientInfo":         @{ @"name": @"textmate", @"title": @"TextMate", @"version": ClientVersion() },
 		};
 
@@ -127,6 +127,14 @@ static NSUInteger const kMaxStandardErrorLineLength = 300;
 			[self createSessionWithCompletion:completion];
 		}];
 	}];
+}
+
+- (NSDictionary*)effectiveClientCapabilities
+{
+	NSMutableDictionary* res = [NSMutableDictionary dictionaryWithDictionary:self.clientCapabilities ?: @{ }];
+	if(_fileSystem)
+		res[@"fs"] = @{ @"readTextFile": @YES, @"writeTextFile": @YES };
+	return res;
 }
 
 - (void)createSessionWithCompletion:(void(^)(NSError* error))completion
@@ -336,6 +344,10 @@ static NSUInteger const kMaxStandardErrorLineLength = 300;
 		{
 			permissionReply(@{ @"outcome": @"cancelled" });
 		}
+	}
+	else if(_fileSystem && [method hasPrefix:@"fs/"])
+	{
+		[_fileSystem handleRequest:method params:params reply:reply];
 	}
 	else if([self.delegate respondsToSelector:@selector(agentSession:didReceiveRequest:params:reply:)])
 	{

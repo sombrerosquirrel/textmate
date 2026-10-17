@@ -1,11 +1,13 @@
 #import "DocumentWindowController+Agent.h"
 #import "DocumentWindowController+EditorPanels.h"
 #import <AgentUI/AgentPanelViewController.h>
+#import <AgentClient/AgentFileSystem.h>
 #import <OakEditorPanels/OakEditorPanelsView.h>
 #import <OakTextView/OakDocumentView.h>
 #import <document/OakDocument.h>
 #import <document/OakDocumentController.h>
 #import <text/types.h>
+#import <ns/ns.h>
 #import <objc/runtime.h>
 
 // Private properties of DocumentWindowController, defined in its main file
@@ -56,7 +58,32 @@ static NSUInteger LineNumberAtIndex (NSString* text, NSUInteger index)
 	return line;
 }
 
-@interface DocumentWindowController (AgentPanelDelegate) <AgentPanelDelegate>
+// The byte range of `from` that differs from `to`, and its replacement; kept
+// on UTF-8 character boundaries. Replacing only that range keeps the caret,
+// folds and marks elsewhere in the document.
+static std::pair<std::pair<size_t, size_t>, std::string> ChangedRange (std::string const& from, std::string const& to)
+{
+	size_t prefix = 0, maxPrefix = std::min(from.size(), to.size());
+	while(prefix < maxPrefix && from[prefix] == to[prefix])
+		++prefix;
+	while(prefix > 0 && (from[prefix] & 0xC0) == 0x80)
+		--prefix;
+
+	size_t suffix = 0, maxSuffix = std::min(from.size(), to.size()) - prefix;
+	while(suffix < maxSuffix && from[from.size() - suffix - 1] == to[to.size() - suffix - 1])
+		++suffix;
+	while(suffix > 0 && (from[from.size() - suffix] & 0xC0) == 0x80)
+		--suffix;
+
+	return { { prefix, from.size() - suffix }, to.substr(prefix, to.size() - prefix - suffix) };
+}
+
+static BOOL IsSameFile (NSString* lhs, NSString* rhs)
+{
+	return [lhs isEqualToString:rhs] || [lhs.stringByResolvingSymlinksInPath isEqualToString:rhs.stringByResolvingSymlinksInPath];
+}
+
+@interface DocumentWindowController (AgentPanelDelegate) <AgentPanelDelegate, AgentDocumentProvider>
 @end
 
 @implementation DocumentWindowController (Agent)
@@ -217,6 +244,43 @@ static NSUInteger LineNumberAtIndex (NSString* text, NSUInteger index)
 {
 	[self.window makeFirstResponder:self.textView];
 	[self.textView insertSnippetWithOptions:@{ @"content": EscapeSnippetText(text) }];
+}
+
+- (id<AgentDocumentProvider>)documentProviderForAgentPanel:(AgentPanelViewController*)agentPanel
+{
+	return self;
+}
+
+// ==========================
+// = AgentDocumentProvider =
+// ==========================
+
+// Open documents are shared by all windows, so any window’s are used
+- (OakDocument*)openDocumentAtPath:(NSString*)path
+{
+	for(OakDocument* document in OakDocumentController.sharedInstance.openDocuments)
+	{
+		if(document.path && document.isLoaded && IsSameFile(document.path.stringByStandardizingPath, path))
+			return document;
+	}
+	return nil;
+}
+
+- (NSString*)textOfOpenDocumentAtPath:(NSString*)path
+{
+	return [self openDocumentAtPath:path].content;
+}
+
+- (BOOL)replaceTextOfOpenDocumentAtPath:(NSString*)path withText:(NSString*)text
+{
+	OakDocument* document = [self openDocumentAtPath:path];
+	if(!document)
+		return NO;
+
+	auto const range = ChangedRange(to_s(document.content ?: @""), to_s(text));
+	if(range.first.first != range.first.second || !range.second.empty())
+		[document performReplacements:{ range } checksum:0];
+	return YES;
 }
 
 - (void)agentPanel:(AgentPanelViewController*)agentPanel openFile:(NSString*)path line:(NSUInteger)line

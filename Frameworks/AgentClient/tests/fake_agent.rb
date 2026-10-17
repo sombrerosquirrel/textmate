@@ -10,6 +10,11 @@
 #   “big”         — stream one 1 MB chunk
 #   “stderr”      — write a line to stderr, then answer normally
 #   “garbage”     — write a non-JSON line to stdout, then answer normally
+#   “read PATH [LINE LIMIT]” — fs/read_text_file, stream “Read: <content>”
+#   “write PATH TEXT”        — fs/write_text_file, stream “Wrote”
+#                              (both stream “Error: <code>” on failure, and
+#                              “Error: no capability” if the client didn’t
+#                              advertise it)
 #   anything else — stream “Echo: <text>” in two chunks, stop with “end_turn”
 #
 # Arguments: --version N  answer initialize with protocol version N
@@ -56,6 +61,7 @@ end
 
 next_id         = 1000
 current_mode    = 'ask'
+client_caps     = {}
 waiting_prompt  = nil  # id of a prompt waiting for session/cancel
 pending_replies = {}   # our request id → proc handling the client’s response
 
@@ -73,6 +79,7 @@ $stdin.each_line do |line|
 
 	case method
 	when 'initialize'
+		client_caps = params['clientCapabilities'] || {}
 		send_message('id' => id, 'result' => {
 			'protocolVersion'   => protocol_version,
 			'agentCapabilities' => { 'loadSession' => false, 'promptCapabilities' => { 'embeddedContext' => true } },
@@ -115,7 +122,36 @@ $stdin.each_line do |line|
 		session_id = params['sessionId']
 		text = (params['prompt'] || []).select { |b| b['type'] == 'text' }.map { |b| b['text'] }.join
 
+		ask_client = proc do |method, client_params, &on_result|
+			request_id = (next_id += 1)
+			pending_replies[request_id] = proc do |reply|
+				if reply['error']
+					update(session_id, text_chunk("Error: #{reply['error']['code']}"))
+				else
+					update(session_id, text_chunk(on_result.call(reply['result'])))
+				end
+				send_message('id' => id, 'result' => { 'stopReason' => 'end_turn' })
+			end
+			send_message('id' => request_id, 'method' => method, 'params' => client_params.merge('sessionId' => session_id))
+		end
+
 		case text
+		when /\Aread (\S+)(?: (\d+) (\d+))?\z/
+			if client_caps.dig('fs', 'readTextFile')
+				read_params = { 'path' => $1 }
+				read_params.merge!('line' => $2.to_i, 'limit' => $3.to_i) if $2
+				ask_client.call('fs/read_text_file', read_params) { |result| "Read: #{result['content']}" }
+			else
+				update(session_id, text_chunk('Error: no capability'))
+				send_message('id' => id, 'result' => { 'stopReason' => 'end_turn' })
+			end
+		when /\Awrite (\S+) (.*)\z/m
+			if client_caps.dig('fs', 'writeTextFile')
+				ask_client.call('fs/write_text_file', 'path' => $1, 'content' => $2) { 'Wrote' }
+			else
+				update(session_id, text_chunk('Error: no capability'))
+				send_message('id' => id, 'result' => { 'stopReason' => 'end_turn' })
+			end
 		when 'wait'
 			waiting_prompt = id
 			update(session_id, text_chunk('Waiting…'))

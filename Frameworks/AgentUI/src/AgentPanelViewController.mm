@@ -48,11 +48,12 @@ static NSView* Separator ()
 	return box;
 }
 
-@interface AgentPanelViewController () <AgentSessionDelegate, AgentPromptViewDelegate, AgentTranscriptViewDelegate>
+@interface AgentPanelViewController () <AgentSessionDelegate, AgentPromptViewDelegate, AgentTranscriptViewDelegate, AgentFileSystemDelegate>
 {
 	AgentDescriptor* _agent;
 	AgentSession* _session;
 	BOOL _creatingSession;
+	AgentFileSystem* _fileSystem;              // one per chat, so its changes outlive an agent restart
 
 	AgentTranscript* _transcript;
 	NSString* _pendingText;                     // sent once the session is ready
@@ -204,7 +205,8 @@ static NSView* Separator ()
 		}
 
 		_session = session;
-		_session.delegate = self;
+		_session.delegate   = self;
+		_session.fileSystem = [self fileSystemForProjectPath:projectPath];
 		[session startWithCompletion:^(NSError* error){
 			if(session != _session)
 				return;
@@ -222,6 +224,18 @@ static NSView* Separator ()
 		}];
 		[self updateStatus];
 	}];
+}
+
+- (AgentFileSystem*)fileSystemForProjectPath:(NSString*)projectPath
+{
+	if(![_fileSystem.rootDirectory isEqualToString:projectPath.stringByStandardizingPath])
+	{
+		_fileSystem = [[AgentFileSystem alloc] initWithRootDirectory:projectPath];
+		_fileSystem.delegate = self;
+	}
+	if([_delegate respondsToSelector:@selector(documentProviderForAgentPanel:)])
+		_fileSystem.documentProvider = [_delegate documentProviderForAgentPanel:self];
+	return _fileSystem;
 }
 
 - (void)closeSession
@@ -242,6 +256,7 @@ static NSView* Separator ()
 - (void)resetConversation
 {
 	[self closeSession];
+	_fileSystem = nil;
 	[_transcript removeAllItems];
 	[_transcriptView reloadData];
 	_pendingText        = nil;

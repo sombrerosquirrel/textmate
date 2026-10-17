@@ -1,4 +1,5 @@
 #import "AgentConnection.h"
+#import "AgentFileSystem.h"
 
 // One Agent Client Protocol (ACP) session with an agent: the initialize
 // handshake, session/new, prompt turns, cancellation, and dispatch of
@@ -42,7 +43,7 @@ typedef NS_ENUM(NSInteger, AgentSessionState) {
 // @{ @"outcome": @"selected", @"optionId": … } or @{ @"outcome": @"cancelled" }.
 // Unimplemented: every request is answered as cancelled.
 - (void)agentSession:(AgentSession*)session requestPermission:(NSDictionary*)params reply:(void(^)(NSDictionary* outcome))reply;
-// Other requests from the agent (fs/*, terminal/*). Unimplemented: “method not found”.
+// Other requests from the agent, e.g. fs/* without a fileSystem. Unimplemented: “method not found”.
 - (void)agentSession:(AgentSession*)session didReceiveRequest:(NSString*)method params:(id)params reply:(AgentReplyHandler)reply;
 - (void)agentSession:(AgentSession*)session didReceiveStandardError:(NSString*)text;
 - (void)agentSession:(AgentSession*)session didTransferMessage:(NSDictionary*)message outgoing:(BOOL)outgoing;
@@ -58,6 +59,10 @@ typedef NS_ENUM(NSInteger, AgentSessionState) {
 // Capabilities advertised in initialize, e.g. @{ @"fs": @{ @"readTextFile": @YES } }.
 // Set before -startWithCompletion:. Default: none.
 @property (nonatomic) NSDictionary* clientCapabilities;
+
+// Handles fs/* requests when set before -startWithCompletion:, which then
+// also advertises the fs capabilities.
+@property (nonatomic) AgentFileSystem* fileSystem;
 
 @property (nonatomic, readonly) AgentSessionState state;
 @property (nonatomic, readonly) NSError* error; // reason for AgentSessionStateFailed

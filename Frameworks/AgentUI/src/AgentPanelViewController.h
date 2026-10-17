@@ -1,4 +1,5 @@
 #import "AgentAttachment.h"
+#import <AgentClient/AgentFileSystem.h>
 
 // The agent chat panel for one project window: agent picker, transcript,
 // prompt with context attachments, and the agent’s own controls (mode, model,
@@ -14,6 +15,8 @@
 - (NSArray<AgentAttachment*>*)openFileAttachmentsForAgentPanel:(AgentPanelViewController*)agentPanel;
 - (void)agentPanel:(AgentPanelViewController*)agentPanel insertText:(NSString*)text;
 - (void)agentPanel:(AgentPanelViewController*)agentPanel openFile:(NSString*)path line:(NSUInteger)line;
+// Open documents, for the agent’s file access (unsaved edits, undoable writes).
+- (id<AgentDocumentProvider>)documentProviderForAgentPanel:(AgentPanelViewController*)agentPanel;
 @end
 
 extern NSString* const kUserDefaultsAgentPanelAgentKey; // identifier of the last used agent
