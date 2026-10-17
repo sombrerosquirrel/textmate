@@ -191,6 +191,8 @@ Expected: superscript 1, 2, 1 in the text; `[^1]` in code stays as text; at the 
 
 The checkbox was renamed from "Allow raw HTML" to "Render all HTML": the user read "allow raw HTML" as showing `<b>x</b>` as literal text, the opposite of what it does. A tooltip explains both states. The defaults key `markdownPreviewAllowRawHTML` is unchanged.
 
+**Uninstalled cmark-gfm (2026-10-16, user testing):** after `brew uninstall cmark-gfm`, picking GitHub showed "cmark-gfm failed" instead of the install sheet: the path found earlier was kept for the window's lifetime. The path is now dropped when it's no longer executable, both when the renderer changes (so the sheet is offered) and before each render (so the header shows "isn't installed" with Install…).
+
 ## Future work
 - [x] The `editorPanelsView` accessor lived in the agent category; moved to `DocumentWindowController+EditorPanels` (P3).
 - [ ] Save the preview's (and agent panel's) visibility in the session.

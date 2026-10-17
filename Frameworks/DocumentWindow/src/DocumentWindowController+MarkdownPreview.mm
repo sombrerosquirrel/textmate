@@ -213,8 +213,17 @@ static OakEditorPanelEdge MarkdownPreviewEdge ()
 // = GitHub renderer: cmark-gfm, or TM_MARKDOWN =
 // ==============================================
 
+// It may have been uninstalled since we found it
+- (void)forgetMissingCmark
+{
+	if(_cmarkPath && ![NSFileManager.defaultManager isExecutableFileAtPath:_cmarkPath])
+		_cmarkPath = nil;
+}
+
 - (void)rendererDidChange:(BOOL)rendererChanged
 {
+	[self forgetMissingCmark];
+
 	// Chosen by the user: offer to install cmark-gfm if it’s missing
 	if(rendererChanged && UsesGitHubRenderer() && !_cmarkPath)
 	{
@@ -314,6 +323,8 @@ static OakEditorPanelEdge MarkdownPreviewEdge ()
 	OakDocument* document = _document;
 	std::map<std::string, std::string> variables;
 	NSString* customCommand = [self customMarkdownCommandForDocument:document environment:variables];
+
+	[self forgetMissingCmark];
 
 	NSString* executable;
 	NSArray<NSString*>* arguments;
