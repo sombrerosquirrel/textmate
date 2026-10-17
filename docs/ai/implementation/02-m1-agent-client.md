@@ -38,5 +38,5 @@ A temporary Text ▸ Agent debug window (c00cc1b6) was used to chat with both ag
 0790474d design doc · 6ae4f274 AgentClient framework · c00cc1b6 debug window · 516f16dc design decisions · 77a69b8e config tracking + AgentRegistry
 
 ## Future work
-- [ ] Permission requests answer "cancelled" by default; real prompts arrive in M3.
-- [ ] `fs/*` and `terminal/*` client capabilities are not advertised yet (M3).
+- [x] Permission requests answer "cancelled" by default; real prompts arrive in M3. Done in [05-m3-tools.md](05-m3-tools.md).
+- [x] `fs/*` and `terminal/*` client capabilities are not advertised yet (M3). Done in [05-m3-tools.md](05-m3-tools.md).

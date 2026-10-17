@@ -1,6 +1,6 @@
 ---
 title: TextMate AI — Implementation Status
-updated: 2026-10-15
+updated: 2026-10-16
 tags: [textmate, implementation, status]
 ---
 
@@ -22,23 +22,23 @@ User guides are in [`../user/`](../user/): [markdown-preview.md](../user/markdow
 | 1. Build and bug fixes | [01-build-and-bug-fixes.md](01-build-and-bug-fixes.md) | ✅ Complete (2026-10-13) |
 | M1. AgentClient core | [02-m1-agent-client.md](02-m1-agent-client.md) | ✅ Complete (2026-10-13) |
 | M2. Chat panel | [03-m2-chat-panel.md](03-m2-chat-panel.md) | ✅ Complete (2026-10-16) |
-| M3. Tools: files, permissions, diff review, terminal | — | ⏳ Not started |
+| M3. Tools: files, permissions, diff review, terminal | [05-m3-tools.md](05-m3-tools.md) | 🔄 Implemented (2026-10-16); awaiting user testing |
 | M4. Preferences, Keychain, session history, MCP | — | ⏳ Not started |
 | M5. Polish, inline chat, docs, `pr/agent` port | — | ⏳ Not started |
 | Markdown preview pane (P1–P5) | [04-markdown-preview.md](04-markdown-preview.md) | 🔄 In progress: P1–P5 done (2026-10-15); P5 awaiting user check |
 
-## Current state (2026-10-15)
+## Current state (2026-10-16)
 
-- **Branches:** `main` = `pr-1467` + all `fix/*` branches. `feature/agent` = `main` + agent harness (M1, M2). `feature/markdown-preview` = `feature/agent` + Markdown preview work. All pushed to `origin` (`sombrerosquirrel/textmate`).
+- **Branches:** `main` = `pr-1467` + all `fix/*` branches. `feature/agent` = `main` + agent harness (M1, M2). `feature/markdown-preview` = `feature/agent` + Markdown preview work. `feature/agent-tools` = `feature/markdown-preview` + M3 (local, not pushed yet). Others pushed to `origin` (`sombrerosquirrel/textmate`).
 - **Build:** `make debug` builds cleanly with Xcode 27 / Swift 6.4 on macOS 27. No new warnings. Known remaining warnings are listed in [01-build-and-bug-fixes.md](01-build-and-bug-fixes.md#future-work).
-- **Tests:** `ctest` passes 23/23 on `main`, 25/25 on `feature/agent` (adds AgentClient and AgentUI suites), 28/28 on `feature/markdown-preview` (adds OakEditorPanels, OakMarkdown and MarkdownPreview; AgentUI's Markdown tests moved to OakMarkdown).
-- **Next:** user checks P5 (user guide, tests); then the Markdown preview is complete. M2 is complete (its UX pass is deferred to the end); M3 (tools: permissions, file edits, diff review, terminal) is next. Checkpoints with the user after each milestone.
+- **Tests:** `ctest` passes 23/23 on `main`, 25/25 on `feature/agent` (adds AgentClient and AgentUI suites), 28/28 on `feature/markdown-preview` (adds OakEditorPanels, OakMarkdown and MarkdownPreview; AgentUI's Markdown tests moved to OakMarkdown) and on `feature/agent-tools` (AgentClient grows to 50 tests).
+- **Next:** user checks P5 (user guide, tests); then the Markdown preview is complete. M2 is complete (its UX pass is deferred to the end). M3 is implemented on `feature/agent-tools` and waits for the user's testing ([checklist](05-m3-tools.md#to-check-user)). Checkpoints with the user after each milestone.
 
 ## Future work
 
 Work not yet assigned to a phase document. Items move into a phase document when started, and are marked done here when completed.
 
-- [ ] **M3 — Tools:** `fs/read_text_file` and `fs/write_text_file` through OakDocument (unsaved edits respected, undoable), permission cards (Allow / Always allow / Deny), diff review with Keep / Undo per file and a changed-files list, `terminal/*` with output in tool rows, Apply in Editor for code blocks.
+- [x] **M3 — Tools:** moved to [05-m3-tools.md](05-m3-tools.md) (2026-10-16).
 - [ ] **M4 — Configuration:** Preferences ▸ Agents pane, API key in the Keychain, `.tm_properties` overrides, chat history (session list / load / resume), MCP servers per agent, plan view.
 - [ ] **M5 — Polish:** theme colours and syntax-highlighted code blocks, inline chat at the caret, error states, log view, user documentation, `pr/agent` port onto `master`.
 - [ ] Fix the commit grouping on `feature/agent`: 7723847e deletes the M1 debug window files while AppController still references them until d6d22909, so 7723847e alone doesn't build. Needs a force-push; awaiting the user's decision.

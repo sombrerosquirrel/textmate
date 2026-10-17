@@ -1,7 +1,7 @@
 ---
 title: TextMate Agent Harness — Design
 created: 2026-10-13
-status: approved 2026-10-13 — M1 done, M2 done (2026-10-16)
+status: approved 2026-10-13 — M1 done, M2 done (2026-10-16), M3 implemented (2026-10-16)
 branch: feature/agent
 related: textmate-ai-plan.md
 ---
@@ -51,6 +51,7 @@ Notes:
 - **Prompt turn ends** with a `stopReason`: `end_turn`, `max_tokens`, `max_turn_requests`, `refusal`, `cancelled`.
 - **Cancellation:** client sends `session/cancel`, answers any pending permission requests with `cancelled`, keeps accepting late updates; agent replies to `session/prompt` with `cancelled`.
 - Vendor extensions arrive as `_`-prefixed methods / `_meta` fields (e.g. Claude's `_auth/status_update`); unknown ones are ignored.
+- **In practice (checked 2026-10-16):** Claude Code and Copilot CLI don't call `fs/*` or `terminal/*`; they edit and run commands themselves. M3 therefore also tracks edits from tool calls and shows Claude's `_meta` terminal output; see [05-m3-tools.md](../implementation/05-m3-tools.md).
 
 ## 4. Architecture
 
