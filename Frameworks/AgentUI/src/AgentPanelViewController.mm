@@ -1,6 +1,8 @@
 #import "AgentPanelViewController.h"
 #import "AgentPromptView.h"
 #import "AgentTranscriptView.h"
+#import "AgentChangesView.h"
+#import <AgentClient/AgentDiff.h>
 #import <AgentClient/AgentRegistry.h>
 #import <OakAppKit/NSColor Additions.h>
 
@@ -48,7 +50,7 @@ static NSView* Separator ()
 	return box;
 }
 
-@interface AgentPanelViewController () <AgentSessionDelegate, AgentPromptViewDelegate, AgentTranscriptViewDelegate, AgentFileSystemDelegate>
+@interface AgentPanelViewController () <AgentSessionDelegate, AgentPromptViewDelegate, AgentTranscriptViewDelegate, AgentFileSystemDelegate, AgentChangesViewDelegate>
 {
 	AgentDescriptor* _agent;
 	AgentSession* _session;
@@ -63,6 +65,7 @@ static NSView* Separator ()
 
 	NSPopUpButton* _agentPopUp;
 	AgentTranscriptView* _transcriptView;
+	AgentChangesView* _changesView;
 	AgentPromptView* _promptView;
 	NSStackView* _optionsView;
 	NSTextField* _statusField;
@@ -119,6 +122,9 @@ static NSView* Separator ()
 	_transcriptView.transcript     = _transcript;
 	_transcriptView.actionDelegate = self;
 
+	_changesView = [[AgentChangesView alloc] initWithFrame:NSZeroRect];
+	_changesView.delegate = self;
+
 	_promptView = [[AgentPromptView alloc] initWithFrame:NSZeroRect];
 	_promptView.delegate = self;
 
@@ -136,7 +142,7 @@ static NSView* Separator ()
 	footer.orientation = NSUserInterfaceLayoutOrientationHorizontal;
 	footer.edgeInsets  = NSEdgeInsetsMake(0, 8, 6, 8);
 
-	NSStackView* stack = [NSStackView stackViewWithViews:@[ header, Separator(), transcriptScrollView, Separator(), _promptView, footer ]];
+	NSStackView* stack = [NSStackView stackViewWithViews:@[ header, Separator(), transcriptScrollView, Separator(), _changesView, _promptView, footer ]];
 	stack.orientation = NSUserInterfaceLayoutOrientationVertical;
 	stack.spacing     = 0;
 	// NSStackView hugs its content at a priority above the window’s “stay put”
@@ -234,6 +240,8 @@ static NSView* Separator ()
 	{
 		_fileSystem = [[AgentFileSystem alloc] initWithRootDirectory:projectPath];
 		_fileSystem.delegate = self;
+		_changesView.rootDirectory = _fileSystem.rootDirectory;
+		_changesView.changes       = @[ ];
 	}
 	if([_delegate respondsToSelector:@selector(documentProviderForAgentPanel:)])
 		_fileSystem.documentProvider = [_delegate documentProviderForAgentPanel:self];
@@ -260,6 +268,7 @@ static NSView* Separator ()
 {
 	[self closeSession];
 	_fileSystem = nil;
+	_changesView.changes = @[ ];
 	[_transcript removeAllItems];
 	[_transcriptView reloadData];
 	_pendingText        = nil;
@@ -664,6 +673,11 @@ static NSView* Separator ()
 		[_delegate agentPanel:self insertText:code];
 }
 
+- (void)transcriptView:(AgentTranscriptView*)transcriptView showDiffOfFile:(NSString*)path oldText:(NSString*)oldText newText:(NSString*)newText
+{
+	[self showDiffOfFile:path oldText:oldText newText:newText];
+}
+
 - (void)transcriptView:(AgentTranscriptView*)transcriptView selectPermissionOption:(NSString*)optionId forItem:(AgentTranscriptItem*)item
 {
 	if(_permissionReplies[item.identifier])
@@ -676,5 +690,89 @@ static NSView* Separator ()
 		path = [[_delegate projectPathForAgentPanel:self] stringByAppendingPathComponent:path];
 	if([_delegate respondsToSelector:@selector(agentPanel:openFile:line:)])
 		[_delegate agentPanel:self openFile:path line:line];
+}
+
+// ===================
+// = Changed Files =
+// ===================
+
+- (void)agentFileSystemDidChangeChanges:(AgentFileSystem*)fileSystem
+{
+	if(fileSystem == _fileSystem)
+		_changesView.changes = fileSystem.changes;
+}
+
+- (NSString*)displayNameForPath:(NSString*)path
+{
+	NSString* root = _fileSystem.rootDirectory;
+	if(root && [path hasPrefix:[root stringByAppendingString:@"/"]])
+		return [path substringFromIndex:root.length + 1];
+	return path.lastPathComponent;
+}
+
+- (void)showDiffOfFile:(NSString*)path oldText:(NSString*)oldText newText:(NSString*)newText
+{
+	if(![_delegate respondsToSelector:@selector(agentPanel:showDiff:title:)])
+		return;
+
+	NSString* name  = [self displayNameForPath:path ?: @"file"];
+	AgentDiff* diff = [AgentDiff diffWithOldText:oldText newText:newText contextLines:3];
+	NSString* text  = diff.isEmpty ? @"No changes.\n" : [diff unifiedDiffWithOldName:(oldText ? [@"a/" stringByAppendingString:name] : @"/dev/null") newName:[@"b/" stringByAppendingString:name]];
+	[_delegate agentPanel:self showDiff:text title:[NSString stringWithFormat:@"%@ (agent changes).diff", name.lastPathComponent]];
+}
+
+- (void)changesView:(AgentChangesView*)changesView openChange:(AgentFileChange*)change
+{
+	if([_delegate respondsToSelector:@selector(agentPanel:openFile:line:)])
+		[_delegate agentPanel:self openFile:change.path line:0];
+}
+
+- (void)changesView:(AgentChangesView*)changesView showDiffOfChange:(AgentFileChange*)change
+{
+	[self showDiffOfFile:change.path oldText:change.originalText newText:[_fileSystem currentTextOfFileAtPath:change.path] ?: @""];
+}
+
+- (void)changesView:(AgentChangesView*)changesView keepChanges:(NSArray<AgentFileChange*>*)changes
+{
+	if(changes.count == _fileSystem.changes.count)
+	{
+		[_fileSystem keepAllChanges];
+		return;
+	}
+	for(AgentFileChange* change in changes)
+		[_fileSystem keepChange:change];
+}
+
+- (void)changesView:(AgentChangesView*)changesView undoChanges:(NSArray<AgentFileChange*>*)changes
+{
+	NSMutableArray<NSString*>* editedSince = [NSMutableArray array];
+	for(AgentFileChange* change in changes)
+	{
+		if([_fileSystem hasFileChangedSinceChange:change])
+			[editedSince addObject:[self displayNameForPath:change.path]];
+	}
+
+	if(!editedSince.count)
+		return [self undoChanges:changes];
+
+	NSAlert* alert = [[NSAlert alloc] init];
+	alert.messageText     = editedSince.count == 1 ? [NSString stringWithFormat:@"“%@” has changed since the agent edited it.", editedSince.firstObject] : @"Some files have changed since the agent edited them.";
+	alert.informativeText = [NSString stringWithFormat:@"Undo restores the file as it was before the agent changed it, so later edits are lost too.%@", editedSince.count > 1 ? [@"\n\n" stringByAppendingString:[editedSince componentsJoinedByString:@"\n"]] : @""];
+	[alert addButtonWithTitle:@"Undo Anyway"];
+	[alert addButtonWithTitle:@"Cancel"];
+	[alert beginSheetModalForWindow:self.view.window completionHandler:^(NSModalResponse response){
+		if(response == NSAlertFirstButtonReturn)
+			[self undoChanges:changes];
+	}];
+}
+
+- (void)undoChanges:(NSArray<AgentFileChange*>*)changes
+{
+	for(AgentFileChange* change in changes)
+	{
+		NSError* error;
+		if(![_fileSystem undoChange:change force:YES error:&error])
+			[self showError:error.localizedDescription];
+	}
 }
 @end

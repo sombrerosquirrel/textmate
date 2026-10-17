@@ -1,9 +1,11 @@
 #import "AgentTranscriptView.h"
 #import <OakMarkdown/OakMarkdown.h>
+#import <AgentClient/AgentDiff.h>
 #import <OakAppKit/NSColor Additions.h>
 
 static NSString* const kActionScheme      = @"textmate-agent";
 static NSTimeInterval const kCoalesceDelay = 0.05;
+static NSUInteger const kDiffPreviewLines   = 12;
 
 static NSFont* SmallFont ()          { return [NSFont systemFontOfSize:NSFont.smallSystemFontSize]; }
 static NSFont* SmallMonospaceFont () { return [NSFont monospacedSystemFontOfSize:NSFont.smallSystemFontSize weight:NSFontWeightRegular]; }
@@ -347,7 +349,7 @@ static NSString* PathFromURI (NSString* uri)
 		NSString* type = content[@"type"];
 		if([type isEqualToString:@"diff"])
 		{
-			[res appendAttributedString:[self text:[NSString stringWithFormat:@"\n    Edit %@", [content[@"path"] lastPathComponent] ?: @"file"] font:SmallFont() color:NSColor.secondaryLabelColor]];
+			[self appendDiff:content index:[toolCall[@"content"] indexOfObjectIdenticalTo:content] item:item into:res];
 		}
 		else if([type isEqualToString:@"terminal"])
 		{
@@ -365,19 +367,72 @@ static NSString* PathFromURI (NSString* uri)
 	}
 }
 
+// File name, +/− counts and a Diff link, then the changed lines; long diffs
+// are cut short until expanded
+- (void)appendDiff:(NSDictionary*)content index:(NSUInteger)index item:(AgentTranscriptItem*)item into:(NSMutableAttributedString*)res
+{
+	NSString* path    = [content[@"path"] isKindOfClass:[NSString class]] ? content[@"path"] : nil;
+	NSString* oldText = [content[@"oldText"] isKindOfClass:[NSString class]] ? content[@"oldText"] : nil;
+	NSString* newText = [content[@"newText"] isKindOfClass:[NSString class]] ? content[@"newText"] : @"";
+	AgentDiff* diff   = [AgentDiff diffWithOldText:oldText newText:newText contextLines:1];
+
+	NSDictionary* parameters = @{ @"content": [NSString stringWithFormat:@"%lu", index] };
+	[res appendAttributedString:[self text:@"\n    ✎ " font:SmallFont() color:NSColor.secondaryLabelColor]];
+	if(path)
+			[res appendAttributedString:[self link:path.lastPathComponent url:[self actionURL:@"open" item:item parameters:@{ @"path": path }]]];
+	else	[res appendAttributedString:[self text:@"file" font:SmallFont() color:NSColor.labelColor]];
+	if(!oldText)
+		[res appendAttributedString:[self text:@"  new" font:SmallFont() color:NSColor.secondaryLabelColor]];
+	[res appendAttributedString:[self text:[NSString stringWithFormat:@"  +%lu", diff.addedLineCount] font:SmallFont() color:NSColor.systemGreenColor]];
+	[res appendAttributedString:[self text:[NSString stringWithFormat:@" −%lu", diff.removedLineCount] font:SmallFont() color:NSColor.systemRedColor]];
+	[res appendAttributedString:[self text:@"   " font:SmallFont() color:NSColor.secondaryLabelColor]];
+	[res appendAttributedString:[self link:@"Diff" url:[self actionURL:@"diff" item:item parameters:parameters]]];
+
+	NSMutableParagraphStyle* paragraph = [[NSMutableParagraphStyle alloc] init];
+	paragraph.firstLineHeadIndent = paragraph.headIndent = 20;
+
+	NSUInteger shown = 0, total = 0;
+	for(AgentDiffHunk* hunk in diff.hunks)
+		total += hunk.lines.count;
+
+	for(AgentDiffHunk* hunk in diff.hunks)
+	{
+		if(!item.expanded && shown >= kDiffPreviewLines)
+			break;
+		if(hunk != diff.hunks.firstObject)
+			[res appendAttributedString:[[NSAttributedString alloc] initWithString:@"\n⋯" attributes:@{ NSFontAttributeName: SmallMonospaceFont(), NSForegroundColorAttributeName: NSColor.tertiaryLabelColor, NSParagraphStyleAttributeName: paragraph }]];
+
+		for(AgentDiffLine* line in hunk.lines)
+		{
+			if(!item.expanded && shown >= kDiffPreviewLines)
+				break;
+			++shown;
+
+			NSString* prefix = line.kind == AgentDiffLineKindAdded ? @"+ " : (line.kind == AgentDiffLineKindRemoved ? @"− " : @"  ");
+			NSColor* background = line.kind == AgentDiffLineKindAdded ? [NSColor.systemGreenColor colorWithAlphaComponent:0.15] : (line.kind == AgentDiffLineKindRemoved ? [NSColor.systemRedColor colorWithAlphaComponent:0.15] : nil);
+			NSMutableDictionary* attributes = [NSMutableDictionary dictionaryWithDictionary:@{
+				NSFontAttributeName:            SmallMonospaceFont(),
+				NSForegroundColorAttributeName: line.kind == AgentDiffLineKindContext ? NSColor.secondaryLabelColor : NSColor.labelColor,
+				NSParagraphStyleAttributeName:  paragraph,
+			}];
+			if(background)
+				attributes[NSBackgroundColorAttributeName] = background;
+			[res appendAttributedString:[[NSAttributedString alloc] initWithString:[NSString stringWithFormat:@"\n%@%@", prefix, line.text] attributes:attributes]];
+		}
+	}
+
+	if(total > kDiffPreviewLines)
+	{
+		NSString* title = item.expanded ? @"Show less" : [NSString stringWithFormat:@"Show all %lu lines", total];
+		[res appendAttributedString:[self text:@"\n    " font:SmallFont() color:NSColor.secondaryLabelColor]];
+		[res appendAttributedString:[self link:title url:[self actionURL:@"toggle" item:item parameters:@{ }]]];
+	}
+}
+
 - (void)renderPermissionItem:(AgentTranscriptItem*)item into:(NSMutableAttributedString*)res
 {
-	NSDictionary* request = item.permissionRequest;
-	NSDictionary* toolCall = [request[@"toolCall"] isKindOfClass:[NSDictionary class]] ? request[@"toolCall"] : @{ };
-	NSArray* options = [request[@"options"] isKindOfClass:[NSArray class]] ? request[@"options"] : @[ ];
-
-	// The request may only name the tool call; fill in what its row knows
-	if(AgentTranscriptItem* toolCallItem = [self toolCallItemWithIdentifier:toolCall[@"toolCallId"]])
-	{
-		NSMutableDictionary* merged = [toolCallItem.toolCall mutableCopy];
-		[merged addEntriesFromDictionary:toolCall];
-		toolCall = merged;
-	}
+	NSDictionary* toolCall = [self toolCallForItem:item];
+	NSArray* options = [item.permissionRequest[@"options"] isKindOfClass:[NSArray class]] ? item.permissionRequest[@"options"] : @[ ];
 
 	NSTextBlock* block = [[NSTextBlock alloc] init];
 	block.backgroundColor = [(item.permissionResolved ? NSColor.secondaryLabelColor : NSColor.systemOrangeColor) colorWithAlphaComponent:0.12];
@@ -442,6 +497,23 @@ static NSString* PathFromURI (NSString* uri)
 // = Actions =
 // ===========
 
+// The tool call shown by a tool call or permission item. A permission request
+// may only name its tool call; fill in what the tool call’s row knows.
+- (NSDictionary*)toolCallForItem:(AgentTranscriptItem*)item
+{
+	if(item.kind != AgentTranscriptItemKindPermission)
+		return item.toolCall ?: @{ };
+
+	NSDictionary* toolCall = [item.permissionRequest[@"toolCall"] isKindOfClass:[NSDictionary class]] ? item.permissionRequest[@"toolCall"] : @{ };
+	if(AgentTranscriptItem* toolCallItem = [self toolCallItemWithIdentifier:toolCall[@"toolCallId"]])
+	{
+		NSMutableDictionary* merged = [toolCallItem.toolCall mutableCopy];
+		[merged addEntriesFromDictionary:toolCall];
+		toolCall = merged;
+	}
+	return toolCall;
+}
+
 - (AgentTranscriptItem*)toolCallItemWithIdentifier:(id)toolCallId
 {
 	if(!toolCallId)
@@ -500,6 +572,18 @@ static NSString* PathFromURI (NSString* uri)
 		item.expanded = !item.expanded;
 		[_pendingIdentifiers addObject:item.identifier];
 		[self flushPendingItems];
+	}
+	else if([action isEqualToString:@"diff"] && item)
+	{
+		NSArray* contents = [[self toolCallForItem:item][@"content"] isKindOfClass:[NSArray class]] ? [self toolCallForItem:item][@"content"] : @[ ];
+		NSUInteger index  = parameters[@"content"].integerValue;
+		NSDictionary* content = index < contents.count ? contents[index] : nil;
+		if([content[@"type"] isEqualToString:@"diff"] && [_actionDelegate respondsToSelector:@selector(transcriptView:showDiffOfFile:oldText:newText:)])
+		{
+			NSString* oldText = [content[@"oldText"] isKindOfClass:[NSString class]] ? content[@"oldText"] : nil;
+			NSString* newText = [content[@"newText"] isKindOfClass:[NSString class]] ? content[@"newText"] : @"";
+			[_actionDelegate transcriptView:self showDiffOfFile:content[@"path"] oldText:oldText newText:newText];
+		}
 	}
 	else if([action isEqualToString:@"permission"] && item && !item.permissionResolved)
 	{

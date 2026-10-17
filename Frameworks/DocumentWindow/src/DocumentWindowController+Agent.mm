@@ -246,6 +246,12 @@ static BOOL IsSameFile (NSString* lhs, NSString* rhs)
 	[self.textView insertSnippetWithOptions:@{ @"content": EscapeSnippetText(text) }];
 }
 
+- (void)agentPanel:(AgentPanelViewController*)agentPanel showDiff:(NSString*)diff title:(NSString*)title
+{
+	OakDocument* document = [OakDocument documentWithString:diff fileType:@"source.diff" customName:title];
+	[OakDocumentController.sharedInstance showDocument:document inProject:self.identifier bringToFront:YES];
+}
+
 - (id<AgentDocumentProvider>)documentProviderForAgentPanel:(AgentPanelViewController*)agentPanel
 {
 	return self;

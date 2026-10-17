@@ -11,6 +11,8 @@
 @optional
 - (void)transcriptView:(AgentTranscriptView*)transcriptView insertCode:(NSString*)code;
 - (void)transcriptView:(AgentTranscriptView*)transcriptView openFile:(NSString*)path line:(NSUInteger)line;
+// `oldText` nil: a new file.
+- (void)transcriptView:(AgentTranscriptView*)transcriptView showDiffOfFile:(NSString*)path oldText:(NSString*)oldText newText:(NSString*)newText;
 - (void)transcriptView:(AgentTranscriptView*)transcriptView selectPermissionOption:(NSString*)optionId forItem:(AgentTranscriptItem*)item;
 @end
 

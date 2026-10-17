@@ -15,6 +15,8 @@
 - (NSArray<AgentAttachment*>*)openFileAttachmentsForAgentPanel:(AgentPanelViewController*)agentPanel;
 - (void)agentPanel:(AgentPanelViewController*)agentPanel insertText:(NSString*)text;
 - (void)agentPanel:(AgentPanelViewController*)agentPanel openFile:(NSString*)path line:(NSUInteger)line;
+// Shows `diff` (unified diff text) in a new document.
+- (void)agentPanel:(AgentPanelViewController*)agentPanel showDiff:(NSString*)diff title:(NSString*)title;
 // Open documents, for the agent’s file access (unsaved edits, undoable writes).
 - (id<AgentDocumentProvider>)documentProviderForAgentPanel:(AgentPanelViewController*)agentPanel;
 @end
