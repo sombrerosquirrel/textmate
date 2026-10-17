@@ -58,6 +58,7 @@ static NSView* Separator ()
 	AgentFileSystem* _fileSystem;              // one per chat, so its changes outlive an agent restart
 	AgentTerminalManager* _terminals;          // one per chat, so output stays visible after a restart
 	NSMutableDictionary<NSString*, void(^)(NSDictionary*)>* _permissionReplies; // transcript item identifier → reply
+	NSMutableSet<NSString*>* _finishedToolCallIds; // edit tool calls whose files have been compared
 
 	AgentTranscript* _transcript;
 	NSString* _pendingText;                     // sent once the session is ready
@@ -85,6 +86,7 @@ static NSView* Separator ()
 	{
 		_transcript = [[AgentTranscript alloc] init];
 		_permissionReplies = [NSMutableDictionary dictionary];
+		_finishedToolCallIds = [NSMutableSet set];
 		_agent      = [AgentRegistry agentWithIdentifier:[NSUserDefaults.standardUserDefaults stringForKey:kUserDefaultsAgentPanelAgentKey]] ?: AgentRegistry.agents.firstObject;
 	}
 	return self;
@@ -215,6 +217,8 @@ static NSView* Separator ()
 
 		_session = session;
 		_session.delegate   = self;
+		// Claude Code runs commands itself; ask it to report their output as terminals
+		_session.clientCapabilities = @{ @"_meta": @{ @"terminal_output": @YES, @"terminal_output_delta": @YES } };
 		_session.fileSystem = [self fileSystemForProjectPath:projectPath];
 		_session.terminals  = [self terminalsForProjectPath:projectPath environment:session.connection.environment];
 		[session startWithCompletion:^(NSError* error){
@@ -285,6 +289,7 @@ static NSView* Separator ()
 	_fileSystem = nil;
 	[_terminals killAll];
 	_terminals = nil;
+	[_finishedToolCallIds removeAllObjects];
 	_transcriptView.terminalManager = nil;
 	_changesView.changes = @[ ];
 	[_transcript removeAllItems];
@@ -641,7 +646,50 @@ static NSView* Separator ()
 	}
 
 	if(AgentTranscriptItem* item = [_transcript applyUpdate:update])
+	{
 		[self showItem:item];
+		if(item.kind == AgentTranscriptItemKindToolCall)
+			[self trackFilesOfToolCall:item.toolCall];
+	}
+}
+
+// Agents mostly edit files themselves rather than through fs/write_text_file.
+// Remember each file an edit tool call names before it runs, and compare when
+// it finishes, so the change shows up in the changed-files list.
+- (void)trackFilesOfToolCall:(NSDictionary*)toolCall
+{
+	NSString* toolCallId = [toolCall[@"toolCallId"] description];
+	if(!_fileSystem || !toolCallId || [_finishedToolCallIds containsObject:toolCallId])
+		return;
+
+	NSMutableOrderedSet<NSString*>* paths = [NSMutableOrderedSet orderedSet];
+	BOOL edits = [@[ @"edit", @"delete", @"move" ] containsObject:toolCall[@"kind"] ?: @""];
+	for(NSDictionary* content in [toolCall[@"content"] isKindOfClass:[NSArray class]] ? toolCall[@"content"] : @[ ])
+	{
+		if([content isKindOfClass:[NSDictionary class]] && [content[@"type"] isEqualToString:@"diff"] && [content[@"path"] isKindOfClass:[NSString class]])
+		{
+			[paths addObject:content[@"path"]];
+			edits = YES;
+		}
+	}
+	if(!edits)
+		return;
+	for(NSDictionary* location in [toolCall[@"locations"] isKindOfClass:[NSArray class]] ? toolCall[@"locations"] : @[ ])
+	{
+		if([location isKindOfClass:[NSDictionary class]] && [location[@"path"] isKindOfClass:[NSString class]])
+			[paths addObject:location[@"path"]];
+	}
+
+	NSString* status = toolCall[@"status"];
+	BOOL finished = [status isEqualToString:@"completed"] || [status isEqualToString:@"failed"];
+	if(finished)
+		[_finishedToolCallIds addObject:toolCallId];
+	for(NSString* path in paths)
+	{
+		if(finished)
+				[_fileSystem didChangeFileAtPath:path];
+		else	[_fileSystem willChangeFileAtPath:path];
+	}
 }
 
 - (void)agentSession:(AgentSession*)session requestPermission:(NSDictionary*)params reply:(void(^)(NSDictionary* outcome))reply
@@ -777,7 +825,7 @@ static NSView* Separator ()
 
 - (void)changesView:(AgentChangesView*)changesView showDiffOfChange:(AgentFileChange*)change
 {
-	[self showDiffOfFile:change.path oldText:change.originalText newText:[_fileSystem currentTextOfFileAtPath:change.path] ?: @""];
+	[self showDiffOfFile:change.path oldText:change.originalText newText:change.currentText ?: @""];
 }
 
 - (void)changesView:(AgentChangesView*)changesView keepChanges:(NSArray<AgentFileChange*>*)changes

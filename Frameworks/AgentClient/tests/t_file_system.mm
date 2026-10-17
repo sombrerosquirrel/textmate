@@ -243,3 +243,74 @@ void test_session_without_file_system ()
 
 	[session close];
 }
+
+// =====================================
+// = Edits the agent makes on its own =
+// =====================================
+
+void test_external_changes ()
+{
+	test_fs_t t;
+	WriteFile(t.path(@"a.txt"), @"a1");
+	WriteFile(t.path(@"gone.txt"), @"bye");
+
+	[t.fileSystem willChangeFileAtPath:t.path(@"a.txt")];
+	[t.fileSystem willChangeFileAtPath:t.path(@"new.txt")];
+	[t.fileSystem willChangeFileAtPath:t.path(@"gone.txt")];
+	[t.fileSystem willChangeFileAtPath:t.path(@"same.txt")];
+	WriteFile(t.path(@"a.txt"), @"a2");
+	WriteFile(t.path(@"new.txt"), @"created");
+	[NSFileManager.defaultManager removeItemAtPath:t.path(@"gone.txt") error:nullptr];
+	[t.fileSystem didChangeFileAtPath:t.path(@"a.txt")];
+	[t.fileSystem didChangeFileAtPath:t.path(@"new.txt")];
+	[t.fileSystem didChangeFileAtPath:t.path(@"gone.txt")];
+	[t.fileSystem didChangeFileAtPath:t.path(@"same.txt")]; // unchanged: not listed
+	[t.fileSystem didChangeFileAtPath:t.path(@"unknown.txt")]; // no snapshot: ignored
+
+	NSArray<AgentFileChange*>* changes = t.fileSystem.changes;
+	OAK_ASSERT_EQ(changes.count, 3);
+	OAK_ASSERT(changes[0].isExternal);
+	OAK_ASSERT([changes[0].originalText isEqualToString:@"a1"] && [changes[0].currentText isEqualToString:@"a2"]);
+	OAK_ASSERT(changes[1].originalText == nil && [changes[1].currentText isEqualToString:@"created"]);
+	OAK_ASSERT([changes[2].originalText isEqualToString:@"bye"] && changes[2].currentText == nil);
+
+	// A second edit keeps the first original
+	[t.fileSystem willChangeFileAtPath:t.path(@"a.txt")];
+	WriteFile(t.path(@"a.txt"), @"a3");
+	[t.fileSystem didChangeFileAtPath:t.path(@"a.txt")];
+	OAK_ASSERT_EQ(t.fileSystem.changes.count, 3);
+	OAK_ASSERT([t.fileSystem.changes[0].originalText isEqualToString:@"a1"] && [t.fileSystem.changes[0].currentText isEqualToString:@"a3"]);
+
+	// Undo writes the disk, even when the file is open (the editor reloads it)
+	t.provider.documents[t.path(@"a.txt")] = @"a3";
+	OAK_ASSERT([t.fileSystem undoChange:t.fileSystem.changes[0] force:NO error:nullptr]);
+	OAK_ASSERT([ReadFile(t.path(@"a.txt")) isEqualToString:@"a1"]);
+	OAK_ASSERT([t.fileSystem undoChange:t.fileSystem.changes[0] force:NO error:nullptr]); // new.txt
+	OAK_ASSERT(![NSFileManager.defaultManager fileExistsAtPath:t.path(@"new.txt")]);
+	OAK_ASSERT([t.fileSystem undoChange:t.fileSystem.changes[0] force:NO error:nullptr]); // gone.txt
+	OAK_ASSERT([ReadFile(t.path(@"gone.txt")) isEqualToString:@"bye"]);
+}
+
+void test_external_change_after_client_write ()
+{
+	test_fs_t t;
+	WriteFile(t.path(@"a.txt"), @"a1");
+	t.provider.documents[t.path(@"a.txt")] = @"a1";
+
+	// An agent that writes through the client also reports the tool call
+	[t.fileSystem willChangeFileAtPath:t.path(@"a.txt")];
+	OAK_ASSERT([t.fileSystem writeText:@"a2" toFileAtPath:t.path(@"a.txt") error:nullptr]);
+	[t.fileSystem didChangeFileAtPath:t.path(@"a.txt")];
+
+	OAK_ASSERT_EQ(t.fileSystem.changes.count, 1);
+	OAK_ASSERT(!t.fileSystem.changes[0].isExternal);
+	OAK_ASSERT([t.fileSystem.changes[0].currentText isEqualToString:@"a2"]);
+}
+
+void test_external_changes_outside_project ()
+{
+	test_fs_t t;
+	[t.fileSystem willChangeFileAtPath:@"/etc/hosts"];
+	[t.fileSystem didChangeFileAtPath:@"/etc/hosts"];
+	OAK_ASSERT_EQ(t.fileSystem.changes.count, 0);
+}

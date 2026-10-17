@@ -69,6 +69,7 @@ static NSString* LinesOfText (NSString* text, NSUInteger line, NSUInteger limit)
 @property (nonatomic, readwrite) NSString* path;
 @property (nonatomic, readwrite) NSString* originalText;
 @property (nonatomic, readwrite) NSString* currentText;
+@property (nonatomic, readwrite) BOOL external;
 @end
 
 @implementation AgentFileChange
@@ -78,6 +79,7 @@ static NSString* LinesOfText (NSString* text, NSUInteger line, NSUInteger limit)
 {
 	NSString* _resolvedRootDirectory;
 	NSMutableArray<AgentFileChange*>* _changes;
+	NSMutableDictionary<NSString*, id>* _snapshots; // path → disk text before an agent’s own edit, NSNull if the file didn’t exist
 }
 
 - (instancetype)initWithRootDirectory:(NSString*)rootDirectory
@@ -88,6 +90,7 @@ static NSString* LinesOfText (NSString* text, NSUInteger line, NSUInteger limit)
 		_resolvedRootDirectory = ResolvedPath(_rootDirectory);
 		_additionalDirectories = @[ ];
 		_changes               = [NSMutableArray array];
+		_snapshots             = [NSMutableDictionary dictionary];
 	}
 	return self;
 }
@@ -144,11 +147,16 @@ static NSString* LinesOfText (NSString* text, NSUInteger line, NSUInteger limit)
 // = Reading/Writing =
 // ===================
 
+static NSString* DiskTextOfFile (NSString* path)
+{
+	return [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:nullptr];
+}
+
 - (NSString*)currentTextOfFileAtPath:(NSString*)path
 {
 	if(NSString* text = [_documentProvider textOfOpenDocumentAtPath:path])
 		return text;
-	return [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:nullptr];
+	return DiskTextOfFile(path);
 }
 
 - (NSString*)readTextFileAtPath:(NSString*)path line:(NSUInteger)line limit:(NSUInteger)limit error:(NSError**)error
@@ -255,25 +263,63 @@ static NSString* LinesOfText (NSString* text, NSUInteger line, NSUInteger limit)
 
 - (void)recordChangeAtPath:(NSString*)path originalText:(NSString*)originalText currentText:(NSString*)currentText
 {
+	[self recordChangeAtPath:path originalText:originalText currentText:currentText external:NO];
+}
+
+- (void)recordChangeAtPath:(NSString*)path originalText:(NSString*)originalText currentText:(NSString*)currentText external:(BOOL)external
+{
 	AgentFileChange* change = [self changeAtPath:path];
 	if(!change)
 	{
 		change = [[AgentFileChange alloc] init];
 		change.path         = path;
 		change.originalText = originalText;
+		change.external     = external;
 		[_changes addObject:change];
 	}
 	change.currentText = currentText;
 
 	// Written back to how it was: nothing left to review
-	if([change.currentText isEqualToString:change.originalText])
+	if(change.currentText == change.originalText || [change.currentText isEqualToString:change.originalText])
 		[_changes removeObject:change];
 	[self changesDidChange];
 }
 
+- (void)willChangeFileAtPath:(NSString*)path
+{
+	if(![self isPathAllowed:path])
+		return;
+	path = path.stringByStandardizingPath;
+	if(_snapshots[path] || [self changeAtPath:path].external)
+		return; // already know how it was
+	_snapshots[path] = DiskTextOfFile(path) ?: [NSNull null];
+}
+
+- (void)didChangeFileAtPath:(NSString*)path
+{
+	if(![self isPathAllowed:path])
+		return;
+	path = path.stringByStandardizingPath;
+
+	id snapshot = _snapshots[path];
+	[_snapshots removeObjectForKey:path];
+
+	AgentFileChange* change = [self changeAtPath:path];
+	if(change && !change.external)
+		return; // written through fs/write_text_file, already recorded
+	if(!change && !snapshot)
+		return; // we don’t know how it was
+
+	NSString* originalText = change ? change.originalText : (snapshot == [NSNull null] ? nil : snapshot);
+	NSString* currentText  = DiskTextOfFile(path);
+	if(!change && (currentText == originalText || [currentText isEqualToString:originalText]))
+		return;
+	[self recordChangeAtPath:path originalText:originalText currentText:currentText external:YES];
+}
+
 - (BOOL)hasFileChangedSinceChange:(AgentFileChange*)change
 {
-	NSString* text = [self currentTextOfFileAtPath:change.path];
+	NSString* text = change.external ? DiskTextOfFile(change.path) : [self currentTextOfFileAtPath:change.path];
 	return text != change.currentText && ![text isEqualToString:change.currentText];
 }
 
@@ -298,7 +344,17 @@ static NSString* LinesOfText (NSString* text, NSUInteger line, NSUInteger limit)
 		return NO;
 	}
 
-	if(change.originalText)
+	if(change.originalText && change.external)
+	{
+		NSError* fsError;
+		if(![[change.originalText dataUsingEncoding:NSUTF8StringEncoding] writeToFile:change.path options:0 error:&fsError])
+		{
+			if(error)
+				*error = FileSystemError(AgentFileSystemErrorWriteFailed, @"Unable to write %@: %@", change.path, fsError.localizedDescription);
+			return NO;
+		}
+	}
+	else if(change.originalText)
 	{
 		if(![self storeText:change.originalText atPath:change.path error:error])
 			return NO;

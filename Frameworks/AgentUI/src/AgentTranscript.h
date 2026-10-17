@@ -29,6 +29,16 @@ typedef NS_ENUM(NSInteger, AgentTranscriptItemKind) {
 @property (nonatomic, readonly) NSString* selectedOptionId;
 @end
 
+// Output of a command the agent runs itself, reported in its tool call’s
+// `_meta` (Claude Code: terminal_info, terminal_output(_delta), terminal_exit).
+@interface AgentTranscriptTerminal : NSObject
+@property (nonatomic, readonly) NSString* terminalId;
+@property (nonatomic, readonly) NSString* output;
+@property (nonatomic, readonly, getter = hasExited) BOOL exited;
+@property (nonatomic, readonly) NSNumber* exitCode;
+@property (nonatomic, readonly) NSString* signal;
+@end
+
 @interface AgentTranscript : NSObject
 @property (nonatomic, readonly) NSArray<AgentTranscriptItem*>* items;
 
@@ -44,6 +54,8 @@ typedef NS_ENUM(NSInteger, AgentTranscriptItemKind) {
 // item that was created or changed, or nil if the update isn’t shown in the
 // transcript (e.g. available_commands_update).
 - (AgentTranscriptItem*)applyUpdate:(NSDictionary*)update;
+
+- (AgentTranscriptTerminal*)terminalWithIdentifier:(NSString*)terminalId;
 
 - (void)removeAllItems;
 @end

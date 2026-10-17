@@ -30,7 +30,10 @@ typedef NS_ERROR_ENUM(AgentFileSystemErrorDomain, AgentFileSystemErrorCode) {
 @interface AgentFileChange : NSObject
 @property (nonatomic, readonly) NSString* path;
 @property (nonatomic, readonly) NSString* originalText; // nil when the agent created the file
-@property (nonatomic, readonly) NSString* currentText;  // text after the last write
+@property (nonatomic, readonly) NSString* currentText;  // text after the last write; nil when the agent deleted the file
+// Made by the agent itself on disk rather than through fs/write_text_file;
+// undo writes the disk, and open documents reload as for any outside change.
+@property (nonatomic, readonly, getter = isExternal) BOOL external;
 @end
 
 @class AgentFileSystem;
@@ -61,6 +64,14 @@ typedef NS_ERROR_ENUM(AgentFileSystemErrorDomain, AgentFileSystemErrorCode) {
 
 // Changes not yet kept or undone, in the order the files were first changed.
 @property (nonatomic, readonly) NSArray<AgentFileChange*>* changes;
+// Agents that edit files themselves (Claude Code, Copilot CLI) report the
+// files in their tool calls. Call -willChangeFileAtPath: when such a tool
+// call starts, to remember the file as it is on disk, and
+// -didChangeFileAtPath: when it ends, to record what changed. Paths outside
+// the project are ignored.
+- (void)willChangeFileAtPath:(NSString*)path;
+- (void)didChangeFileAtPath:(NSString*)path;
+
 // Records an edit made by the user on the agent’s behalf (e.g. Apply in Editor).
 - (void)recordChangeAtPath:(NSString*)path originalText:(NSString*)originalText currentText:(NSString*)currentText;
 // The file’s text now, from the open document or disk; nil if it doesn’t exist.

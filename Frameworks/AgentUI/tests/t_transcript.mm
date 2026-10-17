@@ -120,3 +120,22 @@ void test_permission_items ()
 	OAK_ASSERT(second.permissionResolved && second.selectedOptionId == nil);
 	OAK_ASSERT_EQ(transcript.pendingPermissionItems.count, 0);
 }
+
+void test_terminal_meta ()
+{
+	AgentTranscript* transcript = [[AgentTranscript alloc] init];
+	[transcript applyUpdate:@{ @"sessionUpdate": @"tool_call", @"toolCallId": @"t1", @"title": @"npm test", @"kind": @"execute", @"content": @[ @{ @"type": @"terminal", @"terminalId": @"t1" } ], @"_meta": @{ @"terminal_info": @{ @"terminal_id": @"t1" } } }];
+	OAK_ASSERT([transcript terminalWithIdentifier:@"t1"] != nil);
+	OAK_ASSERT(![transcript terminalWithIdentifier:@"t1"].exited);
+
+	[transcript applyUpdate:@{ @"sessionUpdate": @"tool_call_update", @"toolCallId": @"t1", @"_meta": @{ @"terminal_output_delta": @{ @"terminal_id": @"t1", @"data": @"one\n" } } }];
+	[transcript applyUpdate:@{ @"sessionUpdate": @"tool_call_update", @"toolCallId": @"t1", @"_meta": @{ @"terminal_output_delta": @{ @"terminal_id": @"t1", @"data": @"two\n" } } }];
+	[transcript applyUpdate:@{ @"sessionUpdate": @"tool_call_update", @"toolCallId": @"t1", @"status": @"completed", @"_meta": @{ @"terminal_exit": @{ @"terminal_id": @"t1", @"exit_code": @1, @"signal": [NSNull null] } } }];
+
+	AgentTranscriptTerminal* terminal = [transcript terminalWithIdentifier:@"t1"];
+	OAK_ASSERT([terminal.output isEqualToString:@"one\ntwo\n"]);
+	OAK_ASSERT(terminal.exited);
+	OAK_ASSERT([terminal.exitCode isEqual:@1]);
+	OAK_ASSERT(terminal.signal == nil);
+	OAK_ASSERT_EQ(transcript.items.count, 1);
+}

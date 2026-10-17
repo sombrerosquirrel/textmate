@@ -373,16 +373,25 @@ static NSString* PathFromURI (NSString* uri)
 		}
 		else if([type isEqualToString:@"terminal"])
 		{
-			[self appendTerminal:[_terminalManager terminalWithIdentifier:content[@"terminalId"]] item:item into:res];
+			if(AgentTerminal* terminal = [_terminalManager terminalWithIdentifier:content[@"terminalId"]])
+				[self appendTerminalOutput:terminal.output commandLine:terminal.commandLine truncated:terminal.truncated exited:terminal.exited exitCode:terminal.exitCode signal:terminal.signal stoppableTerminal:(terminal.released ? nil : terminal) item:item into:res];
+			else if(AgentTranscriptTerminal* terminal = [_transcript terminalWithIdentifier:content[@"terminalId"]])
+				[self appendTerminalOutput:terminal.output commandLine:CommandOfToolCall(toolCall) truncated:NO exited:terminal.exited exitCode:terminal.exitCode signal:terminal.signal stoppableTerminal:nil item:item into:res];
+			else
+				[res appendAttributedString:[self text:@"\n    Terminal" font:SmallFont() color:NSColor.secondaryLabelColor]];
 		}
 		else if([type isEqualToString:@"content"] && [content[@"content"][@"type"] isEqualToString:@"text"])
 		{
-			// A short preview; the full output view is part of milestone M3
+			// The first lines, all of them when expanded
 			NSArray* lines = [content[@"content"][@"text"] componentsSeparatedByString:@"\n"];
-			NSString* preview = [[lines subarrayWithRange:NSMakeRange(0, MIN(lines.count, 6))] componentsJoinedByString:@"\n    "];
-			if(lines.count > 6)
-				preview = [preview stringByAppendingFormat:@"\n    … %lu more lines", lines.count - 6];
+			BOOL cut = !item.expanded && lines.count > kOutputPreviewLines;
+			NSString* preview = [[lines subarrayWithRange:NSMakeRange(0, cut ? kOutputPreviewLines : lines.count)] componentsJoinedByString:@"\n    "];
 			[res appendAttributedString:[self text:[@"\n    " stringByAppendingString:preview] font:SmallMonospaceFont() color:NSColor.secondaryLabelColor]];
+			if(cut || (item.expanded && lines.count > kOutputPreviewLines))
+			{
+				[res appendAttributedString:[self text:@"\n    " font:SmallFont() color:NSColor.secondaryLabelColor]];
+				[res appendAttributedString:[self link:(cut ? [NSString stringWithFormat:@"Show all %lu lines", lines.count] : @"Show less") url:[self actionURL:@"toggle" item:item parameters:@{ }]]];
+			}
 		}
 	}
 }
@@ -449,49 +458,48 @@ static NSString* PathFromURI (NSString* uri)
 	}
 }
 
-// Command line, the end of the output (all of it when expanded), and the exit status or a Stop link
-- (void)appendTerminal:(AgentTerminal*)terminal item:(AgentTranscriptItem*)item into:(NSMutableAttributedString*)res
+// Command line, the end of the output (all of it when expanded), and the
+// exit status, or a Stop link while a command TextMate runs is running
+- (void)appendTerminalOutput:(NSString*)rawOutput commandLine:(NSString*)commandLine truncated:(BOOL)truncated exited:(BOOL)exited exitCode:(NSNumber*)exitCode signal:(NSString*)signal stoppableTerminal:(AgentTerminal*)stoppableTerminal item:(AgentTranscriptItem*)item into:(NSMutableAttributedString*)res
 {
-	if(!terminal)
-	{
-		[res appendAttributedString:[self text:@"\n    Terminal" font:SmallFont() color:NSColor.secondaryLabelColor]];
-		return;
-	}
-
 	NSMutableParagraphStyle* paragraph = [[NSMutableParagraphStyle alloc] init];
 	paragraph.firstLineHeadIndent = paragraph.headIndent = 20;
 	NSDictionary* commandAttributes = @{ NSFontAttributeName: SmallMonospaceFont(), NSForegroundColorAttributeName: NSColor.labelColor, NSParagraphStyleAttributeName: paragraph };
 	NSDictionary* outputAttributes  = @{ NSFontAttributeName: SmallMonospaceFont(), NSForegroundColorAttributeName: NSColor.secondaryLabelColor, NSParagraphStyleAttributeName: paragraph };
 
-	[res appendAttributedString:[[NSAttributedString alloc] initWithString:[@"\n$ " stringByAppendingString:terminal.commandLine] attributes:commandAttributes]];
+	if(commandLine)
+		[res appendAttributedString:[[NSAttributedString alloc] initWithString:[@"\n$ " stringByAppendingString:commandLine] attributes:commandAttributes]];
 
-	NSString* output = DisplayTerminalOutput(terminal.output);
+	NSString* output = DisplayTerminalOutput(rawOutput ?: @"");
 	if([output hasSuffix:@"\n"])
 		output = [output substringToIndex:output.length - 1];
 	NSArray<NSString*>* lines = output.length ? [output componentsSeparatedByString:@"\n"] : @[ ];
 	BOOL cut = !item.expanded && lines.count > kOutputPreviewLines;
 	if(cut)
 		lines = [lines subarrayWithRange:NSMakeRange(lines.count - kOutputPreviewLines, kOutputPreviewLines)];
-	if(cut || terminal.truncated)
+	if(cut || truncated)
 		[res appendAttributedString:[[NSAttributedString alloc] initWithString:@"\n⋯" attributes:outputAttributes]];
 	if(lines.count)
 		[res appendAttributedString:[[NSAttributedString alloc] initWithString:[@"\n" stringByAppendingString:[lines componentsJoinedByString:@"\n"]] attributes:outputAttributes]];
 
 	[res appendAttributedString:[self text:@"\n    " font:SmallFont() color:NSColor.secondaryLabelColor]];
-	if(!terminal.exited)
+	if(!exited)
 	{
 		[res appendAttributedString:[self text:@"Running…   " font:SmallFont() color:NSColor.secondaryLabelColor]];
-		if(!terminal.released)
-			[res appendAttributedString:[self link:@"Stop" url:[self actionURL:@"kill" item:item parameters:@{ @"terminal": terminal.terminalId }]]];
+		if(stoppableTerminal)
+			[res appendAttributedString:[self link:@"Stop" url:[self actionURL:@"kill" item:item parameters:@{ @"terminal": stoppableTerminal.terminalId }]]];
 	}
-	else if(terminal.signal)
+	else if(signal)
 	{
-		[res appendAttributedString:[self text:[NSString stringWithFormat:@"Stopped (%@)", terminal.signal] font:SmallFont() color:NSColor.secondaryLabelColor]];
+		[res appendAttributedString:[self text:[NSString stringWithFormat:@"Stopped (%@)", signal] font:SmallFont() color:NSColor.secondaryLabelColor]];
+	}
+	else if(exitCode)
+	{
+		[res appendAttributedString:[self text:[NSString stringWithFormat:@"Exit code %@", exitCode] font:SmallFont() color:(exitCode.integerValue == 0 ? NSColor.systemGreenColor : NSColor.systemRedColor)]];
 	}
 	else
 	{
-		NSInteger exitCode = terminal.exitCode.integerValue;
-		[res appendAttributedString:[self text:[NSString stringWithFormat:@"Exit code %ld", exitCode] font:SmallFont() color:(exitCode == 0 ? NSColor.systemGreenColor : NSColor.systemRedColor)]];
+		[res appendAttributedString:[self text:@"Finished" font:SmallFont() color:NSColor.secondaryLabelColor]];
 	}
 
 	if(item.expanded || cut)

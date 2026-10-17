@@ -37,8 +37,21 @@ static NSString* TextOfContentBlock (NSDictionary* content)
 - (NSDictionary*)toolCall    { return [_mutableToolCall copy]; }
 @end
 
+@interface AgentTranscriptTerminal ()
+@property (nonatomic, readwrite) NSString* terminalId;
+@property (nonatomic, readwrite) NSMutableString* mutableOutput;
+@property (nonatomic, readwrite) BOOL exited;
+@property (nonatomic, readwrite) NSNumber* exitCode;
+@property (nonatomic, readwrite) NSString* signal;
+@end
+
+@implementation AgentTranscriptTerminal
+- (NSString*)output { return [_mutableOutput copy]; }
+@end
+
 @interface AgentTranscript ()
 {
+	NSMutableDictionary<NSString*, AgentTranscriptTerminal*>* _terminals;
 	NSMutableArray<AgentTranscriptItem*>* _items;
 	NSUInteger _nextIdentifier;
 }
@@ -48,7 +61,10 @@ static NSString* TextOfContentBlock (NSDictionary* content)
 - (instancetype)init
 {
 	if(self = [super init])
-		_items = [NSMutableArray array];
+	{
+		_items     = [NSMutableArray array];
+		_terminals = [NSMutableDictionary dictionary];
+	}
 	return self;
 }
 
@@ -97,9 +113,56 @@ static NSString* TextOfContentBlock (NSDictionary* content)
 	}]];
 }
 
+- (AgentTranscriptTerminal*)terminalWithIdentifier:(NSString*)terminalId
+{
+	return [terminalId isKindOfClass:[NSString class]] ? _terminals[terminalId] : nil;
+}
+
+- (AgentTranscriptTerminal*)terminalCreatingIfNeeded:(id)terminalId
+{
+	if(![terminalId isKindOfClass:[NSString class]])
+		return nil;
+	AgentTranscriptTerminal* terminal = _terminals[terminalId];
+	if(!terminal)
+	{
+		terminal = [[AgentTranscriptTerminal alloc] init];
+		terminal.terminalId    = terminalId;
+		terminal.mutableOutput = [NSMutableString string];
+		_terminals[terminalId] = terminal;
+	}
+	return terminal;
+}
+
+// Output the agent reports for commands it runs itself
+- (void)applyTerminalMeta:(NSDictionary*)meta
+{
+	if(![meta isKindOfClass:[NSDictionary class]])
+		return;
+
+	if([meta[@"terminal_info"] isKindOfClass:[NSDictionary class]])
+		[self terminalCreatingIfNeeded:meta[@"terminal_info"][@"terminal_id"]];
+
+	for(NSString* key in @[ @"terminal_output", @"terminal_output_delta" ])
+	{
+		NSDictionary* output = meta[key];
+		if([output isKindOfClass:[NSDictionary class]] && [output[@"data"] isKindOfClass:[NSString class]])
+			[[self terminalCreatingIfNeeded:output[@"terminal_id"]].mutableOutput appendString:output[@"data"]];
+	}
+
+	NSDictionary* exit = meta[@"terminal_exit"];
+	if([exit isKindOfClass:[NSDictionary class]])
+	{
+		AgentTranscriptTerminal* terminal = [self terminalCreatingIfNeeded:exit[@"terminal_id"]];
+		terminal.exited   = YES;
+		terminal.exitCode = [exit[@"exit_code"] isKindOfClass:[NSNumber class]] ? exit[@"exit_code"] : nil;
+		terminal.signal   = [exit[@"signal"] isKindOfClass:[NSString class]] ? exit[@"signal"] : nil;
+	}
+}
+
 - (void)removeAllItems
 {
 	[_items removeAllObjects];
+	[_terminals removeAllObjects];
 }
 
 // Chunks extend the last item when it’s of the same kind and message; anything
@@ -159,6 +222,7 @@ static NSString* TextOfContentBlock (NSDictionary* content)
 			if(![key isEqualToString:@"sessionUpdate"] && update[key] != [NSNull null])
 				item.mutableToolCall[key] = update[key];
 		}
+		[self applyTerminalMeta:update[@"_meta"]];
 		return item;
 	}
 
