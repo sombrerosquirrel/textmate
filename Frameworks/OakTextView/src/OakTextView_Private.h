@@ -276,7 +276,6 @@ struct diagnostic_banner_t
 
 	BOOL hideCaret;
 	NSTimer* blinkCaretTimer;
-	NSRect _inactiveCaretLineRect; // drawn by -drawInactiveCaretLine:, NSZeroRect when hidden
 
 	NSImage* spellingDotImage;
 	NSImage* foldingDotsImage;

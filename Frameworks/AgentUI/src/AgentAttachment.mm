@@ -123,12 +123,29 @@ static NSString* FileURI (NSString* path)
 
 + (NSArray<NSDictionary*>*)promptWithText:(NSString*)text attachments:(NSArray<AgentAttachment*>*)attachments promptCapabilities:(NSDictionary*)promptCapabilities
 {
+	return [self promptWithText:text attachments:attachments currentFile:nil promptCapabilities:promptCapabilities];
+}
+
++ (NSArray<NSDictionary*>*)promptWithText:(NSString*)text attachments:(NSArray<AgentAttachment*>*)attachments currentFile:(AgentAttachment*)currentFile promptCapabilities:(NSDictionary*)promptCapabilities
+{
 	NSMutableArray* res = [NSMutableArray array];
 	if(text.length)
 		[res addObject:@{ @"type": @"text", @"text": text }];
+
+	// Not needed when the current file is attached with its cursor, which says the same
+	BOOL attachedWithCursor = NO;
 	for(AgentAttachment* attachment in attachments)
 	{
 		[res addObjectsFromArray:[attachment contentBlocksWithPromptCapabilities:promptCapabilities]];
+		if(attachment.kind == AgentAttachmentKindFile && attachment.cursorLine && [attachment.path isEqualToString:currentFile.path])
+			attachedWithCursor = YES;
+	}
+
+	if(res.count && currentFile.path && !attachedWithCursor)
+	{
+		NSString* cursor = currentFile.cursorLine ? [NSString stringWithFormat:@", with the cursor at line %lu, column %lu", currentFile.cursorLine, currentFile.cursorColumn] : @"";
+		NSString* note   = [NSString stringWithFormat:@"The user has %@ open in the editor%@. Unless they say otherwise, “this file”, “here” and requests that don’t name a file refer to it.", currentFile.path, cursor];
+		[res addObject:@{ @"type": @"text", @"text": note }];
 	}
 	return res;
 }

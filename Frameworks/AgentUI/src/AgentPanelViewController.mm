@@ -63,6 +63,7 @@ static NSView* Separator ()
 	AgentTranscript* _transcript;
 	NSString* _pendingText;                     // sent once the session is ready
 	NSArray<AgentAttachment*>* _pendingAttachments;
+	AgentAttachment* _pendingCurrentFile; // the file open in the editor when the prompt was sent
 	NSString* _usageText;
 
 	NSPopUpButton* _agentPopUp;
@@ -296,6 +297,7 @@ static NSView* Separator ()
 	[_transcriptView reloadData];
 	_pendingText        = nil;
 	_pendingAttachments = nil;
+	_pendingCurrentFile = nil;
 	_promptView.working = NO;
 	[self updatePlaceholders];
 	[self startSessionIfNeeded];
@@ -370,6 +372,7 @@ static NSView* Separator ()
 
 	_pendingText        = text;
 	_pendingAttachments = attachments;
+	_pendingCurrentFile = [_delegate respondsToSelector:@selector(currentFileAttachmentForAgentPanel:)] ? [_delegate currentFileAttachmentForAgentPanel:self] : nil;
 	promptView.working  = YES;
 
 	if(_session.state == AgentSessionStateReady)
@@ -381,9 +384,10 @@ static NSView* Separator ()
 - (void)sendPendingPrompt
 {
 	NSDictionary* promptCapabilities = _session.agentCapabilities[@"promptCapabilities"];
-	NSArray* prompt = [AgentAttachment promptWithText:_pendingText attachments:_pendingAttachments promptCapabilities:promptCapabilities];
+	NSArray* prompt = [AgentAttachment promptWithText:_pendingText attachments:_pendingAttachments currentFile:_pendingCurrentFile promptCapabilities:promptCapabilities];
 	_pendingText        = nil;
 	_pendingAttachments = nil;
+	_pendingCurrentFile = nil;
 
 	AgentSession* session = _session;
 	[session sendPrompt:prompt completion:^(NSString* stopReason, NSError* error){
@@ -405,6 +409,7 @@ static NSView* Separator ()
 		return;
 	_pendingText        = nil;
 	_pendingAttachments = nil;
+	_pendingCurrentFile = nil;
 	_promptView.working = NO;
 	[self showNotice:@"Your message wasn’t sent. Send it again to retry."];
 }
@@ -415,6 +420,7 @@ static NSView* Separator ()
 	{
 		_pendingText        = nil;
 		_pendingAttachments = nil;
+		_pendingCurrentFile = nil;
 		_promptView.working = NO;
 		[self showNotice:@"Stopped."];
 	}

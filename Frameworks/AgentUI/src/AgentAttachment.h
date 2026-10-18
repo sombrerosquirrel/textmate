@@ -32,4 +32,8 @@ typedef NS_ENUM(NSInteger, AgentAttachmentKind) {
 
 // The prompt text followed by the attachments’ content blocks.
 + (NSArray<NSDictionary*>*)promptWithText:(NSString*)text attachments:(NSArray<AgentAttachment*>*)attachments promptCapabilities:(NSDictionary*)promptCapabilities;
+// Also names `currentFile`, the file open in the editor, and the cursor in it,
+// as the file the user means unless they say otherwise. Its contents aren’t
+// sent; the agent reads the file if it needs to.
++ (NSArray<NSDictionary*>*)promptWithText:(NSString*)text attachments:(NSArray<AgentAttachment*>*)attachments currentFile:(AgentAttachment*)currentFile promptCapabilities:(NSDictionary*)promptCapabilities;
 @end

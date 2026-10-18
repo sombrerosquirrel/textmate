@@ -51,6 +51,29 @@ void test_file_attachment_with_cursor ()
 	OAK_ASSERT_EQ([[AgentAttachment fileAttachmentWithPath:@"/tmp/b.txt" text:@"b"] contentBlocksWithPromptCapabilities:kBasic].count, 1);
 }
 
+void test_prompt_with_current_file ()
+{
+	AgentAttachment* current = [AgentAttachment fileAttachmentWithPath:@"/tmp/project/main.cc" text:@"int main () { }" cursorLine:3 column:1];
+	NSArray* prompt = [AgentAttachment promptWithText:@"Add a comment here" attachments:@[ ] currentFile:current promptCapabilities:kEmbedded];
+	OAK_ASSERT_EQ(prompt.count, 2); // the file’s contents aren’t sent
+	OAK_ASSERT([prompt[1][@"text"] isEqualToString:@"The user has /tmp/project/main.cc open in the editor, with the cursor at line 3, column 1. Unless they say otherwise, “this file”, “here” and requests that don’t name a file refer to it."]);
+
+	// Attaching the current file with its cursor already says where the user is
+	prompt = [AgentAttachment promptWithText:@"Explain" attachments:@[ current ] currentFile:current promptCapabilities:kEmbedded];
+	OAK_ASSERT_EQ(prompt.count, 3);
+	OAK_ASSERT([prompt[2][@"text"] hasPrefix:@"The cursor is at"]);
+
+	// Another attached file doesn’t replace the note
+	AgentAttachment* other = [AgentAttachment fileAttachmentWithPath:@"/tmp/project/other.cc" text:@"x"];
+	prompt = [AgentAttachment promptWithText:@"Compare" attachments:@[ other ] currentFile:current promptCapabilities:kEmbedded];
+	OAK_ASSERT_EQ(prompt.count, 3);
+	OAK_ASSERT([prompt[2][@"text"] hasPrefix:@"The user has /tmp/project/main.cc open"]);
+
+	// Untitled documents have no path to name
+	AgentAttachment* untitled = [AgentAttachment fileAttachmentWithPath:nil text:@"x"];
+	OAK_ASSERT_EQ([AgentAttachment promptWithText:@"Hi" attachments:@[ ] currentFile:untitled promptCapabilities:kBasic].count, 1);
+}
+
 void test_selection_attachment ()
 {
 	AgentAttachment* selection = [AgentAttachment selectionAttachmentWithPath:@"/tmp/a.py" displayName:nil text:@"x = 1" firstLine:3 lastLine:4];

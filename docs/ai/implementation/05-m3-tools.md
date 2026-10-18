@@ -23,7 +23,7 @@ An agent can read, edit (with approval) and run commands in a project; edits are
 | 3. Diff review | Tool calls with `diff` content show a unified diff (xdiff), long diffs collapsed. A changed-files list above the prompt shows each file the agent changed in this chat with +/− line counts, and Keep / Undo per file plus Keep All / Undo All. Undo restores the original text (undoable in an open document; new files go to the Trash). Clicking a file opens it; “Diff” opens the change as a diff document. | `AgentClient/AgentDiff` (xdiff wrapper), `AgentUI/AgentChangesView` |
 | 4. Terminal | `terminal/create`, `output`, `wait_for_exit`, `kill`, `release`. Commands run in the project folder with the login-shell environment; a command without `args` runs through the user's shell. Output keeps the newest `outputByteLimit` bytes, cut at a character boundary. Tool rows with `terminal` content show live output, the exit status, and a Stop link while running; output stays after release. | `AgentClient/AgentTerminal` |
 | 5. Apply in Editor | Code blocks get an “Apply” link next to Copy / Insert: it replaces the selection, or the whole document if nothing is selected, as one undoable edit, and records it in the changed-files list so it can be reviewed and undone like an agent edit. | `AgentTranscriptView`, `DocumentWindowController+Agent` |
-| 6. Cursor (added 2026-10-17 at the user's request) | Attaching the current file (attach menu, or Ask About Selection with nothing selected) also tells the agent the cursor's line and column, so “add a comment here” works without selecting. While the agent panel has focus, the editor marks the caret's line with a faint underline, since it doesn't draw the caret then. | `AgentAttachment`, `OakTextView`, `DocumentWindowController+Agent` |
+| 6. Current file and cursor (added 2026-10-17 at the user's request) | Every prompt names the file open in the editor and the cursor's line and column, as the file meant unless the prompt says otherwise; its contents aren't sent. Attaching the current file (attach menu, or Ask About Selection with nothing selected) also carries the cursor. While the agent panel has focus, the editor's caret keeps blinking where it was. | `AgentAttachment`, `AgentPanelViewController`, `OakTextView`, `DocumentWindowController+Agent` |
 
 Tests: CxxTest against the fake agent and a fake document provider: read with `line`/`limit`, read from an open document, write to an open document vs. disk, project boundary (including `..` and symlinks), change tracking and revert, terminal output, truncation at character boundaries, exit status, kill, release, wait for exit; diff hunks and counts.
 
@@ -33,7 +33,8 @@ Tests: CxxTest against the fake agent and a fake document provider: read with `l
 - Undo after the user has edited the file further asks before discarding those edits.
 - Apply in Editor with no selection replaces the whole document (undoable, and listed with the changes). To be confirmed by the user.
 - The cursor position is the start of the selection (TextMate doesn't keep a selection's direction in `selectedRange`); with text selected, attaching Selection gives the agent the exact lines. Columns count characters (a tab is one).
-- The caret-line underline shows only while focus is inside the agent panel, not when other views (file browser, find) have it. It uses the theme's text colour at 35 % opacity.
+- The editor's caret keeps blinking only while focus is inside the agent panel, not when other views (file browser, find) have it. A faint underline under the caret's line was tried first; the user preferred the caret itself.
+- The current file is named in a text note at the end of the prompt (path and cursor) rather than attached, so its contents aren't sent with every prompt. Captured when the prompt is sent; untitled documents aren't named.
 
 ## Finding: today's agents don't use `fs/*` or `terminal/*`
 Checked in the installed packages (2026-10-16): **Claude Code** (`claude-agent-acp` 0.90) and **Copilot CLI** (1.0.97) only define the client methods; neither calls them. Both edit files on disk and run commands themselves. Claude's Edit diffs carry only the edited snippet (`old_string` / `new_string`), not the whole file.
@@ -64,8 +65,9 @@ So M3 also covers agents that act on their own:
 | Terminal output | Command line, last 12 lines (escape sequences removed, `\r` progress lines collapsed), exit status, Stop while a TextMate-run command runs. Output stays after release. |
 | Apply in Editor | Third code block link, next to Copy and Insert at Cursor. |
 | Cursor position | `+fileAttachmentWithPath:text:cursorLine:column:`: chip `main.c:42:7`; the prompt gets the file plus “The cursor is at line 42, column 7 of /path/main.c.” |
+| Current file by default | `+promptWithText:attachments:currentFile:promptCapabilities:` ends the prompt with “The user has /path/main.c open in the editor, with the cursor at line 42, column 7. Unless they say otherwise, “this file”, “here” and requests that don't name a file refer to it.” Left out when the current file is attached with its cursor. Checked with Claude: “add a comment here” with nothing attached edits the right line. |
 
-TextMate integration (`DocumentWindowController+Agent.mm`): `AgentDocumentProvider` over `OakDocumentController.openDocuments`; writes replace only the changed byte range (on UTF-8 boundaries) through `-[OakDocument performReplacements:]`, one undo group, document left unsaved. Apply in Editor; diff documents. The current-file attachment carries the cursor position. A `firstResponder` observer turns on `OakTextView.showsCaretLineWhenInactive` while the agent panel has focus; the text view draws a 1 pt line under the caret's line and updates it as the selection or focus changes.
+TextMate integration (`DocumentWindowController+Agent.mm`): `AgentDocumentProvider` over `OakDocumentController.openDocuments`; writes replace only the changed byte range (on UTF-8 boundaries) through `-[OakDocument performReplacements:]`, one undo group, document left unsaved. Apply in Editor; diff documents. The current-file attachment carries the cursor position. A `firstResponder` observer turns on `OakTextView.showsCaretWhenInactive` while the agent panel has focus; the text view then keeps drawing and blinking its caret while its window is active, though it isn't first responder.
 
 Tests: AgentClient 50 (new: file system 12, diff 3, terminal 6), AgentUI adds permission items and terminal `_meta`. The fake agent learned `read`, `write` and `run`. `ctest` 28/28.
 
@@ -81,8 +83,9 @@ Tests: AgentClient 50 (new: file system 12, diff 3, terminal 6), AgentUI adds pe
 - [ ] Copilot: the same edits and commands (its permission cards, changed files, text output).
 - [ ] Apply in Editor with a selection, and without one (whole document); ⌘Z undoes it; the file is listed.
 - [ ] Stop while a permission card is open: the card shows Cancelled.
-- [ ] Click in the prompt: a faint underline marks the caret's line in the editor; clicking back in the editor removes it. Check light and dark themes.
-- [ ] Ask About Selection (or attach Current File) with nothing selected: the chip reads `file:line:column`; “add a comment here” lands at the cursor.
+- [ ] Click in the prompt: the editor's caret keeps blinking where it was; it stops when another app is active, and focus in the file browser hides it as before.
+- [ ] With nothing attached, “add a comment here” edits the open file at the cursor.
+- [ ] Ask About Selection (or attach Current File) with nothing selected: the chip reads `file:line:column`.
 
 ## Future work
 - [ ] Files changed by shell commands (e.g. `sed -i`, code generators) aren't in the changed-files list; only edit tool calls are tracked. Could compare `git status` before and after a turn.

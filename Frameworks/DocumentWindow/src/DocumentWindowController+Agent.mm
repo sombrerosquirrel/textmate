@@ -87,8 +87,8 @@ static BOOL IsSameFile (NSString* lhs, NSString* rhs)
 @interface DocumentWindowController (AgentPanelDelegate) <AgentPanelDelegate, AgentDocumentProvider>
 @end
 
-// The editor doesn’t draw its caret while the agent panel has focus, so it
-// marks the caret’s line instead
+// Keeps the editor’s caret blinking while the agent panel has focus, so the
+// user sees where “here” is
 @interface AgentPanelFocusObserver : NSObject
 - (instancetype)initWithWindowController:(DocumentWindowController*)controller;
 @end
@@ -128,7 +128,7 @@ static void* kFirstResponderContext = &kFirstResponderContext;
 
 	DocumentWindowController* controller = _controller;
 	NSResponder* responder = _window.firstResponder;
-	controller.textView.showsCaretLineWhenInactive = [responder isKindOfClass:[NSView class]] && controller.agentPanel && [(NSView*)responder isDescendantOf:controller.agentPanel.view];
+	controller.textView.showsCaretWhenInactive = [responder isKindOfClass:[NSView class]] && controller.agentPanel && [(NSView*)responder isDescendantOf:controller.agentPanel.view];
 }
 @end
 
