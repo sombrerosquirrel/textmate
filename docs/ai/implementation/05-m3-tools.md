@@ -1,13 +1,14 @@
 ---
 title: M3 — Tools: Files, Permissions, Diff Review, Terminal
-status: in progress
+status: complete
 started: 2026-10-16
+completed: 2026-10-18
 tags: [textmate, implementation, acp, agent]
 ---
 
 # M3 — Tools: Files, Permissions, Diff Review, Terminal
 
-**Status:** 🔄 Implemented (2026-10-16); awaiting the user's testing
+**Status:** ✅ Complete (2026-10-18): implemented 2026-10-16, tested by the user, current-file and cursor work added 2026-10-17–18
 **Branch:** `feature/agent-tools` (from `feature/markdown-preview`, which has the M2 fixes)
 **Design:** [agent-harness-design.md §4.1, §5.3, §5.4, §6a](../plans/agent-harness-design.md)
 
@@ -75,22 +76,22 @@ TextMate integration (`DocumentWindowController+Agent.mm`): `AgentDocumentProvid
 Tests: AgentClient 50 (new: file system 12, diff 3, terminal 6), AgentUI adds permission items and terminal `_meta`. The fake agent learned `read`, `write` and `run`. `ctest` 28/28.
 
 ## Commits
-2e168c35 files · 77272237 permission cards · da684e5e diffs and changed files · e48ed75c terminals, Apply in Editor · f50d8cdb agent-side edits and Claude terminal output · 710997f1 terminal clean-up
+2e168c35 files · 77272237 permission cards · da684e5e diffs and changed files · e48ed75c terminals, Apply in Editor · f50d8cdb agent-side edits and Claude terminal output · 710997f1 terminal clean-up · 1cf1b775 cursor position · e5e4acb4 current file, blinking caret · bb56d9e3 insert at cursor, select the edit · 18a65a8e Apply in Editor adds to the end · fa055083 current-file switch · 5e523577 select only the inserted code
 
 ## To check (user)
-- [ ] Claude in Manual mode: an edit shows a permission card with the diff; Allow / Reject work; the card keeps the outcome.
-- [ ] After an edit: the tool row shows the diff; “Diff” opens a diff document; the file appears in the changed-files list.
-- [ ] Keep / Undo / Keep All / Undo All. Undo on an open, unmodified file reloads it; Undo after editing the file yourself asks first.
-- [ ] A created file is listed as new; Undo moves it to the Trash.
-- [ ] Claude runs a command (e.g. “run the tests”): output appears live in the tool row with the exit code.
-- [ ] Copilot: the same edits and commands (its permission cards, changed files, text output).
-- [ ] Apply in Editor with a selection, and without one (added at the end); the new text is selected; ⌘Z undoes it; the file is listed.
-- [ ] Stop while a permission card is open: the card shows Cancelled.
-- [ ] Click in the prompt: the editor's caret keeps blinking where it was; it stops when another app is active, and focus in the file browser hides it as before.
-- [ ] With nothing attached, “add a comment here” and “Add "this is a test" to the file” edit the open file at the cursor.
-- [ ] After the agent edits the open file, the new text is selected in the editor (scrolled into view); for a file in another tab, it's selected when you switch to it.
-- [ ] The switch beside +: on, the line above the prompt names the open file and follows tab changes; off, the line goes and “add a comment” no longer assumes the open file; the setting is kept after relaunch.
-- [ ] Ask About Selection (or attach Current File) with nothing selected: the chip reads `file:line:column`.
+- [x] Claude in Manual mode: an edit shows a permission card with the diff; Allow / Reject work; the card keeps the outcome.
+- [x] After an edit: the tool row shows the diff; “Diff” opens a diff document; the file appears in the changed-files list.
+- [x] Keep / Undo / Keep All / Undo All. Undo on an open, unmodified file reloads it; Undo after editing the file yourself asks first.
+- [x] A created file is listed as new; Undo moves it to the Trash.
+- [x] Claude runs a command (e.g. “run the tests”): output appears live in the tool row with the exit code.
+- [x] Copilot: the same edits and commands (its permission cards, changed files, text output).
+- [x] Apply in Editor with a selection, and without one (added at the end); the new text is selected; ⌘Z undoes it; the file is listed.
+- [x] Stop while a permission card is open: the card shows Cancelled.
+- [x] Click in the prompt: the editor's caret keeps blinking where it was; it stops when another app is active, and focus in the file browser hides it as before.
+- [x] With nothing attached, “add a comment here” and “Add "this is a test" to the file” edit the open file at the cursor.
+- [x] After the agent edits the open file, the new text is selected in the editor (scrolled into view); for a file in another tab, it's selected when you switch to it.
+- [x] The switch beside +: on, the line above the prompt names the open file and follows tab changes; off, the line goes and “add a comment” no longer assumes the open file; the setting is kept after relaunch.
+- [x] Ask About Selection (or attach Current File) with nothing selected: the chip reads `file:line:column`.
 
 ## Future work
 - [ ] Files changed by shell commands (e.g. `sed -i`, code generators) aren't in the changed-files list; only edit tool calls are tracked. Could compare `git status` before and after a turn.
