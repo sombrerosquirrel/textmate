@@ -32,6 +32,25 @@ void test_file_read_from_disk ()
 	OAK_ASSERT([missing[@"type"] isEqualToString:@"resource_link"]);
 }
 
+void test_file_attachment_with_cursor ()
+{
+	AgentAttachment* file = [AgentAttachment fileAttachmentWithPath:@"/tmp/project/main.cc" text:@"int main () { }" cursorLine:42 column:7];
+	OAK_ASSERT([file.name isEqualToString:@"main.cc:42:7"]);
+
+	NSArray* blocks = [file contentBlocksWithPromptCapabilities:kEmbedded];
+	OAK_ASSERT_EQ(blocks.count, 2);
+	OAK_ASSERT([blocks[0][@"type"] isEqualToString:@"resource"]);
+	OAK_ASSERT([blocks[1][@"text"] isEqualToString:@"The cursor is at line 42, column 7 of /tmp/project/main.cc."]);
+
+	NSArray* prompt = [AgentAttachment promptWithText:@"Add a comment here" attachments:@[ file ] promptCapabilities:kBasic];
+	OAK_ASSERT_EQ(prompt.count, 3);
+	OAK_ASSERT([prompt[1][@"type"] isEqualToString:@"resource_link"]);
+	OAK_ASSERT([prompt[2][@"text"] hasPrefix:@"The cursor is at line 42"]);
+
+	// Without a cursor there’s no note
+	OAK_ASSERT_EQ([[AgentAttachment fileAttachmentWithPath:@"/tmp/b.txt" text:@"b"] contentBlocksWithPromptCapabilities:kBasic].count, 1);
+}
+
 void test_selection_attachment ()
 {
 	AgentAttachment* selection = [AgentAttachment selectionAttachmentWithPath:@"/tmp/a.py" displayName:nil text:@"x = 1" firstLine:3 lastLine:4];

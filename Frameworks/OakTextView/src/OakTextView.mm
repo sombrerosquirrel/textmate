@@ -958,6 +958,13 @@ doScroll:
 
 	[self drawDiagnosticsInRect:aRect];
 
+	if(NSIntersectsRect(aRect, _inactiveCaretLineRect))
+	{
+		CGColorRef foreground = self.theme->foreground();
+		[[(foreground ? [NSColor colorWithCGColor:foreground] : NSColor.textColor) colorWithAlphaComponent:0.35] set];
+		NSRectFillUsingOperation(_inactiveCaretLineRect, NSCompositingOperationSourceOver);
+	}
+
 	// Draw definition highlight underline when Cmd-hovering
 	if(!_definitionHighlightRange.empty() && _definitionHighlightRange.max().index <= documentView->size())
 	{
@@ -3440,6 +3447,7 @@ static char const* kOakMenuItemTitle = "OakMenuItemTitle";
 	isUpdatingSelection = YES;
 	[self setSelectionString:[NSString stringWithCxxString:withoutCarry]];
 	isUpdatingSelection = NO;
+	[self updateInactiveCaretLine];
 
 	// Notify containing OakDocumentView so the gutter lightbulb can track cursor line
 	if(!documentView->ranges().empty())
@@ -4366,11 +4374,37 @@ static scope::context_t add_modifiers_to_scope (scope::context_t scope, NSUInteg
 // = Change in Focus =
 // ===================
 
+- (void)setShowsCaretLineWhenInactive:(BOOL)flag
+{
+	if(_showsCaretLineWhenInactive == flag)
+		return;
+	_showsCaretLineWhenInactive = flag;
+	[self updateInactiveCaretLine];
+}
+
+// A faint line under the caret’s line while another view has focus
+- (void)updateInactiveCaretLine
+{
+	NSRect newRect = NSZeroRect;
+	if(_showsCaretLineWhenInactive && documentView && !documentView->ranges().empty() && !(self.keyState & OakViewViewIsFirstResponderMask))
+	{
+		CGRect caretRect = documentView->rect_at_index(documentView->ranges().last().last);
+		newRect = NSMakeRect(0, CGRectGetMaxY(caretRect) - 1, NSWidth(self.bounds), 1);
+	}
+
+	if(NSEqualRects(newRect, _inactiveCaretLineRect))
+		return;
+	[self setNeedsDisplayInRect:_inactiveCaretLineRect];
+	[self setNeedsDisplayInRect:newRect];
+	_inactiveCaretLineRect = newRect;
+}
+
 - (void)setKeyState:(NSUInteger)newState
 {
 	BOOL didHaveFocus  = (self.keyState & (OakViewViewIsFirstResponderMask|OakViewWindowIsKeyMask|OakViewApplicationIsActiveMask)) == (OakViewViewIsFirstResponderMask|OakViewWindowIsKeyMask|OakViewApplicationIsActiveMask);
 	[super setKeyState:newState];
 	BOOL doesHaveFocus = (self.keyState & (OakViewViewIsFirstResponderMask|OakViewWindowIsKeyMask|OakViewApplicationIsActiveMask)) == (OakViewViewIsFirstResponderMask|OakViewWindowIsKeyMask|OakViewApplicationIsActiveMask);
+	[self updateInactiveCaretLine];
 
 	if(didHaveFocus == doesHaveFocus)
 		return;

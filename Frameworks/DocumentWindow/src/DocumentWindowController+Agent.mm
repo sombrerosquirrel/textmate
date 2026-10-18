@@ -24,8 +24,9 @@
 
 NSString* const kUserDefaultsAgentPanelPlacementKey = @"agentPanelPlacement";
 
-static void* kAgentPanelKey       = &kAgentPanelKey;
-static void* kAgentEditorPanelKey = &kAgentEditorPanelKey;
+static void* kAgentPanelKey              = &kAgentPanelKey;
+static void* kAgentEditorPanelKey        = &kAgentEditorPanelKey;
+static void* kAgentPanelFocusObserverKey = &kAgentPanelFocusObserverKey;
 
 static OakEditorPanelEdge AgentPanelEdge ()
 {
@@ -86,6 +87,51 @@ static BOOL IsSameFile (NSString* lhs, NSString* rhs)
 @interface DocumentWindowController (AgentPanelDelegate) <AgentPanelDelegate, AgentDocumentProvider>
 @end
 
+// The editor doesn’t draw its caret while the agent panel has focus, so it
+// marks the caret’s line instead
+@interface AgentPanelFocusObserver : NSObject
+- (instancetype)initWithWindowController:(DocumentWindowController*)controller;
+@end
+
+@interface DocumentWindowController (AgentFocus)
+- (AgentPanelViewController*)agentPanel;
+@end
+
+static void* kFirstResponderContext = &kFirstResponderContext;
+
+@implementation AgentPanelFocusObserver
+{
+	__weak DocumentWindowController* _controller;
+	NSWindow* _window;
+}
+
+- (instancetype)initWithWindowController:(DocumentWindowController*)controller
+{
+	if(self = [super init])
+	{
+		_controller = controller;
+		_window     = controller.window;
+		[_window addObserver:self forKeyPath:@"firstResponder" options:0 context:kFirstResponderContext];
+	}
+	return self;
+}
+
+- (void)dealloc
+{
+	[_window removeObserver:self forKeyPath:@"firstResponder" context:kFirstResponderContext];
+}
+
+- (void)observeValueForKeyPath:(NSString*)keyPath ofObject:(id)object change:(NSDictionary*)change context:(void*)context
+{
+	if(context != kFirstResponderContext)
+		return [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
+
+	DocumentWindowController* controller = _controller;
+	NSResponder* responder = _window.firstResponder;
+	controller.textView.showsCaretLineWhenInactive = [responder isKindOfClass:[NSView class]] && controller.agentPanel && [(NSView*)responder isDescendantOf:controller.agentPanel.view];
+}
+@end
+
 @implementation DocumentWindowController (Agent)
 
 - (AgentPanelViewController*)agentPanel
@@ -101,6 +147,7 @@ static BOOL IsSameFile (NSString* lhs, NSString* rhs)
 		panel = [[AgentPanelViewController alloc] init];
 		panel.delegate = self;
 		objc_setAssociatedObject(self, kAgentPanelKey, panel, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+		objc_setAssociatedObject(self, kAgentPanelFocusObserverKey, [[AgentPanelFocusObserver alloc] initWithWindowController:self], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 	}
 	return panel;
 }
@@ -207,9 +254,19 @@ static BOOL IsSameFile (NSString* lhs, NSString* rhs)
 	return [AgentAttachment fileAttachmentWithPath:document.path text:(document.isDocumentEdited ? document.content : nil)];
 }
 
+// Includes the cursor position so the agent knows where “here” is
 - (AgentAttachment*)currentFileAttachmentForAgentPanel:(AgentPanelViewController*)agentPanel
 {
-	return [self attachmentForDocument:self.selectedDocument];
+	OakDocument* document = self.selectedDocument;
+	NSRange selection     = self.textView.selectedRange;
+	NSString* content     = document.isLoaded ? document.content : nil;
+	if(!document.path || !content || selection.location == NSNotFound || selection.location > content.length)
+		return [self attachmentForDocument:document];
+
+	NSUInteger lineStart = [content lineRangeForRange:NSMakeRange(selection.location, 0)].location;
+	NSUInteger line      = LineNumberAtIndex(content, selection.location);
+	NSUInteger column    = selection.location - lineStart + 1;
+	return [AgentAttachment fileAttachmentWithPath:document.path text:(document.isDocumentEdited ? content : nil) cursorLine:line column:column];
 }
 
 - (AgentAttachment*)selectionAttachmentForAgentPanel:(AgentPanelViewController*)agentPanel

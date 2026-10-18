@@ -52,6 +52,10 @@ enum OTVFontSmoothing : NSUInteger
 
 @property (nonatomic, getter = isRecordingMacro) BOOL       recordingMacro;
 
+// Underlines the caret’s line while the view isn’t first responder, so the
+// caret position stays visible while another view (e.g. the agent panel) has focus.
+@property (nonatomic) BOOL                                  showsCaretLineWhenInactive;
+
 - (GVLineRecord)lineRecordForPosition:(CGFloat)yPos;
 - (GVLineRecord)lineFragmentForLine:(NSUInteger)aLine column:(NSUInteger)aColumn;
 

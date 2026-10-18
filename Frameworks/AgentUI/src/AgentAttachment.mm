@@ -12,6 +12,8 @@ static NSString* FileURI (NSString* path)
 @property (nonatomic, readwrite) AgentAttachmentKind kind;
 @property (nonatomic, readwrite) NSString* name;
 @property (nonatomic, readwrite) NSString* path;
+@property (nonatomic, readwrite) NSUInteger cursorLine;
+@property (nonatomic, readwrite) NSUInteger cursorColumn;
 @property (nonatomic) NSString* text;
 @property (nonatomic) NSUInteger firstLine;
 @property (nonatomic) NSUInteger lastLine;
@@ -26,6 +28,16 @@ static NSString* FileURI (NSString* path)
 	res.path = path;
 	res.name = path.lastPathComponent;
 	res.text = text;
+	return res;
+}
+
++ (instancetype)fileAttachmentWithPath:(NSString*)path text:(NSString*)text cursorLine:(NSUInteger)line column:(NSUInteger)column
+{
+	AgentAttachment* res = [self fileAttachmentWithPath:path text:text];
+	res.cursorLine   = line;
+	res.cursorColumn = column;
+	if(line)
+		res.name = [NSString stringWithFormat:@"%@:%lu:%lu", res.name, line, column];
 	return res;
 }
 
@@ -98,6 +110,17 @@ static NSString* FileURI (NSString* path)
 	return nil;
 }
 
+- (NSArray<NSDictionary*>*)contentBlocksWithPromptCapabilities:(NSDictionary*)promptCapabilities
+{
+	NSDictionary* block = [self contentBlockWithPromptCapabilities:promptCapabilities];
+	if(!block)
+		return @[ ];
+	if(!_cursorLine)
+		return @[ block ];
+	NSString* note = [NSString stringWithFormat:@"The cursor is at line %lu, column %lu of %@.", _cursorLine, _cursorColumn, _path];
+	return @[ block, @{ @"type": @"text", @"text": note } ];
+}
+
 + (NSArray<NSDictionary*>*)promptWithText:(NSString*)text attachments:(NSArray<AgentAttachment*>*)attachments promptCapabilities:(NSDictionary*)promptCapabilities
 {
 	NSMutableArray* res = [NSMutableArray array];
@@ -105,8 +128,7 @@ static NSString* FileURI (NSString* path)
 		[res addObject:@{ @"type": @"text", @"text": text }];
 	for(AgentAttachment* attachment in attachments)
 	{
-		if(NSDictionary* block = [attachment contentBlockWithPromptCapabilities:promptCapabilities])
-			[res addObject:block];
+		[res addObjectsFromArray:[attachment contentBlocksWithPromptCapabilities:promptCapabilities]];
 	}
 	return res;
 }
