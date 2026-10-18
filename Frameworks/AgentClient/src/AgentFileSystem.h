@@ -71,6 +71,9 @@ typedef NS_ERROR_ENUM(AgentFileSystemErrorDomain, AgentFileSystemErrorCode) {
 // the project are ignored.
 - (void)willChangeFileAtPath:(NSString*)path;
 - (void)didChangeFileAtPath:(NSString*)path;
+// Returns YES if the file’s text changed since -willChangeFileAtPath:, and
+// sets `previousText` to the text before this edit (nil if it didn’t exist).
+- (BOOL)didChangeFileAtPath:(NSString*)path previousText:(NSString**)previousText;
 
 // Records an edit made by the user on the agent’s behalf (e.g. Apply in Editor).
 - (void)recordChangeAtPath:(NSString*)path originalText:(NSString*)originalText currentText:(NSString*)currentText;

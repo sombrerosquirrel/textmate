@@ -274,10 +274,12 @@ void test_external_changes ()
 	OAK_ASSERT(changes[1].originalText == nil && [changes[1].currentText isEqualToString:@"created"]);
 	OAK_ASSERT([changes[2].originalText isEqualToString:@"bye"] && changes[2].currentText == nil);
 
-	// A second edit keeps the first original
+	// A second edit keeps the first original, and reports the text just before it
 	[t.fileSystem willChangeFileAtPath:t.path(@"a.txt")];
 	WriteFile(t.path(@"a.txt"), @"a3");
-	[t.fileSystem didChangeFileAtPath:t.path(@"a.txt")];
+	NSString* previousText;
+	OAK_ASSERT([t.fileSystem didChangeFileAtPath:t.path(@"a.txt") previousText:&previousText]);
+	OAK_ASSERT([previousText isEqualToString:@"a2"]);
 	OAK_ASSERT_EQ(t.fileSystem.changes.count, 3);
 	OAK_ASSERT([t.fileSystem.changes[0].originalText isEqualToString:@"a1"] && [t.fileSystem.changes[0].currentText isEqualToString:@"a3"]);
 

@@ -290,15 +290,19 @@ static NSString* DiskTextOfFile (NSString* path)
 	if(![self isPathAllowed:path])
 		return;
 	path = path.stringByStandardizingPath;
-	if(_snapshots[path] || [self changeAtPath:path].external)
-		return; // already know how it was
-	_snapshots[path] = DiskTextOfFile(path) ?: [NSNull null];
+	if(!_snapshots[path]) // a tool call still running on the same file took it first
+		_snapshots[path] = DiskTextOfFile(path) ?: [NSNull null];
 }
 
 - (void)didChangeFileAtPath:(NSString*)path
 {
+	[self didChangeFileAtPath:path previousText:nullptr];
+}
+
+- (BOOL)didChangeFileAtPath:(NSString*)path previousText:(NSString**)previousText
+{
 	if(![self isPathAllowed:path])
-		return;
+		return NO;
 	path = path.stringByStandardizingPath;
 
 	id snapshot = _snapshots[path];
@@ -306,15 +310,25 @@ static NSString* DiskTextOfFile (NSString* path)
 
 	AgentFileChange* change = [self changeAtPath:path];
 	if(change && !change.external)
-		return; // written through fs/write_text_file, already recorded
-	if(!change && !snapshot)
-		return; // we don’t know how it was
+		return NO; // written through fs/write_text_file, already recorded
+	if(!snapshot)
+	{
+		// We don’t know how it was before this edit, but can still update a known change
+		if(change)
+			[self recordChangeAtPath:path originalText:change.originalText currentText:DiskTextOfFile(path) external:YES];
+		return NO;
+	}
 
-	NSString* originalText = change ? change.originalText : (snapshot == [NSNull null] ? nil : snapshot);
-	NSString* currentText  = DiskTextOfFile(path);
-	if(!change && (currentText == originalText || [currentText isEqualToString:originalText]))
-		return;
-	[self recordChangeAtPath:path originalText:originalText currentText:currentText external:YES];
+	NSString* textBefore  = snapshot == [NSNull null] ? nil : snapshot;
+	NSString* currentText = DiskTextOfFile(path);
+	BOOL edited = currentText != textBefore && ![currentText isEqualToString:textBefore];
+	if(previousText)
+		*previousText = textBefore;
+
+	// The change list keeps the text from before the agent’s first edit
+	if(change || edited)
+		[self recordChangeAtPath:path originalText:(change ? change.originalText : textBefore) currentText:currentText external:YES];
+	return edited;
 }
 
 - (BOOL)hasFileChangedSinceChange:(AgentFileChange*)change

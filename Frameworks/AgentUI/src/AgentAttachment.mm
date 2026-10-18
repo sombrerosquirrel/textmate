@@ -144,7 +144,7 @@ static NSString* FileURI (NSString* path)
 	if(res.count && currentFile.path && !attachedWithCursor)
 	{
 		NSString* cursor = currentFile.cursorLine ? [NSString stringWithFormat:@", with the cursor at line %lu, column %lu", currentFile.cursorLine, currentFile.cursorColumn] : @"";
-		NSString* note   = [NSString stringWithFormat:@"The user has %@ open in the editor%@. Unless they say otherwise, “this file”, “here” and requests that don’t name a file refer to it.", currentFile.path, cursor];
+		NSString* note   = [NSString stringWithFormat:@"The user has %@ open in the editor%@. Unless they say otherwise, requests that don’t name a file refer to it, and text to add or insert goes at the cursor.", currentFile.path, cursor];
 		[res addObject:@{ @"type": @"text", @"text": note }];
 	}
 	return res;

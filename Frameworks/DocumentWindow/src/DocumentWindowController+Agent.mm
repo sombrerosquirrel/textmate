@@ -22,6 +22,11 @@
 - (void)insertSnippetWithOptions:(NSDictionary*)someOptions;
 @end
 
+// Implemented by OakDocument but not declared in its public header
+@interface OakDocument (AgentReload)
+- (void)importDocumentChanges:(id)sender;
+@end
+
 NSString* const kUserDefaultsAgentPanelPlacementKey = @"agentPanelPlacement";
 
 static void* kAgentPanelKey              = &kAgentPanelKey;
@@ -77,6 +82,15 @@ static std::pair<std::pair<size_t, size_t>, std::string> ChangedRange (std::stri
 		--suffix;
 
 	return { { prefix, from.size() - suffix }, to.substr(prefix, to.size() - prefix - suffix) };
+}
+
+// TextMate’s “line:column” for a byte offset; both are 1-based, the column counts bytes
+static NSString* PositionString (std::string const& text, size_t offset)
+{
+	size_t line = 1 + std::count(text.begin(), text.begin() + offset, '\n');
+	size_t eol  = offset ? text.rfind('\n', offset - 1) : std::string::npos;
+	size_t bol  = eol == std::string::npos ? 0 : eol + 1;
+	return [NSString stringWithFormat:@"%zu:%zu", line, offset - bol + 1];
 }
 
 static BOOL IsSameFile (NSString* lhs, NSString* rhs)
@@ -322,6 +336,25 @@ static void* kFirstResponderContext = &kFirstResponderContext;
 	[self.window makeFirstResponder:textView];
 
 	return @{ @"path": document.path ?: [NSNull null], @"originalText": originalText, @"currentText": currentText };
+}
+
+// Shows the agent’s edit in an open document right away and selects the
+// changed text, so the user sees what was added and where
+- (void)agentPanel:(AgentPanelViewController*)agentPanel didEditFileAtPath:(NSString*)path previousText:(NSString*)previousText
+{
+	OakDocument* document = [self openDocumentAtPath:path.stringByStandardizingPath];
+	if(!document)
+		return;
+	[document importDocumentChanges:self];
+
+	std::string const after = to_s(document.content ?: @"");
+	auto const changed = ChangedRange(to_s(previousText ?: @""), after);
+	size_t from = changed.first.first, to = from + changed.second.size();
+
+	NSString* selection = from == to ? PositionString(after, from) : [NSString stringWithFormat:@"%@-%@", PositionString(after, from), PositionString(after, to)];
+	if(document == self.selectedDocument)
+			self.textView.selectionString = selection;
+	else	document.selection = selection;
 }
 
 - (void)agentPanel:(AgentPanelViewController*)agentPanel showDiff:(NSString*)diff title:(NSString*)title

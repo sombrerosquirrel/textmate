@@ -692,9 +692,11 @@ static NSView* Separator ()
 		[_finishedToolCallIds addObject:toolCallId];
 	for(NSString* path in paths)
 	{
-		if(finished)
-				[_fileSystem didChangeFileAtPath:path];
-		else	[_fileSystem willChangeFileAtPath:path];
+		NSString* previousText;
+		if(!finished)
+			[_fileSystem willChangeFileAtPath:path];
+		else if([_fileSystem didChangeFileAtPath:path previousText:&previousText] && [_delegate respondsToSelector:@selector(agentPanel:didEditFileAtPath:previousText:)])
+			[_delegate agentPanel:self didEditFileAtPath:path previousText:previousText];
 	}
 }
 

@@ -56,7 +56,7 @@ void test_prompt_with_current_file ()
 	AgentAttachment* current = [AgentAttachment fileAttachmentWithPath:@"/tmp/project/main.cc" text:@"int main () { }" cursorLine:3 column:1];
 	NSArray* prompt = [AgentAttachment promptWithText:@"Add a comment here" attachments:@[ ] currentFile:current promptCapabilities:kEmbedded];
 	OAK_ASSERT_EQ(prompt.count, 2); // the file’s contents aren’t sent
-	OAK_ASSERT([prompt[1][@"text"] isEqualToString:@"The user has /tmp/project/main.cc open in the editor, with the cursor at line 3, column 1. Unless they say otherwise, “this file”, “here” and requests that don’t name a file refer to it."]);
+	OAK_ASSERT([prompt[1][@"text"] isEqualToString:@"The user has /tmp/project/main.cc open in the editor, with the cursor at line 3, column 1. Unless they say otherwise, requests that don’t name a file refer to it, and text to add or insert goes at the cursor."]);
 
 	// Attaching the current file with its cursor already says where the user is
 	prompt = [AgentAttachment promptWithText:@"Explain" attachments:@[ current ] currentFile:current promptCapabilities:kEmbedded];

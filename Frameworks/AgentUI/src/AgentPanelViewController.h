@@ -20,6 +20,9 @@
 - (void)agentPanel:(AgentPanelViewController*)agentPanel openFile:(NSString*)path line:(NSUInteger)line;
 // Shows `diff` (unified diff text) in a new document.
 - (void)agentPanel:(AgentPanelViewController*)agentPanel showDiff:(NSString*)diff title:(NSString*)title;
+// The agent edited the file at `path` itself; `previousText` is the text
+// before this edit (nil if the agent created the file).
+- (void)agentPanel:(AgentPanelViewController*)agentPanel didEditFileAtPath:(NSString*)path previousText:(NSString*)previousText;
 // Open documents, for the agent’s file access (unsaved edits, undoable writes).
 - (id<AgentDocumentProvider>)documentProviderForAgentPanel:(AgentPanelViewController*)agentPanel;
 @end
