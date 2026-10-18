@@ -93,6 +93,22 @@ static NSString* PositionString (std::string const& text, size_t offset)
 	return [NSString stringWithFormat:@"%zu:%zu", line, offset - bol + 1];
 }
 
+// Selects the inserted text from its first to its last non-blank character,
+// so the highlight follows the code rather than the lines and indentation
+// around it; all-blank text is selected as is
+static NSString* InsertedTextSelectionString (std::string const& text, size_t from, size_t to)
+{
+	auto isBlank = [](char ch){ return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r'; };
+	size_t first = from, last = to;
+	while(first < last && isBlank(text[first]))
+		++first;
+	while(first < last && isBlank(text[last - 1]))
+		--last;
+	if(first == last)
+		std::tie(first, last) = std::make_pair(from, to);
+	return first == last ? PositionString(text, first) : [NSString stringWithFormat:@"%@-%@", PositionString(text, first), PositionString(text, last)];
+}
+
 static BOOL IsSameFile (NSString* lhs, NSString* rhs)
 {
 	return [lhs isEqualToString:rhs] || [lhs.stringByResolvingSymlinksInPath isEqualToString:rhs.stringByResolvingSymlinksInPath];
@@ -349,7 +365,7 @@ static void* kFirstResponderContext = &kFirstResponderContext;
 
 	size_t from = replacement.first.first, to = from + replacement.second.size();
 	if(from != to)
-		textView.selectionString = [NSString stringWithFormat:@"%@-%@", PositionString(after, from), PositionString(after, to)];
+		textView.selectionString = InsertedTextSelectionString(after, from, to);
 
 	return @{ @"path": document.path ?: [NSNull null], @"originalText": originalText, @"currentText": currentText };
 }
@@ -367,7 +383,7 @@ static void* kFirstResponderContext = &kFirstResponderContext;
 	auto const changed = ChangedRange(to_s(previousText ?: @""), after);
 	size_t from = changed.first.first, to = from + changed.second.size();
 
-	NSString* selection = from == to ? PositionString(after, from) : [NSString stringWithFormat:@"%@-%@", PositionString(after, from), PositionString(after, to)];
+	NSString* selection = InsertedTextSelectionString(after, from, to);
 	if(document == self.selectedDocument)
 			self.textView.selectionString = selection;
 	else	document.selection = selection;
