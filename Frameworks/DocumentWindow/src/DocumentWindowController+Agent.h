@@ -9,8 +9,9 @@ extern NSString* const kUserDefaultsAgentPanelPlacementKey; // @"left" or @"righ
 @interface DocumentWindowController (Agent)
 @property (nonatomic) BOOL agentPanelVisible;
 
-- (void)updateAgentPanelPlacement;   // after user defaults change
-- (void)shutdownAgentPanel;          // when the window closes
+- (void)updateAgentPanelPlacement;      // after user defaults change
+- (void)shutdownAgentPanel;             // when the window closes
+- (void)agentPanelCurrentFileDidChange; // when the selected document changes
 - (BOOL)isAgentPanelMenuItem:(NSMenuItem*)menuItem;
 - (BOOL)validateAgentPanelMenuItem:(NSMenuItem*)menuItem;
 

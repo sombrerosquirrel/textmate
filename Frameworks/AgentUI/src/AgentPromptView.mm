@@ -80,6 +80,8 @@ static NSUInteger const kMaxHistory = 50;
 	AgentPromptTextView* _textView;
 	NSLayoutConstraint* _textHeightConstraint;
 	NSButton* _addContextButton;
+	NSSwitch* _currentFileSwitch;
+	NSTextField* _currentFileField;
 	NSButton* _sendButton;
 }
 @end
@@ -140,16 +142,29 @@ static NSUInteger const kMaxHistory = 50;
 		_addContextButton.bordered = NO;
 		_addContextButton.toolTip  = @"Add Context (files, selection, images)";
 
+		_currentFileSwitch = [[NSSwitch alloc] initWithFrame:NSZeroRect];
+		_currentFileSwitch.controlSize = NSControlSizeMini;
+		_currentFileSwitch.target      = self;
+		_currentFileSwitch.action      = @selector(toggleUsesCurrentFile:);
+		_currentFileSwitch.toolTip     = @"Add text and code to the open file, at the cursor";
+
+		_currentFileField = [NSTextField labelWithString:@""];
+		_currentFileField.font          = [NSFont systemFontOfSize:NSFont.smallSystemFontSize];
+		_currentFileField.textColor     = NSColor.secondaryLabelColor;
+		_currentFileField.lineBreakMode = NSLineBreakByTruncatingMiddle;
+		_currentFileField.hidden        = YES;
+		[_currentFileField setContentCompressionResistancePriority:NSLayoutPriorityDefaultLow forOrientation:NSLayoutConstraintOrientationHorizontal];
+
 		_sendButton = [NSButton buttonWithImage:[NSImage imageWithSystemSymbolName:@"arrow.up.circle.fill" accessibilityDescription:@"Send"] target:self action:@selector(sendOrStop:)];
 		_sendButton.bordered = NO;
 		_sendButton.contentTintColor = NSColor.controlAccentColor;
 		_sendButton.toolTip  = @"Send (↩)";
 		[_sendButton.widthAnchor constraintEqualToConstant:22].active = YES;
 
-		NSStackView* buttons = [NSStackView stackViewWithViews:@[ _addContextButton, [NSView new], _sendButton ]];
+		NSStackView* buttons = [NSStackView stackViewWithViews:@[ _addContextButton, _currentFileSwitch, [NSView new], _sendButton ]];
 		buttons.orientation = NSUserInterfaceLayoutOrientationHorizontal;
 
-		NSStackView* stack = [NSStackView stackViewWithViews:@[ _chipsView, _textScrollView, buttons ]];
+		NSStackView* stack = [NSStackView stackViewWithViews:@[ _currentFileField, _chipsView, _textScrollView, buttons ]];
 		stack.orientation = NSUserInterfaceLayoutOrientationVertical;
 		[stack setHuggingPriority:NSLayoutPriorityDefaultLow forOrientation:NSLayoutConstraintOrientationHorizontal];
 		stack.alignment   = NSLayoutAttributeLeading;
@@ -166,6 +181,7 @@ static NSUInteger const kMaxHistory = 50;
 			[stack.bottomAnchor constraintEqualToAnchor:self.bottomAnchor],
 			[_textScrollView.widthAnchor constraintEqualToAnchor:stack.widthAnchor constant:-20],
 			[buttons.widthAnchor constraintEqualToAnchor:stack.widthAnchor constant:-20],
+			[_currentFileField.widthAnchor constraintLessThanOrEqualToAnchor:stack.widthAnchor constant:-20],
 			_textHeightConstraint,
 		]];
 		[self updateFieldBorder];
@@ -212,6 +228,38 @@ static NSUInteger const kMaxHistory = 50;
 	_working = flag;
 	_sendButton.image   = [NSImage imageWithSystemSymbolName:(flag ? @"stop.circle.fill" : @"arrow.up.circle.fill") accessibilityDescription:(flag ? @"Stop" : @"Send")];
 	_sendButton.toolTip = flag ? @"Stop (⎋)" : @"Send (↩)";
+}
+
+// ================
+// = Current File =
+// ================
+
+- (BOOL)usesCurrentFile { return _currentFileSwitch.state == NSControlStateValueOn; }
+
+- (void)setUsesCurrentFile:(BOOL)flag
+{
+	_currentFileSwitch.state = flag ? NSControlStateValueOn : NSControlStateValueOff;
+	[self updateCurrentFileField];
+}
+
+- (void)setCurrentFileName:(NSString*)name
+{
+	_currentFileName = name;
+	[self updateCurrentFileField];
+}
+
+- (void)toggleUsesCurrentFile:(id)sender
+{
+	[self updateCurrentFileField];
+	if([_delegate respondsToSelector:@selector(promptViewDidToggleUsesCurrentFile:)])
+		[_delegate promptViewDidToggleUsesCurrentFile:self];
+}
+
+- (void)updateCurrentFileField
+{
+	_currentFileField.stringValue = _currentFileName ? [NSString stringWithFormat:@"Adding text and code to %@ at the cursor", _currentFileName] : @"No saved file is open to add text and code to";
+	_currentFileField.toolTip     = _currentFileField.stringValue;
+	_currentFileField.hidden      = !self.usesCurrentFile;
 }
 
 - (void)setEnabled:(BOOL)flag

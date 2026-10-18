@@ -28,13 +28,16 @@
 - (id<AgentDocumentProvider>)documentProviderForAgentPanel:(AgentPanelViewController*)agentPanel;
 @end
 
-extern NSString* const kUserDefaultsAgentPanelAgentKey; // identifier of the last used agent
+extern NSString* const kUserDefaultsAgentPanelAgentKey;           // identifier of the last used agent
+extern NSString* const kUserDefaultsAgentPanelUsesCurrentFileKey; // requests go into the open file (default YES)
 
 @interface AgentPanelViewController : NSViewController
 @property (nonatomic, weak) id<AgentPanelDelegate> delegate;
 
 - (void)startSessionIfNeeded;
 - (void)focusPrompt;
+// The editor switched files (or saved one); updates the prompt’s current-file line.
+- (void)currentFileDidChange;
 // Attaches the editor selection (or the current file) and focuses the prompt.
 - (void)askAboutSelection;
 - (IBAction)newChat:(id)sender;

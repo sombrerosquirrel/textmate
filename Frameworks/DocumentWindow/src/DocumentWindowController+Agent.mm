@@ -142,7 +142,10 @@ static void* kFirstResponderContext = &kFirstResponderContext;
 
 	DocumentWindowController* controller = _controller;
 	NSResponder* responder = _window.firstResponder;
-	controller.textView.showsCaretWhenInactive = [responder isKindOfClass:[NSView class]] && controller.agentPanel && [(NSView*)responder isDescendantOf:controller.agentPanel.view];
+	BOOL panelHasFocus = [responder isKindOfClass:[NSView class]] && controller.agentPanel && [(NSView*)responder isDescendantOf:controller.agentPanel.view];
+	controller.textView.showsCaretWhenInactive = panelHasFocus;
+	if(panelHasFocus)
+		[controller.agentPanel currentFileDidChange]; // e.g. an untitled document was saved
 }
 @end
 
@@ -188,6 +191,11 @@ static void* kFirstResponderContext = &kFirstResponderContext;
 - (void)shutdownAgentPanel
 {
 	[self.agentPanel shutdown];
+}
+
+- (void)agentPanelCurrentFileDidChange
+{
+	[self.agentPanel currentFileDidChange];
 }
 
 - (BOOL)agentPanelVisible

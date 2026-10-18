@@ -6,7 +6,8 @@
 #import <AgentClient/AgentRegistry.h>
 #import <OakAppKit/NSColor Additions.h>
 
-NSString* const kUserDefaultsAgentPanelAgentKey = @"agentPanelAgent";
+NSString* const kUserDefaultsAgentPanelAgentKey           = @"agentPanelAgent";
+NSString* const kUserDefaultsAgentPanelUsesCurrentFileKey = @"agentPanelUsesCurrentFile";
 
 static NSString* FormatTokenCount (double count)
 {
@@ -78,7 +79,10 @@ static NSView* Separator ()
 @implementation AgentPanelViewController
 + (void)initialize
 {
-	[NSUserDefaults.standardUserDefaults registerDefaults:@{ kUserDefaultsAgentPanelAgentKey: @"copilot" }];
+	[NSUserDefaults.standardUserDefaults registerDefaults:@{
+		kUserDefaultsAgentPanelAgentKey:           @"copilot",
+		kUserDefaultsAgentPanelUsesCurrentFileKey: @YES,
+	}];
 }
 
 - (instancetype)init
@@ -131,6 +135,7 @@ static NSView* Separator ()
 
 	_promptView = [[AgentPromptView alloc] initWithFrame:NSZeroRect];
 	_promptView.delegate = self;
+	_promptView.usesCurrentFile = [NSUserDefaults.standardUserDefaults boolForKey:kUserDefaultsAgentPanelUsesCurrentFileKey];
 
 	_optionsView = [NSStackView stackViewWithViews:@[ ]];
 	_optionsView.orientation = NSUserInterfaceLayoutOrientationHorizontal;
@@ -170,6 +175,7 @@ static NSView* Separator ()
 
 	[self updatePlaceholders];
 	[self updateStatus];
+	[self currentFileDidChange];
 }
 
 - (void)updatePlaceholders
@@ -181,6 +187,20 @@ static NSView* Separator ()
 - (void)focusPrompt
 {
 	[self.view.window makeFirstResponder:_promptView.initialFirstResponder];
+}
+
+- (void)currentFileDidChange
+{
+	if(!self.isViewLoaded)
+		return;
+	AgentAttachment* currentFile = [_delegate respondsToSelector:@selector(currentFileAttachmentForAgentPanel:)] ? [_delegate currentFileAttachmentForAgentPanel:self] : nil;
+	_promptView.currentFileName = currentFile.path.lastPathComponent;
+}
+
+- (void)promptViewDidToggleUsesCurrentFile:(AgentPromptView*)promptView
+{
+	[NSUserDefaults.standardUserDefaults setBool:promptView.usesCurrentFile forKey:kUserDefaultsAgentPanelUsesCurrentFileKey];
+	[self currentFileDidChange];
 }
 
 // ===========
@@ -372,7 +392,7 @@ static NSView* Separator ()
 
 	_pendingText        = text;
 	_pendingAttachments = attachments;
-	_pendingCurrentFile = [_delegate respondsToSelector:@selector(currentFileAttachmentForAgentPanel:)] ? [_delegate currentFileAttachmentForAgentPanel:self] : nil;
+	_pendingCurrentFile = promptView.usesCurrentFile && [_delegate respondsToSelector:@selector(currentFileAttachmentForAgentPanel:)] ? [_delegate currentFileAttachmentForAgentPanel:self] : nil;
 	promptView.working  = YES;
 
 	if(_session.state == AgentSessionStateReady)

@@ -1586,6 +1586,7 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 	{
 		self.projectPath = nil;
 	}
+	[self agentPanelCurrentFileDidChange];
 }
 
 - (void)setSelectedTabIndex:(NSUInteger)newSelectedTabIndex
