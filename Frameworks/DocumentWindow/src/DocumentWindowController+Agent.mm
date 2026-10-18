@@ -324,16 +324,24 @@ static void* kFirstResponderContext = &kFirstResponderContext;
 	if(!document.isLoaded || !textView)
 		return nil;
 
+	// Without a selection the code goes at the end of the document, on a line of its own
 	NSString* originalText = document.content ?: @"";
-	NSRange range = textView.hasSelection ? textView.selectedRange : NSMakeRange(0, originalText.length);
+	NSRange range = textView.hasSelection ? textView.selectedRange : NSMakeRange(originalText.length, 0);
 	if(NSMaxRange(range) > originalText.length)
 		return nil;
+	if(!textView.hasSelection && originalText.length && ![originalText hasSuffix:@"\n"])
+		text = [@"\n" stringByAppendingString:text];
 
 	NSString* currentText = [originalText stringByReplacingCharactersInRange:range withString:text];
-	auto const replacement = ChangedRange(to_s(originalText), to_s(currentText));
+	std::string const after = to_s(currentText);
+	auto const replacement = ChangedRange(to_s(originalText), after);
 	if(replacement.first.first != replacement.first.second || !replacement.second.empty())
 		[document performReplacements:{ replacement } checksum:0];
 	[self.window makeFirstResponder:textView];
+
+	size_t from = replacement.first.first, to = from + replacement.second.size();
+	if(from != to)
+		textView.selectionString = [NSString stringWithFormat:@"%@-%@", PositionString(after, from), PositionString(after, to)];
 
 	return @{ @"path": document.path ?: [NSNull null], @"originalText": originalText, @"currentText": currentText };
 }
