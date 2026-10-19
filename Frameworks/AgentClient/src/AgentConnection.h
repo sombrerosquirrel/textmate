@@ -23,6 +23,7 @@ typedef NS_ENUM(NSInteger, AgentJSONRPCErrorCode) {
 	AgentJSONRPCErrorMethodNotFound = -32601,
 	AgentJSONRPCErrorInvalidParams  = -32602,
 	AgentJSONRPCErrorInternalError  = -32603,
+	AgentJSONRPCErrorAuthenticationRequired = -32000, // ACP: the agent needs the user to sign in
 };
 
 extern NSErrorDomain const AgentJSONRPCErrorDomain;

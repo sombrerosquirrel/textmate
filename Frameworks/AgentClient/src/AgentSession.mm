@@ -1,6 +1,11 @@
 #import "AgentSession.h"
 
 NSInteger const AgentClientProtocolVersion   = 1;
+
+BOOL AgentErrorIsAuthenticationRequired (NSError* error)
+{
+	return [error.domain isEqualToString:AgentJSONRPCErrorDomain] && error.code == AgentJSONRPCErrorAuthenticationRequired;
+}
 NSErrorDomain const AgentSessionErrorDomain = @"AgentSessionErrorDomain";
 
 static NSTimeInterval const kTerminationGracePeriod = 2;
@@ -486,6 +491,36 @@ static NSUInteger const kMaxStandardErrorLineLength = 300;
 - (void)removePendingPermissionReplyForToken:(NSUUID*)token
 {
 	[_pendingPermissionReplies removeObjectForKey:token];
+}
+
++ (NSArray<NSString*>*)signInArgumentsFromAuthMethods:(NSArray<NSDictionary*>*)authMethods agentArguments:(NSArray<NSString*>*)agentArguments
+{
+	for(NSDictionary* method in authMethods)
+	{
+		if(![method isKindOfClass:[NSDictionary class]])
+			continue;
+
+		NSDictionary* meta = [method[@"_meta"] isKindOfClass:[NSDictionary class]] ? method[@"_meta"] : nil;
+		NSDictionary* terminalAuth = [meta[@"terminal-auth"] isKindOfClass:[NSDictionary class]] ? meta[@"terminal-auth"] : nil;
+		if([terminalAuth[@"command"] isKindOfClass:[NSString class]])
+		{
+			NSArray* args = [terminalAuth[@"args"] isKindOfClass:[NSArray class]] ? terminalAuth[@"args"] : @[ ];
+			return [@[ terminalAuth[@"command"] ] arrayByAddingObjectsFromArray:[args valueForKey:@"description"]];
+		}
+
+		if([method[@"type"] isEqual:@"terminal"] && agentArguments.count)
+		{
+			NSArray* args = [method[@"args"] isKindOfClass:[NSArray class]] ? method[@"args"] : @[ ];
+			return [agentArguments arrayByAddingObjectsFromArray:[args valueForKey:@"description"]];
+		}
+	}
+	return nil;
+}
+
+- (NSArray<NSString*>*)signInArguments
+{
+	NSArray* agentArguments = _connection.executablePath ? [@[ _connection.executablePath ] arrayByAddingObjectsFromArray:_connection.arguments ?: @[ ]] : nil;
+	return [AgentSession signInArgumentsFromAuthMethods:_authMethods agentArguments:agentArguments];
 }
 
 - (NSString*)recentStandardError

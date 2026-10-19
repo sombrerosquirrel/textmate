@@ -5,6 +5,7 @@
 #import "AgentLog.h"
 #import "AgentLogWindowController.h"
 #import <AgentClient/AgentDiff.h>
+#import <AgentClient/AgentEnvironment.h>
 #import <AgentClient/AgentRegistry.h>
 #import <OakAppKit/NSColor Additions.h>
 
@@ -46,6 +47,32 @@ static NSString* StopReasonNotice (NSString* stopReason)
 }
 @end
 
+static NSDictionary<NSString*, NSString*>* Action (NSString* action, NSString* title)
+{
+	return @{ @"action": action, @"title": title };
+}
+
+// Runs a command in a new Terminal window, e.g. an agent’s sign-in command.
+// A .command file needs no permission to control Terminal, and runs in the
+// user’s login shell.
+static BOOL RunInTerminal (NSArray<NSString*>* arguments, NSString* afterwards, NSError** error)
+{
+	NSMutableArray* quoted = [NSMutableArray array];
+	for(NSString* argument in arguments)
+		[quoted addObject:[NSString stringWithFormat:@"'%@'", [argument stringByReplacingOccurrencesOfString:@"'" withString:@"'\\''"]]];
+
+	NSString* script = [NSString stringWithFormat:@"#!/bin/sh\nclear\n%@\necho\necho '%@'\n", [quoted componentsJoinedByString:@" "], [afterwards stringByReplacingOccurrencesOfString:@"'" withString:@"'\\''"]];
+	NSURL* url = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:@"TextMate Agent Sign In.command"]];
+	if(![script writeToURL:url atomically:YES encoding:NSUTF8StringEncoding error:error])
+		return NO;
+	if(![NSFileManager.defaultManager setAttributes:@{ NSFilePosixPermissions: @0700 } ofItemAtPath:url.path error:error])
+		return NO;
+
+	NSURL* terminal = [NSWorkspace.sharedWorkspace URLForApplicationWithBundleIdentifier:@"com.apple.Terminal"];
+	[NSWorkspace.sharedWorkspace openURLs:@[ url ] withApplicationAtURL:terminal configuration:[NSWorkspaceOpenConfiguration configuration] completionHandler:nil];
+	return YES;
+}
+
 static NSView* Separator ()
 {
 	NSBox* box = [[NSBox alloc] initWithFrame:NSZeroRect];
@@ -71,6 +98,11 @@ static NSView* Separator ()
 	NSString* _pendingText;                     // sent once the session is ready
 	NSArray<AgentAttachment*>* _pendingAttachments;
 	AgentAttachment* _pendingCurrentFile; // the file open in the editor when the prompt was sent
+	NSString* _retryText;                       // the last prompt, until it succeeds, for Try Again
+	NSArray<AgentAttachment*>* _retryAttachments;
+	AgentAttachment* _retryCurrentFile;
+	BOOL _restartOnRetry;                       // the agent needs starting again (e.g. after signing in)
+	BOOL _reportedSignedOut;                    // the session said it isn’t signed in
 	NSString* _usageText;
 
 	NSPopUpButton* _agentPopUp;
@@ -329,8 +361,8 @@ static NSView* Separator ()
 		if(error)
 		{
 			[AgentLog.sharedLog addEvent:[@"Not started: " stringByAppendingString:error.localizedDescription] source:_logSource];
-			[self showError:error.localizedDescription];
 			[self failPendingPrompt];
+			[self showError:error.localizedDescription actions:@[ Action(@"retry", @"Try Again"), Action(@"settings", @"Agent Settings…") ]];
 			[self updateStatus];
 			return;
 		}
@@ -342,7 +374,7 @@ static NSView* Separator ()
 		_session.fileSystem = [self fileSystemForProjectPath:projectPath];
 		_session.terminals  = [self terminalsForProjectPath:projectPath environment:session.connection.environment];
 		// Started again after it stopped: continue the chat the transcript shows
-		if(_lastSessionId && _transcript.items.count)
+		if(_lastSessionId && [_transcript.items indexOfObjectPassingTest:^BOOL(AgentTranscriptItem* item, NSUInteger, BOOL*){ return item.kind == AgentTranscriptItemKindUser; }] != NSNotFound)
 		{
 			_session.sessionIdToLoad = _lastSessionId;
 			_restoringChat = YES;
@@ -366,8 +398,8 @@ static NSView* Separator ()
 			}
 			if(error)
 			{
-				[self showError:[self message:[NSString stringWithFormat:@"%@ didn’t start: %@", agent.name, error.localizedDescription] withOutputOfSession:session]];
 				[self failPendingPrompt];
+				[self reportError:error context:[NSString stringWithFormat:@"%@ didn’t start", agent.name] session:session];
 			}
 			else if(_pendingText || _pendingAttachments)
 			{
@@ -414,6 +446,7 @@ static NSView* Separator ()
 	_session   = nil;
 	_usageText = nil;
 	session.delegate = nil;
+	_reportedSignedOut = NO;
 	if(session.connection.running)
 		[AgentLog.sharedLog addEvent:@"Closed" source:_logSource];
 	[session close];
@@ -603,6 +636,102 @@ static NSString* RelativeDate (NSString* isoDate)
 	[self showItem:[_transcript addError:message]];
 }
 
+- (void)showError:(NSString*)message actions:(NSArray<NSDictionary<NSString*, NSString*>*>*)actions
+{
+	[self showItem:[_transcript addError:message actions:actions]];
+}
+
+// Explains a failed start or prompt with what to do next: sign in, try again,
+// or look at the agent’s output in the log.
+- (void)reportError:(NSError*)error context:(NSString*)context session:(AgentSession*)session
+{
+	NSMutableArray* actions = [NSMutableArray array];
+	if(AgentErrorIsAuthenticationRequired(error))
+	{
+		_restartOnRetry = YES;
+		NSMutableString* message = [NSMutableString stringWithFormat:@"%@ needs you to sign in.", _agent.name];
+		if(session.signInArguments || _agent.signInArguments)
+		{
+			[message appendString:@" Sign in in Terminal, then choose Try Again."];
+			[actions addObject:Action(@"signIn", @"Sign In")];
+		}
+		[actions addObject:Action(@"retry", @"Try Again")];
+		if(_agent.apiKeyVariable.length)
+		{
+			[message appendString:@" You can also use an API key, in Agent Settings."];
+			[actions addObject:Action(@"settings", @"Agent Settings…")];
+		}
+		[self showError:message actions:actions];
+		return;
+	}
+
+	[actions addObject:Action(@"retry", @"Try Again")];
+	[actions addObject:Action(@"log", @"Show Log")];
+	[self showError:[self message:[NSString stringWithFormat:@"%@: %@", context, error.localizedDescription] withOutputOfSession:session] actions:actions];
+}
+
+- (void)transcriptView:(AgentTranscriptView*)transcriptView performAction:(NSString*)action forItem:(AgentTranscriptItem*)item
+{
+	if([action isEqualToString:@"retry"])
+	{
+		[self retry];
+	}
+	else if([action isEqualToString:@"restart"])
+	{
+		// Continue the chat, without resending a message that was running when the agent stopped
+		_retryText        = nil;
+		_retryAttachments = nil;
+		_retryCurrentFile = nil;
+		[self retry];
+	}
+	else if([action isEqualToString:@"signIn"])
+		[self signIn];
+	else if([action isEqualToString:@"settings"])
+		[self showAgentSettings:self];
+	else if([action isEqualToString:@"log"])
+		[self showAgentLog:self];
+}
+
+// Starts the agent again if needed and resends the prompt that failed.
+- (void)retry
+{
+	if(_restartOnRetry || ![self sessionIsUsable])
+	{
+		_restartOnRetry = NO;
+		[self closeSession];
+	}
+	if(_retryText || _retryAttachments)
+	{
+		_pendingText        = _retryText;
+		_pendingAttachments = _retryAttachments;
+		_pendingCurrentFile = _retryCurrentFile;
+		_promptView.working = YES;
+	}
+	if(_session.state == AgentSessionStateReady && (_pendingText || _pendingAttachments))
+			[self sendPendingPrompt];
+	else	[self startSessionIfNeeded];
+	[self updateStatus];
+}
+
+- (void)signIn
+{
+	NSArray<NSString*>* arguments = _session.signInArguments ?: _agent.signInArguments;
+	if(!arguments.count)
+		return;
+
+	NSString* name = _agent.name;
+	[AgentEnvironment loadLoginShellEnvironmentWithCompletion:^(NSDictionary<NSString*, NSString*>* environment){
+		NSString* executable = [AgentEnvironment executablePathForCommand:arguments.firstObject environment:environment];
+		if(!executable)
+			return [self showError:[NSString stringWithFormat:@"Unable to find “%@” to sign in to %@. Sign in another way, or use an API key in Agent Settings.", arguments.firstObject, name] actions:@[ Action(@"settings", @"Agent Settings…") ]];
+
+		NSError* error;
+		NSArray* command = [@[ executable ] arrayByAddingObjectsFromArray:[arguments subarrayWithRange:NSMakeRange(1, arguments.count - 1)]];
+		if(!RunInTerminal(command, [NSString stringWithFormat:@"When you’re signed in, go back to TextMate and choose Try Again in the %@ chat.", name], &error))
+			[self showError:[NSString stringWithFormat:@"Couldn’t open Terminal: %@", error.localizedDescription]];
+	}];
+}
+
 // The agent’s last error output usually says why it failed, e.g. an npx too
 // old for `-y`, or a missing login
 - (NSString*)message:(NSString*)message withOutputOfSession:(AgentSession*)session
@@ -631,6 +760,11 @@ static NSString* RelativeDate (NSString* isoDate)
 	_pendingCurrentFile = promptView.usesCurrentFile && [_delegate respondsToSelector:@selector(currentFileAttachmentForAgentPanel:)] ? [_delegate currentFileAttachmentForAgentPanel:self] : nil;
 	promptView.working  = YES;
 
+	if(_restartOnRetry) // e.g. signed in since the agent started
+	{
+		_restartOnRetry = NO;
+		[self closeSession];
+	}
 	if(_session.state == AgentSessionStateReady)
 			[self sendPendingPrompt];
 	else	[self startSessionIfNeeded];
@@ -641,6 +775,9 @@ static NSString* RelativeDate (NSString* isoDate)
 {
 	NSDictionary* promptCapabilities = _session.agentCapabilities[@"promptCapabilities"];
 	NSArray* prompt = [AgentAttachment promptWithText:_pendingText attachments:_pendingAttachments currentFile:_pendingCurrentFile promptCapabilities:promptCapabilities];
+	_retryText        = _pendingText;
+	_retryAttachments = _pendingAttachments;
+	_retryCurrentFile = _pendingCurrentFile;
 	_pendingText        = nil;
 	_pendingAttachments = nil;
 	_pendingCurrentFile = nil;
@@ -652,9 +789,18 @@ static NSString* RelativeDate (NSString* isoDate)
 		_promptView.working = NO;
 		[self cancelPendingPermissionRequests];
 		if(error)
-			[self showError:error.localizedDescription];
-		else if(NSString* notice = StopReasonNotice(stopReason))
-			[self showNotice:notice];
+		{
+			if(session.state != AgentSessionStateTerminated) // reported as “stopped running”
+				[self reportError:error context:@"The message failed" session:session];
+		}
+		else
+		{
+			_retryText = nil;
+			_retryAttachments = nil;
+			_retryCurrentFile = nil;
+			if(NSString* notice = StopReasonNotice(stopReason))
+				[self showNotice:notice];
+		}
 		[self updateStatus];
 	}];
 }
@@ -663,11 +809,13 @@ static NSString* RelativeDate (NSString* isoDate)
 {
 	if(!_pendingText && !_pendingAttachments)
 		return;
+	_retryText          = _pendingText;
+	_retryAttachments   = _pendingAttachments;
+	_retryCurrentFile   = _pendingCurrentFile;
 	_pendingText        = nil;
 	_pendingAttachments = nil;
 	_pendingCurrentFile = nil;
 	_promptView.working = NO;
-	[self showNotice:@"Your message wasn’t sent. Send it again to retry."];
 }
 
 - (void)promptViewDidRequestStop:(AgentPromptView*)promptView
@@ -884,7 +1032,7 @@ static NSString* RelativeDate (NSString* isoDate)
 		[AgentLog.sharedLog addEvent:[NSString stringWithFormat:@"Exited with status %d", session.connection.terminationStatus] source:_logSource];
 		[self cancelPendingPermissionRequests];
 		_promptView.working = NO;
-		[self showError:[self message:[NSString stringWithFormat:@"%@ stopped running. Send a message to start it again.", _agent.name] withOutputOfSession:session]];
+		[self showError:[self message:[NSString stringWithFormat:@"%@ stopped running. Restart it, or send a message, to continue the chat.", _agent.name] withOutputOfSession:session] actions:@[ Action(@"restart", @"Restart"), Action(@"log", @"Show Log") ]];
 		[self rebuildOptions];
 	}
 	[self updateStatus];
@@ -1006,6 +1154,26 @@ static NSString* RelativeDate (NSString* isoDate)
 			if([content isKindOfClass:[NSDictionary class]] && [content[@"terminalId"] isEqual:terminal.terminalId])
 				[self showItem:item];
 		}
+	}
+}
+
+// Claude Code reports whether it is signed in as `_auth/status_update`; its
+// prompts would fail with “Authentication required”, so say so up front.
+- (void)agentSession:(AgentSession*)session didReceiveNotification:(NSString*)method params:(id)params
+{
+	if(session != _session || ![method isEqualToString:@"_auth/status_update"] || ![params isKindOfClass:[NSDictionary class]])
+		return;
+
+	NSDictionary* status = [params[@"authStatus"] isKindOfClass:[NSDictionary class]] ? params[@"authStatus"] : nil;
+	if([status[@"kind"] isEqual:@"none"] && !_reportedSignedOut)
+	{
+		_reportedSignedOut = YES;
+		_restartOnRetry    = YES;
+		NSMutableArray* actions = [NSMutableArray array];
+		if(_agent.signInArguments)
+			[actions addObject:Action(@"signIn", @"Sign In")];
+		[actions addObject:Action(@"settings", @"Agent Settings…")];
+		[self showItem:[_transcript addNotice:[NSString stringWithFormat:@"%@ isn’t signed in. Sign in in Terminal, or use an API key in Agent Settings; then send your message.", _agent.name] actions:actions]];
 	}
 }
 

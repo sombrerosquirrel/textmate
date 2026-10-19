@@ -274,8 +274,8 @@ static NSString* PathFromURI (NSString* uri)
 		case AgentTranscriptItemKindThought:  [self renderThoughtItem:item into:res];  break;
 		case AgentTranscriptItemKindToolCall: [self renderToolCallItem:item into:res]; break;
 		case AgentTranscriptItemKindPlan:     [self renderPlanItem:item into:res];     break;
-		case AgentTranscriptItemKindNotice:   [res appendAttributedString:[self text:item.text font:SmallFont() color:NSColor.secondaryLabelColor]]; break;
-		case AgentTranscriptItemKindError:    [res appendAttributedString:[self text:[@"⚠︎ " stringByAppendingString:item.text] font:SmallFont() color:NSColor.systemRedColor]]; break;
+		case AgentTranscriptItemKindNotice:   [res appendAttributedString:[self text:item.text font:SmallFont() color:NSColor.secondaryLabelColor]]; [self renderActionsOfItem:item into:res]; break;
+		case AgentTranscriptItemKindError:    [res appendAttributedString:[self text:[@"⚠︎ " stringByAppendingString:item.text] font:SmallFont() color:NSColor.systemRedColor]]; [self renderActionsOfItem:item into:res]; break;
 		case AgentTranscriptItemKindPermission: [self renderPermissionItem:item into:res]; break;
 	}
 
@@ -284,6 +284,17 @@ static NSString* PathFromURI (NSString* uri)
 	[res appendAttributedString:[[NSAttributedString alloc] initWithString:@"\n" attributes:lastAttributes]];
 	[res appendAttributedString:[[NSAttributedString alloc] initWithString:@"\n" attributes:@{ NSFontAttributeName: [NSFont systemFontOfSize:6] }]];
 	return res;
+}
+
+- (void)renderActionsOfItem:(AgentTranscriptItem*)item into:(NSMutableAttributedString*)res
+{
+	NSString* separator = @"\n";
+	for(NSDictionary<NSString*, NSString*>* action in item.actions)
+	{
+		[res appendAttributedString:[self text:separator font:SmallFont() color:NSColor.secondaryLabelColor]];
+		[res appendAttributedString:[self link:action[@"title"] url:[self actionURL:@"item-action" item:item parameters:@{ @"action": action[@"action"] }]]];
+		separator = @"   ";
+	}
 }
 
 - (void)renderUserItem:(AgentTranscriptItem*)item into:(NSMutableAttributedString*)res
@@ -669,6 +680,11 @@ static NSString* PathFromURI (NSString* uri)
 			NSString* newText = [content[@"newText"] isKindOfClass:[NSString class]] ? content[@"newText"] : @"";
 			[_actionDelegate transcriptView:self showDiffOfFile:content[@"path"] oldText:oldText newText:newText];
 		}
+	}
+	else if([action isEqualToString:@"item-action"] && item && parameters[@"action"])
+	{
+		if([_actionDelegate respondsToSelector:@selector(transcriptView:performAction:forItem:)])
+			[_actionDelegate transcriptView:self performAction:parameters[@"action"] forItem:item];
 	}
 	else if([action isEqualToString:@"kill"] && parameters[@"terminal"])
 	{

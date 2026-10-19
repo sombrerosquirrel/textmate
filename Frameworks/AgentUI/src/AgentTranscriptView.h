@@ -16,6 +16,8 @@
 // `oldText` nil: a new file.
 - (void)transcriptView:(AgentTranscriptView*)transcriptView showDiffOfFile:(NSString*)path oldText:(NSString*)oldText newText:(NSString*)newText;
 - (void)transcriptView:(AgentTranscriptView*)transcriptView selectPermissionOption:(NSString*)optionId forItem:(AgentTranscriptItem*)item;
+// One of a notice’s or error’s actions was clicked.
+- (void)transcriptView:(AgentTranscriptView*)transcriptView performAction:(NSString*)action forItem:(AgentTranscriptItem*)item;
 @end
 
 @interface AgentTranscriptView : NSTextView

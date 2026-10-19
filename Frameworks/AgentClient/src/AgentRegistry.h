@@ -36,6 +36,12 @@ NSArray<NSString*>* AgentArgumentsFromCommandLine (NSString* commandLine);
 @property (nonatomic, readonly) NSString* command;
 @property (nonatomic, readonly) NSArray<NSString*>* arguments;
 
+// For built-in agents: the command that signs in from a terminal (e.g.
+// `claude auth login`), used when the agent doesn’t name one in its
+// authMethods; and how to install the agent, for when its command is missing.
+@property (nonatomic, readonly) NSArray<NSString*>* signInArguments;
+@property (nonatomic, readonly) NSString* installHint;
+
 // Copilot CLI (checked with 1.0.97) ignores mcpServers in session/new and
 // session/load; it takes them on its command line instead.
 @property (nonatomic, readonly) BOOL takesMCPServersAsArgument;

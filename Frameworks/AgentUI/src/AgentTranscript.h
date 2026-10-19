@@ -27,6 +27,9 @@ typedef NS_ENUM(NSInteger, AgentTranscriptItemKind) {
 @property (nonatomic, readonly) NSDictionary* permissionRequest;
 @property (nonatomic, readonly, getter = isPermissionResolved) BOOL permissionResolved;
 @property (nonatomic, readonly) NSString* selectedOptionId;
+// Notice and error items: links shown below the text, { action, title },
+// e.g. @{ @"action": @"signIn", @"title": @"Sign In" }.
+@property (nonatomic, copy) NSArray<NSDictionary<NSString*, NSString*>*>* actions;
 @end
 
 // Output of a command the agent runs itself, reported in its tool call’s
@@ -45,6 +48,8 @@ typedef NS_ENUM(NSInteger, AgentTranscriptItemKind) {
 - (AgentTranscriptItem*)addUserMessage:(NSString*)text attachmentNames:(NSArray<NSString*>*)attachmentNames;
 - (AgentTranscriptItem*)addNotice:(NSString*)text;
 - (AgentTranscriptItem*)addError:(NSString*)text;
+- (AgentTranscriptItem*)addNotice:(NSString*)text actions:(NSArray<NSDictionary<NSString*, NSString*>*>*)actions;
+- (AgentTranscriptItem*)addError:(NSString*)text actions:(NSArray<NSDictionary<NSString*, NSString*>*>*)actions;
 - (AgentTranscriptItem*)addPermissionRequest:(NSDictionary*)params;
 // `optionId` nil: the request was cancelled.
 - (void)resolvePermissionItem:(AgentTranscriptItem*)item selectedOptionId:(NSString*)optionId;

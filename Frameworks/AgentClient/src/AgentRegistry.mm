@@ -150,6 +150,20 @@ static NSArray<NSDictionary*>* DefaultAgentDictionaries ()
 	return [self.command.lastPathComponent isEqualToString:@"copilot"];
 }
 
+- (NSArray<NSString*>*)signInArguments
+{
+	if([_identifier isEqualToString:@"claude"])  return @[ @"claude", @"auth", @"login" ];
+	if([_identifier isEqualToString:@"copilot"]) return @[ @"copilot", @"login" ];
+	return nil;
+}
+
+- (NSString*)installHint
+{
+	if([self.command isEqualToString:@"copilot"]) return @"Install GitHub Copilot CLI with “npm install -g @github/copilot” (needs Node.js).";
+	if([self.command isEqualToString:@"npx"])     return @"npx comes with Node.js, from nodejs.org or Homebrew.";
+	return nil;
+}
+
 // Copilot’s mcp-config.json format: { mcpServers: { name: { type: local|http|sse, … } } }
 + (NSArray<NSString*>*)argumentsForMCPServers:(NSArray<NSDictionary*>*)servers
 {
@@ -477,6 +491,8 @@ static NSUserDefaults* RegistryDefaults = nil;
 				if(!executable)
 				{
 					NSString* description = [NSString stringWithFormat:@"Unable to find “%@” for %@. Install it or make sure it is on the PATH of your login shell.", agent.command, agent.name];
+					if(NSString* hint = agent.installHint)
+						description = [NSString stringWithFormat:@"%@ %@", description, hint];
 					completion(nil, [NSError errorWithDomain:AgentConnectionErrorDomain code:AgentConnectionErrorLaunchFailed userInfo:@{ NSLocalizedDescriptionKey: description }]);
 					return;
 				}

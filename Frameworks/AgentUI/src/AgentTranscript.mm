@@ -93,6 +93,20 @@ static NSString* TextOfContentBlock (NSDictionary* content)
 - (AgentTranscriptItem*)addNotice:(NSString*)text { return [self addItemOfKind:AgentTranscriptItemKindNotice text:text]; }
 - (AgentTranscriptItem*)addError:(NSString*)text  { return [self addItemOfKind:AgentTranscriptItemKindError text:text]; }
 
+- (AgentTranscriptItem*)addNotice:(NSString*)text actions:(NSArray<NSDictionary<NSString*, NSString*>*>*)actions
+{
+	AgentTranscriptItem* item = [self addNotice:text];
+	item.actions = actions;
+	return item;
+}
+
+- (AgentTranscriptItem*)addError:(NSString*)text actions:(NSArray<NSDictionary<NSString*, NSString*>*>*)actions
+{
+	AgentTranscriptItem* item = [self addError:text];
+	item.actions = actions;
+	return item;
+}
+
 - (AgentTranscriptItem*)addPermissionRequest:(NSDictionary*)params
 {
 	AgentTranscriptItem* item = [self addItemOfKind:AgentTranscriptItemKindPermission text:nil];

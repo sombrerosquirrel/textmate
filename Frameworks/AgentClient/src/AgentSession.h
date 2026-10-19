@@ -12,6 +12,9 @@
 
 extern NSInteger const AgentClientProtocolVersion;
 
+// The agent refused a request because the user isn’t signed in (ACP error -32000).
+BOOL AgentErrorIsAuthenticationRequired (NSError* error);
+
 extern NSErrorDomain const AgentSessionErrorDomain;
 
 typedef NS_ERROR_ENUM(AgentSessionErrorDomain, AgentSessionErrorCode) {
@@ -92,6 +95,11 @@ typedef NS_ENUM(NSInteger, AgentSessionState) {
 @property (nonatomic, readonly) NSDictionary* agentInfo;
 @property (nonatomic, readonly) NSDictionary* agentCapabilities;
 @property (nonatomic, readonly) NSArray<NSDictionary*>* authMethods;
+// The command that signs in from a terminal, from the first auth method
+// that has one (Copilot: `_meta.terminal-auth`; ACP: type “terminal”, which
+// runs the agent with extra arguments); nil if none does.
+@property (nonatomic, readonly) NSArray<NSString*>* signInArguments;
++ (NSArray<NSString*>*)signInArgumentsFromAuthMethods:(NSArray<NSDictionary*>*)authMethods agentArguments:(NSArray<NSString*>*)agentArguments;
 
 // Agent-provided controls, kept current from session/new and session/update.
 // configOptions: ACP config options (mode, model, effort, …); modes: the older

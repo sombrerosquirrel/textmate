@@ -213,3 +213,24 @@ void test_keychain ()
 
 	AgentKeychain.service = previousService;
 }
+
+void test_sign_in_arguments ()
+{
+	NSArray* copilot = @[ @{ @"id": @"copilot-login", @"name": @"Log in with Copilot CLI", @"_meta": @{ @"terminal-auth": @{ @"command": @"/opt/copilot", @"args": @[ @"login" ], @"label": @"Copilot Login" } } } ];
+	OAK_ASSERT(([[AgentSession signInArgumentsFromAuthMethods:copilot agentArguments:@[ @"/opt/copilot", @"--acp" ]] isEqual:(@[ @"/opt/copilot", @"login" ])]));
+
+	NSArray* terminal = @[ @{ @"id": @"env", @"type": @"env_var" }, @{ @"id": @"login", @"type": @"terminal", @"args": @[ @"--login" ] } ];
+	OAK_ASSERT(([[AgentSession signInArgumentsFromAuthMethods:terminal agentArguments:@[ @"/bin/agent", @"--acp" ]] isEqual:(@[ @"/bin/agent", @"--acp", @"--login" ])]));
+
+	OAK_ASSERT(([AgentSession signInArgumentsFromAuthMethods:@[ ] agentArguments:@[ @"/bin/agent" ]] == nil));
+	OAK_ASSERT(([AgentSession signInArgumentsFromAuthMethods:@[ @{ @"id": @"agent", @"type": @"agent" } ] agentArguments:@[ @"/bin/agent" ]] == nil));
+
+	OAK_ASSERT(([[AgentRegistry defaultAgentWithIdentifier:@"claude"].signInArguments isEqual:(@[ @"claude", @"auth", @"login" ])]));
+	OAK_ASSERT(([[AgentRegistry defaultAgentWithIdentifier:@"copilot"].signInArguments isEqual:(@[ @"copilot", @"login" ])]));
+	OAK_ASSERT(([[AgentDescriptor alloc] initWithIdentifier:@"x" name:@"X" commandLine:@"x --acp"].signInArguments == nil));
+	OAK_ASSERT(([AgentRegistry defaultAgentWithIdentifier:@"copilot"].installHint != nil));
+
+	OAK_ASSERT((AgentErrorIsAuthenticationRequired([NSError errorWithDomain:AgentJSONRPCErrorDomain code:-32000 userInfo:nil])));
+	OAK_ASSERT((!AgentErrorIsAuthenticationRequired([NSError errorWithDomain:AgentJSONRPCErrorDomain code:-32603 userInfo:nil])));
+	OAK_ASSERT((!AgentErrorIsAuthenticationRequired(nil)));
+}
