@@ -42,3 +42,8 @@ TM_NINJA_TARGET  = '${TM_FILEPATH/^.*?([^\/]*)\/tests\/.*$/$1\/test/}'
 [ tests/gui_*.mm ]
 GUI_TESTS        = '${TM_FILENAME/^gui_(.*)\.mm$/$1/}'
 TM_NINJA_TARGET  = '${TM_FILEPATH/^.*?([^\/]*)\/tests\/.*$/$1\/cxx_test/}'
+
+
+# agentName picks the project's agent and agentCommand replaces its command.
+# agentName = 'Test Agent'
+# agentCommand = 'Test Command'

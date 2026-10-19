@@ -67,7 +67,12 @@ Checked in the running app (2026-10-19, via a probe): the Agents pane renders an
 Tests: AgentClient 66 (new: registry 8 incl. Keychain round-trip, sessions 9: list, load, load at start and fallback, MCP filtering). The fake agent learned `--sessions` and `mcp`. `ctest` 28/28.
 
 ## Commits
-344317b2 configuration, Keychain, MCP, list and load · 364513ce Agents pane · 402ec2be register pane, Agent Settings… · 7649ae25 picker, history, restore · 2267d3b6 `.tm_properties`, Add to Agent Chat
+344317b2 configuration, Keychain, MCP, list and load · 364513ce Agents pane · 402ec2be register pane, Agent Settings… · 7649ae25 picker, history, restore · 2267d3b6 `.tm_properties`, Add to Agent Chat · 717777c2 MCP skip reasons · c700c8fc Agents pane tables, toolbar icons
+
+## Changes after the first check (2026-10-19)
+- The user put the MCP command in the Name column and got a notice blaming the transport. Notices now give each skipped server's reason (no name, no command, no URL, not found on the PATH, transport not supported), and point out a command typed into Name. + in MCP Servers starts editing the command, with a placeholder.
+- Agents pane tables: taller rows, text centred vertically, regular-size controls.
+- Preferences toolbar (user): icons of uneven size, and the Files label ran into its icon. Each SF Symbol is now drawn scaled to fit a 28×21 box in a 32×24 image.
 
 ## To check (user)
 1. Preferences ▸ Agents: both agents listed; edit Claude's command (e.g. add `--debug`), Restore Defaults brings it back. Add an agent, give it a command, check it appears in the panel's picker; remove it.
