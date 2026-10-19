@@ -35,6 +35,23 @@ static NSString* TextOfContentBlock (NSDictionary* content)
 @implementation AgentTranscriptItem
 - (NSString*)text            { return [_mutableText copy] ?: @""; }
 - (NSDictionary*)toolCall    { return [_mutableToolCall copy]; }
+
+- (NSString*)permissionOptionIdAllowing:(BOOL)allow
+{
+	NSArray* options = [_permissionRequest[@"options"] isKindOfClass:[NSArray class]] ? _permissionRequest[@"options"] : @[ ];
+	NSString* prefix = allow ? @"allow" : @"reject";
+	NSString* res;
+	for(NSDictionary* option in options)
+	{
+		if(![option isKindOfClass:[NSDictionary class]] || ![option[@"kind"] isKindOfClass:[NSString class]] || !option[@"optionId"])
+			continue;
+		if([option[@"kind"] isEqualToString:[prefix stringByAppendingString:@"_once"]])
+			return [option[@"optionId"] description];
+		if(!res && [option[@"kind"] hasPrefix:prefix])
+			res = [option[@"optionId"] description];
+	}
+	return res;
+}
 @end
 
 @interface AgentTranscriptTerminal ()

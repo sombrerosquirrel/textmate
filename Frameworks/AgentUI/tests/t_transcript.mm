@@ -139,3 +139,19 @@ void test_terminal_meta ()
 	OAK_ASSERT(terminal.signal == nil);
 	OAK_ASSERT_EQ(transcript.items.count, 1);
 }
+
+void test_permission_keyboard_options ()
+{
+	AgentTranscript* transcript = [[AgentTranscript alloc] init];
+	AgentTranscriptItem* item = [transcript addPermissionRequest:@{ @"options": @[
+		@{ @"optionId": @"always", @"name": @"Always Allow", @"kind": @"allow_always" },
+		@{ @"optionId": @"once",   @"name": @"Allow",        @"kind": @"allow_once"   },
+		@{ @"optionId": @"no",     @"name": @"Reject",       @"kind": @"reject_once"  },
+	] }];
+	OAK_ASSERT([[item permissionOptionIdAllowing:YES] isEqualToString:@"once"]);
+	OAK_ASSERT([[item permissionOptionIdAllowing:NO] isEqualToString:@"no"]);
+
+	AgentTranscriptItem* other = [transcript addPermissionRequest:@{ @"options": @[ @{ @"optionId": @"yes", @"kind": @"allow_always" } ] }];
+	OAK_ASSERT([[other permissionOptionIdAllowing:YES] isEqualToString:@"yes"]);
+	OAK_ASSERT([other permissionOptionIdAllowing:NO] == nil);
+}

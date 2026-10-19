@@ -387,6 +387,13 @@ static NSUInteger const kMaxHistory = 50;
 	[_delegate promptViewDidSubmit:self];
 }
 
+- (BOOL)answerPermission:(BOOL)allow
+{
+	if(self.text.length || _attachments.count || ![_delegate respondsToSelector:@selector(promptView:answerPermission:)])
+		return NO;
+	return [_delegate promptView:self answerPermission:allow];
+}
+
 - (void)rememberPrompt:(NSString*)text
 {
 	if(!text.length || [_history.lastObject isEqualToString:text])
@@ -463,11 +470,15 @@ static NSUInteger const kMaxHistory = 50;
 			[textView insertNewlineIgnoringFieldEditor:self];
 			return YES;
 		}
+		if([self answerPermission:YES])
+			return YES;
 		[self submit];
 		return YES;
 	}
 	if(selector == @selector(cancelOperation:))
 	{
+		if([self answerPermission:NO])
+			return YES;
 		if(_working)
 			[_delegate promptViewDidRequestStop:self];
 		return YES;

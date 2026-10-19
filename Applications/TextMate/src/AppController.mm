@@ -246,6 +246,7 @@ BOOL HasDocumentWindow (NSArray* windows)
 				{ @"Show HTML Output",       @selector(toggleHTMLOutput:),     @"h", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagOption|NSEventModifierFlagControl },
 				{ @"Show Agent Panel",       @selector(toggleAgentPanel:),     @"I", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagControl|NSEventModifierFlagShift },
 				{ @"Move Agent Panel to Left Side", @selector(toggleAgentPanelPlacement:) },
+				{ @"New Agent Chat",         @selector(newAgentChat:),         @"N", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagControl|NSEventModifierFlagShift },
 				{ @"Show Markdown Preview",  @selector(toggleMarkdownPreview:), @"M", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagControl|NSEventModifierFlagShift },
 				{ @"Markdown Preview Position",
 					.submenu = {

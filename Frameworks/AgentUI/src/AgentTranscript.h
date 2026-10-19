@@ -27,6 +27,9 @@ typedef NS_ENUM(NSInteger, AgentTranscriptItemKind) {
 @property (nonatomic, readonly) NSDictionary* permissionRequest;
 @property (nonatomic, readonly, getter = isPermissionResolved) BOOL permissionResolved;
 @property (nonatomic, readonly) NSString* selectedOptionId;
+// The option ↩ / ⎋ choose: allow_once / reject_once, or else the first that
+// allows / rejects; nil if there is none.
+- (NSString*)permissionOptionIdAllowing:(BOOL)allow;
 // Notice and error items: links shown below the text, { action, title },
 // e.g. @{ @"action": @"signIn", @"title": @"Sign In" }.
 @property (nonatomic, copy) NSArray<NSDictionary<NSString*, NSString*>*>* actions;

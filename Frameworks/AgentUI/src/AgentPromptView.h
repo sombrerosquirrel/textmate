@@ -1,7 +1,8 @@
 #import "AgentAttachment.h"
 
 // The chat input: multi-line text, attachment chips, an Add Context button,
-// and Send / Stop. ↩ sends, ⇧↩ or ⌥↩ inserts a newline, ⎋ stops, ↑ / ↓ recall
+// and Send / Stop. ↩ sends, ⇧↩ or ⌥↩ inserts a newline, ⎋ stops (in an empty
+// prompt, ↩ / ⎋ answer a permission card first), ↑ / ↓ recall
 // previous prompts, and typing “/” lists the agent’s slash commands: ↩ sends
 // the selected one, ⇥ completes it, ⎋ closes the list.
 //
@@ -19,6 +20,9 @@
 - (NSArray<NSDictionary*>*)slashCommandsForPromptView:(AgentPromptView*)promptView; // ACP availableCommands
 - (BOOL)promptViewAcceptsImages:(AgentPromptView*)promptView;
 - (void)promptViewDidToggleUsesCurrentFile:(AgentPromptView*)promptView;
+// ↩ (allow) or ⎋ (reject) in an empty prompt, e.g. for a permission card;
+// return NO if there is nothing to answer.
+- (BOOL)promptView:(AgentPromptView*)promptView answerPermission:(BOOL)allow;
 @end
 
 @interface AgentPromptView : NSView
