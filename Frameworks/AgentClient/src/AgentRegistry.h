@@ -35,6 +35,12 @@ NSArray<NSString*>* AgentArgumentsFromCommandLine (NSString* commandLine);
 // The command line split into words: command is the first, arguments the rest.
 @property (nonatomic, readonly) NSString* command;
 @property (nonatomic, readonly) NSArray<NSString*>* arguments;
+
+// Copilot CLI (checked with 1.0.97) ignores mcpServers in session/new and
+// session/load; it takes them on its command line instead.
+@property (nonatomic, readonly) BOOL takesMCPServersAsArgument;
+// Arguments that pass ACP McpServer objects to such an agent.
++ (NSArray<NSString*>*)argumentsForMCPServers:(NSArray<NSDictionary*>*)servers;
 @end
 
 // An MCP server, as configured in Preferences ▸ Agents.

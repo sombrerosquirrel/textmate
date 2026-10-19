@@ -171,6 +171,24 @@ void test_mcp_server_acp_representation ()
 	OAK_ASSERT([problem(@{ @"name": @"npx -y some-server" }) hasPrefix:@"no command (the command goes in"]);
 }
 
+void test_copilot_mcp_arguments ()
+{
+	OAK_ASSERT([[AgentRegistry agentWithIdentifier:@"copilot"] takesMCPServersAsArgument]);
+	OAK_ASSERT(![[AgentRegistry agentWithIdentifier:@"claude"] takesMCPServersAsArgument]);
+	OAK_ASSERT([[[AgentDescriptor alloc] initWithIdentifier:@"x" name:@"x" commandLine:@"/opt/bin/copilot --acp"] takesMCPServersAsArgument]);
+
+	OAK_ASSERT([[AgentDescriptor argumentsForMCPServers:@[ ]] isEqual:@[ ]]);
+	NSArray* arguments = [AgentDescriptor argumentsForMCPServers:@[
+		@{ @"name": @"local", @"command": @"/bin/cat", @"args": @[ @"-u" ], @"env": @[ @{ @"name": @"A", @"value": @"1" } ] },
+		@{ @"type": @"http", @"name": @"web", @"url": @"https://example.com/mcp", @"headers": @[ ] },
+	]];
+	OAK_ASSERT_EQ(arguments.count, 2);
+	OAK_ASSERT([arguments.firstObject isEqualToString:@"--additional-mcp-config"]);
+	NSDictionary* config = [NSJSONSerialization JSONObjectWithData:[arguments.lastObject dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+	OAK_ASSERT([config[@"mcpServers"][@"local"] isEqual:(@{ @"type": @"local", @"command": @"/bin/cat", @"args": @[ @"-u" ], @"env": @{ @"A": @"1" }, @"tools": @[ @"*" ] })]);
+	OAK_ASSERT([config[@"mcpServers"][@"web"] isEqual:(@{ @"type": @"http", @"url": @"https://example.com/mcp", @"headers": @{ }, @"tools": @[ @"*" ] })]);
+}
+
 void test_keychain ()
 {
 	NSString* previousService = AgentKeychain.service;

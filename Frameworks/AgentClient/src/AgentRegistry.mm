@@ -145,6 +145,35 @@ static NSArray<NSDictionary*>* DefaultAgentDictionaries ()
 	return words.count > 1 ? [words subarrayWithRange:NSMakeRange(1, words.count - 1)] : @[ ];
 }
 
+- (BOOL)takesMCPServersAsArgument
+{
+	return [self.command.lastPathComponent isEqualToString:@"copilot"];
+}
+
+// Copilot’s mcp-config.json format: { mcpServers: { name: { type: local|http|sse, … } } }
++ (NSArray<NSString*>*)argumentsForMCPServers:(NSArray<NSDictionary*>*)servers
+{
+	auto dictionary = ^NSDictionary*(NSArray<NSDictionary*>* pairs){
+		NSMutableDictionary* res = [NSMutableDictionary dictionary];
+		for(NSDictionary* pair in pairs)
+			res[pair[@"name"]] = pair[@"value"];
+		return res;
+	};
+
+	NSMutableDictionary* config = [NSMutableDictionary dictionary];
+	for(NSDictionary* server in servers)
+	{
+		if(NSString* type = server[@"type"])
+				config[server[@"name"]] = @{ @"type": type, @"url": server[@"url"] ?: @"", @"headers": dictionary(server[@"headers"]), @"tools": @[ @"*" ] };
+		else	config[server[@"name"]] = @{ @"type": @"local", @"command": server[@"command"] ?: @"", @"args": server[@"args"] ?: @[ ], @"env": dictionary(server[@"env"]), @"tools": @[ @"*" ] };
+	}
+	if(!config.count)
+		return @[ ];
+
+	NSData* json = [NSJSONSerialization dataWithJSONObject:@{ @"mcpServers": config } options:NSJSONWritingSortedKeys|NSJSONWritingWithoutEscapingSlashes error:nil];
+	return @[ @"--additional-mcp-config", [[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding] ];
+}
+
 - (NSString*)description
 {
 	return [NSString stringWithFormat:@"<%@ %@: %@>", self.class, _identifier, _commandLine];
@@ -462,7 +491,14 @@ static NSUserDefaults* RegistryDefaults = nil;
 					else	[skipped addObject:@{ @"name": server.name.length ? server.name : @"Unnamed server", @"reason": problem ?: @"incomplete" }];
 				}
 
-				AgentConnection* connection = [[AgentConnection alloc] initWithExecutable:executable arguments:agent.arguments environment:environment workingDirectory:workingDirectory];
+				NSArray<NSString*>* arguments = agent.arguments;
+				if(agent.takesMCPServersAsArgument)
+				{
+					arguments  = [arguments arrayByAddingObjectsFromArray:[AgentDescriptor argumentsForMCPServers:mcpServers]];
+					mcpServers = [NSMutableArray array];
+				}
+
+				AgentConnection* connection = [[AgentConnection alloc] initWithExecutable:executable arguments:arguments environment:environment workingDirectory:workingDirectory];
 				AgentSession* session = [[AgentSession alloc] initWithConnection:connection workingDirectory:workingDirectory];
 				session.mcpServers            = mcpServers;
 				session.skippedMCPServers = skipped;
