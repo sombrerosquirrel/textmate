@@ -5,6 +5,7 @@
 #import "AboutWindowController.h"
 #import "TMPlugInController.h"
 #import "RMateServer.h"
+#import <AgentUI/AgentLogWindowController.h>
 #import <BundleEditor/BundleEditor.h>
 #import <BundlesManager/BundlesManager.h>
 #import <DocumentWindow/DocumentWindowController.h>
@@ -446,6 +447,8 @@ BOOL HasDocumentWindow (NSArray* windows)
 				{ @"Move Tab to New Window", @selector(moveDocumentToNewWindow:)     },
 				{ @"Merge All Windows",      @selector(mergeAllWindows:)             },
 				{ /* -------- */ },
+				{ @"Agent Log",              @selector(showAgentLog:)                },
+				{ /* -------- */ },
 				{ @"Bring All to Front",     @selector(arrangeInFront:)              },
 			}
 		},
@@ -751,6 +754,11 @@ BOOL HasDocumentWindow (NSArray* windows)
 - (IBAction)showAgentPreferences:(id)sender
 {
 	[Preferences.sharedInstance showWindowWithPaneIdentifier:@"Agents"];
+}
+
+- (IBAction)showAgentLog:(id)sender
+{
+	[AgentLogWindowController.sharedInstance showWindow:self];
 }
 
 - (IBAction)showBundleEditor:(id)sender

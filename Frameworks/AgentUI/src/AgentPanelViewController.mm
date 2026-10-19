@@ -2,6 +2,8 @@
 #import "AgentPromptView.h"
 #import "AgentTranscriptView.h"
 #import "AgentChangesView.h"
+#import "AgentLog.h"
+#import "AgentLogWindowController.h"
 #import <AgentClient/AgentDiff.h>
 #import <AgentClient/AgentRegistry.h>
 #import <OakAppKit/NSColor Additions.h>
@@ -59,6 +61,7 @@ static NSView* Separator ()
 	NSString* _lastSessionId;   // the chat to load if the agent is started again
 	BOOL _restoringChat;        // loading _lastSessionId: the transcript already shows its replay
 	BOOL _creatingSession;
+	NSString* _logSource;       // the session’s name in the agent log, e.g. “textmate — Claude Code”
 	AgentFileSystem* _fileSystem;              // one per chat, so its changes outlive an agent restart
 	AgentTerminalManager* _terminals;          // one per chat, so output stays visible after a restart
 	NSMutableDictionary<NSString*, void(^)(NSDictionary*)>* _permissionReplies; // transcript item identifier → reply
@@ -157,10 +160,18 @@ static NSView* Separator ()
 	[_agentPopUp.menu addItem:[NSMenuItem separatorItem]];
 	NSMenuItem* settingsItem = [_agentPopUp.menu addItemWithTitle:@"Agent Settings…" action:@selector(showAgentSettings:) keyEquivalent:@""];
 	settingsItem.target = self;
+	NSMenuItem* logItem = [_agentPopUp.menu addItemWithTitle:@"Show Agent Log" action:@selector(showAgentLog:) keyEquivalent:@""];
+	logItem.target = self;
 
 	NSInteger index = [_agentPopUp indexOfItemWithRepresentedObject:_agent.identifier];
 	if(index != -1)
 		[_agentPopUp selectItemAtIndex:index];
+}
+
+- (void)showAgentLog:(id)sender
+{
+	[_agentPopUp selectItemAtIndex:[_agentPopUp indexOfItemWithRepresentedObject:_agent.identifier]];
+	[AgentLogWindowController.sharedInstance showWindowForSource:_logSource];
 }
 
 - (void)showAgentSettings:(id)sender
@@ -309,6 +320,7 @@ static NSView* Separator ()
 		_agent = [self reloadAgents];
 	AgentDescriptor* agent = _agent;
 	NSString* projectPath  = [_delegate projectPathForAgentPanel:self] ?: NSHomeDirectory();
+	_logSource = [NSString stringWithFormat:@"%@ — %@", projectPath.lastPathComponent, agent.name];
 	[AgentRegistry makeSessionForAgent:agent workingDirectory:projectPath completion:^(AgentSession* session, NSError* error){
 		_creatingSession = NO;
 		if(agent != _agent)
@@ -316,6 +328,7 @@ static NSView* Separator ()
 
 		if(error)
 		{
+			[AgentLog.sharedLog addEvent:[@"Not started: " stringByAppendingString:error.localizedDescription] source:_logSource];
 			[self showError:error.localizedDescription];
 			[self failPendingPrompt];
 			[self updateStatus];
@@ -334,9 +347,11 @@ static NSView* Separator ()
 			_session.sessionIdToLoad = _lastSessionId;
 			_restoringChat = YES;
 		}
+		[AgentLog.sharedLog addEvent:[NSString stringWithFormat:@"Starting %@ in %@", [[@[ session.connection.executablePath ] arrayByAddingObjectsFromArray:session.connection.arguments] componentsJoinedByString:@" "], projectPath] source:_logSource];
 		[session startWithCompletion:^(NSError* error){
 			if(session != _session)
 				return;
+			[AgentLog.sharedLog addEvent:(error ? [@"Not started: " stringByAppendingString:error.localizedDescription] : [NSString stringWithFormat:@"Started %@ %@, session %@", session.agentInfo[@"name"] ?: agent.name, session.agentInfo[@"version"] ?: @"", session.sessionId]) source:_logSource];
 			if(_restoringChat && session.loadError)
 				[self showNotice:[NSString stringWithFormat:@"%@ couldn’t continue the earlier chat, so it doesn’t know what was said above.", agent.name]];
 			_restoringChat = NO;
@@ -399,6 +414,8 @@ static NSView* Separator ()
 	_session   = nil;
 	_usageText = nil;
 	session.delegate = nil;
+	if(session.connection.running)
+		[AgentLog.sharedLog addEvent:@"Closed" source:_logSource];
 	[session close];
 	[self rebuildOptions];
 }
@@ -864,6 +881,7 @@ static NSString* RelativeDate (NSString* isoDate)
 		return;
 	if(session.state == AgentSessionStateTerminated)
 	{
+		[AgentLog.sharedLog addEvent:[NSString stringWithFormat:@"Exited with status %d", session.connection.terminationStatus] source:_logSource];
 		[self cancelPendingPermissionRequests];
 		_promptView.working = NO;
 		[self showError:[self message:[NSString stringWithFormat:@"%@ stopped running. Send a message to start it again.", _agent.name] withOutputOfSession:session]];
@@ -993,7 +1011,12 @@ static NSString* RelativeDate (NSString* isoDate)
 
 - (void)agentSession:(AgentSession*)session didReceiveStandardError:(NSString*)text
 {
-	NSLog(@"[Agent %@] %@", _agent.identifier, [text stringByTrimmingCharactersInSet:NSCharacterSet.newlineCharacterSet]);
+	[AgentLog.sharedLog addStandardError:text source:_logSource];
+}
+
+- (void)agentSession:(AgentSession*)session didTransferMessage:(NSDictionary*)message outgoing:(BOOL)outgoing
+{
+	[AgentLog.sharedLog addMessage:message outgoing:outgoing source:_logSource];
 }
 
 // ================================
