@@ -52,8 +52,9 @@ NSArray<NSString*>* AgentArgumentsFromCommandLine (NSString* commandLine);
 @property (nonatomic, getter = isEnabled) BOOL enabled;
 
 // The ACP McpServer object for session/new, or nil if the server is
-// incomplete or its command can’t be found on the PATH of `environment`.
-- (NSDictionary*)ACPRepresentationWithEnvironment:(NSDictionary<NSString*, NSString*>*)environment;
+// incomplete or its command can’t be found on the PATH of `environment`;
+// `problem` then says why, e.g. “no command”.
+- (NSDictionary*)ACPRepresentationWithEnvironment:(NSDictionary<NSString*, NSString*>*)environment problem:(NSString**)problem;
 @end
 
 @interface AgentRegistry : NSObject

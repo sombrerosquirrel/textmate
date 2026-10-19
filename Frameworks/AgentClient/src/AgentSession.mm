@@ -163,16 +163,16 @@ static NSUInteger const kMaxStandardErrorLineLength = 300;
 {
 	NSDictionary* capabilities = [_agentCapabilities[@"mcpCapabilities"] isKindOfClass:[NSDictionary class]] ? _agentCapabilities[@"mcpCapabilities"] : @{ };
 	NSMutableArray* res     = [NSMutableArray array];
-	NSMutableArray* skipped = [NSMutableArray arrayWithArray:_skippedMCPServerNames ?: @[ ]];
+	NSMutableArray* skipped = [NSMutableArray arrayWithArray:_skippedMCPServers ?: @[ ]];
 	for(NSDictionary* server in _mcpServers)
 	{
 		NSString* type = server[@"type"];
 		if(!type || [capabilities[type] boolValue])
 				[res addObject:server];
-		else if(![skipped containsObject:server[@"name"]])
-				[skipped addObject:server[@"name"] ?: @""];
+		else if(![[skipped valueForKey:@"name"] containsObject:server[@"name"] ?: @""])
+				[skipped addObject:@{ @"name": server[@"name"] ?: @"", @"reason": [NSString stringWithFormat:@"the agent doesn’t support %@ servers", type] }];
 	}
-	_skippedMCPServerNames = skipped;
+	_skippedMCPServers = skipped;
 	return res;
 }
 

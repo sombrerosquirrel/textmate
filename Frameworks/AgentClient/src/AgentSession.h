@@ -72,9 +72,10 @@ typedef NS_ENUM(NSInteger, AgentSessionState) {
 
 // ACP McpServer objects sent with session/new and session/load. Servers
 // whose transport the agent doesn’t support (mcpCapabilities http, sse) are
-// left out, and their names added to skippedMCPServerNames.
+// left out and added to skippedMCPServers as { name, reason }, after any
+// the caller put there (e.g. a command that wasn’t found).
 @property (nonatomic, copy) NSArray<NSDictionary*>* mcpServers;
-@property (nonatomic, copy) NSArray<NSString*>* skippedMCPServerNames;
+@property (nonatomic, copy) NSArray<NSDictionary<NSString*, NSString*>*>* skippedMCPServers;
 
 // Set before -startWithCompletion: to continue an earlier chat: if the agent
 // supports loadSession, start sends session/load instead of session/new.

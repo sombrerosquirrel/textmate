@@ -423,11 +423,12 @@ void test_mcp_servers ()
 		@{ @"type": @"http", @"name": @"web", @"url": @"https://example.com/mcp", @"headers": @[ ] },
 		@{ @"type": @"sse", @"name": @"events", @"url": @"https://example.com/sse", @"headers": @[ ] },
 	];
-	t.session.skippedMCPServerNames = @[ @"missing" ];
+	t.session.skippedMCPServers = @[ @{ @"name": @"missing", @"reason": @"no command" } ];
 	OAK_ASSERT(t.start() == nil);
 	OAK_ASSERT([t.prompt(@"mcp") isEqualToString:@"end_turn"]);
 	OAK_ASSERT([t.messageText() hasPrefix:@"MCP: local,web closed:"]);
-	OAK_ASSERT([t.session.skippedMCPServerNames isEqual:(@[ @"missing", @"events" ])]);
+	OAK_ASSERT([[t.session.skippedMCPServers valueForKey:@"name"] isEqual:(@[ @"missing", @"events" ])]);
+	OAK_ASSERT([t.session.skippedMCPServers.lastObject[@"reason"] isEqualToString:@"the agent doesn’t support sse servers"]);
 }
 
 void test_mcp_servers_without_capabilities ()
@@ -438,5 +439,5 @@ void test_mcp_servers_without_capabilities ()
 		@{ @"type": @"http", @"name": @"web", @"url": @"https://example.com/mcp", @"headers": @[ ] },
 	];
 	OAK_ASSERT(t.start() == nil);
-	OAK_ASSERT([t.session.skippedMCPServerNames isEqual:(@[ @"web" ])]);
+	OAK_ASSERT([[t.session.skippedMCPServers valueForKey:@"name"] isEqual:(@[ @"web" ])]);
 }

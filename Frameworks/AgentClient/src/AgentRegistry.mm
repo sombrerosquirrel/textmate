@@ -206,22 +206,37 @@ static NSArray<NSDictionary*>* NameValuePairs (NSDictionary<NSString*, NSString*
 	return res;
 }
 
-- (NSDictionary*)ACPRepresentationWithEnvironment:(NSDictionary<NSString*, NSString*>*)environment
+- (NSDictionary*)ACPRepresentationWithEnvironment:(NSDictionary<NSString*, NSString*>*)environment problem:(NSString**)problem
+{
+	NSString* reason = nil;
+	NSDictionary* res = [self ACPRepresentationWithEnvironment:environment reason:&reason];
+	if(problem)
+		*problem = reason;
+	return res;
+}
+
+- (NSDictionary*)ACPRepresentationWithEnvironment:(NSDictionary<NSString*, NSString*>*)environment reason:(NSString**)reason
 {
 	if(!_name.length)
-		return nil;
+		return *reason = @"no name", nil;
 
 	if([_type isEqualToString:@"http"] || [_type isEqualToString:@"sse"])
 	{
 		if(!_url.length)
-			return nil;
+			return *reason = @"no URL", nil;
 		return @{ @"type": _type, @"name": _name, @"url": _url, @"headers": NameValuePairs(_variables) };
 	}
 
 	NSArray<NSString*>* words = AgentArgumentsFromCommandLine(_commandLine);
-	NSString* executable = words.count ? [AgentEnvironment executablePathForCommand:[words.firstObject stringByExpandingTildeInPath] environment:environment] : nil;
-	if(!executable)
+	if(!words.count)
+	{
+		// A name with blanks is likely the command typed into the wrong column
+		*reason = [_name rangeOfString:@" "].location != NSNotFound ? @"no command (the command goes in the Command or URL column, not Name)" : @"no command";
 		return nil;
+	}
+	NSString* executable = [AgentEnvironment executablePathForCommand:[words.firstObject stringByExpandingTildeInPath] environment:environment];
+	if(!executable)
+		return *reason = [NSString stringWithFormat:@"“%@” not found on your login shell’s PATH", words.firstObject], nil;
 	return @{ @"name": _name, @"command": executable, @"args": [words subarrayWithRange:NSMakeRange(1, words.count - 1)], @"env": NameValuePairs(_variables) };
 }
 @end
@@ -438,18 +453,19 @@ static NSUserDefaults* RegistryDefaults = nil;
 				}
 
 				NSMutableArray<NSDictionary*>* mcpServers = [NSMutableArray array];
-				NSMutableArray<NSString*>* missing        = [NSMutableArray array];
+				NSMutableArray<NSDictionary*>* skipped    = [NSMutableArray array];
 				for(AgentMCPServer* server in servers)
 				{
-					if(NSDictionary* acp = [server ACPRepresentationWithEnvironment:environment])
+					NSString* problem;
+					if(NSDictionary* acp = [server ACPRepresentationWithEnvironment:environment problem:&problem])
 							[mcpServers addObject:acp];
-					else	[missing addObject:server.name.length ? server.name : @"(unnamed)"];
+					else	[skipped addObject:@{ @"name": server.name.length ? server.name : @"Unnamed server", @"reason": problem ?: @"incomplete" }];
 				}
 
 				AgentConnection* connection = [[AgentConnection alloc] initWithExecutable:executable arguments:agent.arguments environment:environment workingDirectory:workingDirectory];
 				AgentSession* session = [[AgentSession alloc] initWithConnection:connection workingDirectory:workingDirectory];
 				session.mcpServers            = mcpServers;
-				session.skippedMCPServerNames = missing;
+				session.skippedMCPServers = skipped;
 				completion(session, nil);
 			});
 		});

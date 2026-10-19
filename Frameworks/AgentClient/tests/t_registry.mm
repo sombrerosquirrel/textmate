@@ -147,21 +147,28 @@ void test_mcp_server_acp_representation ()
 	NSDictionary* environment = @{ @"PATH": @"/usr/bin:/bin" };
 
 	AgentMCPServer* stdio = [[AgentMCPServer alloc] initWithDictionary:@{ @"name": @"cat", @"command": @"cat -u 'a b'", @"variables": @{ @"B": @"2", @"A": @"1" } }];
-	OAK_ASSERT([[stdio ACPRepresentationWithEnvironment:environment] isEqual:(@{
+	OAK_ASSERT([[stdio ACPRepresentationWithEnvironment:environment problem:nullptr] isEqual:(@{
 		@"name": @"cat", @"command": @"/bin/cat", @"args": @[ @"-u", @"a b" ],
 		@"env": @[ @{ @"name": @"A", @"value": @"1" }, @{ @"name": @"B", @"value": @"2" } ],
 	})]);
 
 	AgentMCPServer* http = [[AgentMCPServer alloc] initWithDictionary:@{ @"name": @"web", @"type": @"http", @"url": @"https://example.com/mcp", @"variables": @{ @"Authorization": @"Bearer x" } }];
-	OAK_ASSERT([[http ACPRepresentationWithEnvironment:environment] isEqual:(@{
+	OAK_ASSERT([[http ACPRepresentationWithEnvironment:environment problem:nullptr] isEqual:(@{
 		@"type": @"http", @"name": @"web", @"url": @"https://example.com/mcp",
 		@"headers": @[ @{ @"name": @"Authorization", @"value": @"Bearer x" } ],
 	})]);
 
-	// Incomplete or not found
-	OAK_ASSERT(([[[AgentMCPServer alloc] initWithDictionary:@{ @"name": @"x", @"command": @"no-such-command-xyz" }] ACPRepresentationWithEnvironment:environment] == nil));
-	OAK_ASSERT(([[[AgentMCPServer alloc] initWithDictionary:@{ @"name": @"x", @"type": @"sse" }] ACPRepresentationWithEnvironment:environment] == nil));
-	OAK_ASSERT([[[AgentMCPServer alloc] initWithDictionary:@{ @"command": @"cat" }] ACPRepresentationWithEnvironment:environment] == nil);
+	// Incomplete or not found, with the reason
+	auto problem = [&](NSDictionary* dict) -> NSString* {
+		NSString* res;
+		OAK_ASSERT([[[AgentMCPServer alloc] initWithDictionary:dict] ACPRepresentationWithEnvironment:environment problem:&res] == nil);
+		return res;
+	};
+	OAK_ASSERT([problem(@{ @"name": @"x", @"command": @"no-such-command-xyz" }) isEqualToString:@"“no-such-command-xyz” not found on your login shell’s PATH"]);
+	OAK_ASSERT([problem(@{ @"name": @"x", @"type": @"sse" }) isEqualToString:@"no URL"]);
+	OAK_ASSERT([problem(@{ @"command": @"cat" }) isEqualToString:@"no name"]);
+	OAK_ASSERT([problem(@{ @"name": @"x" }) isEqualToString:@"no command"]);
+	OAK_ASSERT([problem(@{ @"name": @"npx -y some-server" }) hasPrefix:@"no command (the command goes in"]);
 }
 
 void test_keychain ()

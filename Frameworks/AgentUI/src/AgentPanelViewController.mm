@@ -341,8 +341,14 @@ static NSView* Separator ()
 				[self showNotice:[NSString stringWithFormat:@"%@ couldn’t continue the earlier chat, so it doesn’t know what was said above.", agent.name]];
 			_restoringChat = NO;
 			_lastSessionId = session.sessionId;
-			if(session.skippedMCPServerNames.count)
-				[self showNotice:[NSString stringWithFormat:@"MCP servers not available to %@: %@. Check their command or URL in Preferences ▸ Agents; %@ may not support their transport.", agent.name, [session.skippedMCPServerNames componentsJoinedByString:@", "], agent.name]];
+			if(session.skippedMCPServers.count)
+			{
+				NSMutableString* message = [NSMutableString stringWithFormat:@"%@ MCP %@ couldn’t be passed to %@:", session.skippedMCPServers.count == 1 ? @"This" : @"These", session.skippedMCPServers.count == 1 ? @"server" : @"servers", agent.name];
+				for(NSDictionary* server in session.skippedMCPServers)
+					[message appendFormat:@"\n• %@: %@", server[@"name"], [server[@"reason"] stringByReplacingOccurrencesOfString:@"the agent" withString:agent.name]];
+				[message appendString:@"\n\nChange them in Preferences ▸ Agents ▸ MCP Servers."];
+				[self showNotice:message];
+			}
 			if(error)
 			{
 				[self showError:[self message:[NSString stringWithFormat:@"%@ didn’t start: %@", agent.name, error.localizedDescription] withOutputOfSession:session]];
