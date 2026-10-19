@@ -2,10 +2,12 @@
 #import "DocumentWindowController+EditorPanels.h"
 #import <AgentUI/AgentPanelViewController.h>
 #import <AgentClient/AgentFileSystem.h>
+#import <FileBrowser/FileBrowserViewController.h>
 #import <OakEditorPanels/OakEditorPanelsView.h>
 #import <OakTextView/OakDocumentView.h>
 #import <document/OakDocument.h>
 #import <document/OakDocumentController.h>
+#import <settings/settings.h>
 #import <text/types.h>
 #import <ns/ns.h>
 #import <objc/runtime.h>
@@ -262,6 +264,16 @@ static void* kFirstResponderContext = &kFirstResponderContext;
 	[self.agentPanel askAboutSelection];
 }
 
+// Sent by the file browser’s Add to Agent Chat
+- (IBAction)addFilesToAgentChat:(id)sender
+{
+	NSArray<NSURL*>* urls = [sender isKindOfClass:[FileBrowserViewController class]] ? [(FileBrowserViewController*)sender selectedFileURLs] : @[ ];
+	if(!urls.count)
+		return;
+	self.agentPanelVisible = YES;
+	[self.agentPanel addFilesAtPaths:[urls valueForKey:@"path"]];
+}
+
 - (BOOL)isAgentPanelMenuItem:(NSMenuItem*)menuItem
 {
 	SEL action = menuItem.action;
@@ -282,6 +294,19 @@ static void* kFirstResponderContext = &kFirstResponderContext;
 - (NSString*)projectPathForAgentPanel:(AgentPanelViewController*)agentPanel
 {
 	return self.projectPath ?: self.selectedDocument.directory ?: NSHomeDirectory();
+}
+
+- (NSDictionary<NSString*, NSString*>*)agentSettingsForAgentPanel:(AgentPanelViewController*)agentPanel
+{
+	settings_t const settings = settings_for_path(NULL_STR, "", to_s([self projectPathForAgentPanel:agentPanel]));
+	NSMutableDictionary* res = [NSMutableDictionary dictionary];
+	for(NSString* key in @[ @"agentName", @"agentCommand" ])
+	{
+		std::string const value = settings.get(to_s(key), std::string());
+		if(!value.empty())
+			res[key] = to_ns(value);
+	}
+	return res;
 }
 
 - (AgentAttachment*)attachmentForDocument:(OakDocument*)document

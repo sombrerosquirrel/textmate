@@ -498,6 +498,8 @@ static NSMutableIndexSet* MutableLongestCommonSubsequence (NSArray* lhs, NSArray
 		{ @"Show Package Contents",   @selector(showPackageContents:)         },
 		{ @"Show in Finder",          @selector(showSelectedEntriesInFinder:) },
 		{ /* -------- */ },
+		{ @"Add to Agent Chat",       @selector(addSelectedEntriesToAgentChat:), .tag = kRequiresSelectionTag },
+		{ /* -------- */ },
 		{ @"New File",                @selector(newDocumentInDirectory:), @"n", NSEventModifierFlagCommand|NSEventModifierFlagControl },
 		{ @"New Folder",              @selector(newFolder:),              @"n", NSEventModifierFlagCommand|NSEventModifierFlagShift   },
 		{ /* -------- */ },
@@ -647,6 +649,12 @@ static NSMutableIndexSet* MutableLongestCommonSubsequence (NSArray* lhs, NSArray
 - (void)showSelectedEntriesInFinder:(id)sender
 {
 	[NSWorkspace.sharedWorkspace activateFileViewerSelectingURLs:[self.previewableItems valueForKeyPath:@"resolvedURL"]];
+}
+
+// The project window attaches selectedFileURLs to its agent chat
+- (void)addSelectedEntriesToAgentChat:(id)sender
+{
+	[NSApp sendAction:@selector(addFilesToAgentChat:) to:nil from:self];
 }
 
 - (NSURL*)newFile:(id)sender
@@ -1018,6 +1026,8 @@ static NSMutableIndexSet* MutableLongestCommonSubsequence (NSArray* lhs, NSArray
 		hideAndDisable = previewableItems.count == 0 || selectedItems.count == 1 && selectedItems.firstObject.isApplication;
 	else if(menuItem.action == @selector(showSelectedEntriesInFinder:))
 		hideAndDisable = previewableItems.count == 0;
+	else if(menuItem.action == @selector(addSelectedEntriesToAgentChat:))
+		hideAndDisable = self.selectedFileURLs.count == 0;
 	else if(menuItem.action == @selector(showOriginal:))
 		hideAndDisable = selectedItems.count != 1 || [selectedItems.firstObject.URL isEqual:selectedItems.firstObject.resolvedURL];
 	else if(menuItem.action == @selector(showEnclosingFolder:))
