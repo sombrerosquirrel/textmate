@@ -237,6 +237,14 @@ static NSString* PathFromURI (NSString* uri)
 	self.needsDisplay = YES;
 }
 
+- (void)setCodeBlockBackgroundColor:(NSColor*)backgroundColor textColor:(NSColor*)textColor highlighter:(NSAttributedString*(^)(NSString* code, NSString* language))highlighter
+{
+	_markdownStyle.codeBlockBackgroundColor = backgroundColor;
+	_markdownStyle.codeBlockTextColor       = textColor;
+	_markdownStyle.codeHighlighter          = highlighter;
+	[self reloadData];
+}
+
 // =============
 // = Rendering =
 // =============
@@ -546,11 +554,19 @@ static NSString* PathFromURI (NSString* uri)
 
 	if(!item.permissionResolved)
 	{
+		// The oldest open card answers ↩ and ⎋ in the empty message field
+		BOOL takesKeys = item == _transcript.pendingPermissionItems.firstObject;
+		NSString* allowId  = takesKeys ? [item permissionOptionIdAllowing:YES] : nil;
+		NSString* rejectId = takesKeys ? [item permissionOptionIdAllowing:NO] : nil;
 		for(NSDictionary* option in options)
 		{
 			if(option != options.firstObject)
 				[card appendAttributedString:[self text:@"     " font:SmallFont() color:NSColor.labelColor]];
 			NSString* name = [NSString stringWithFormat:@"%@ %@", PermissionOptionGlyph(option[@"kind"]), option[@"name"] ?: option[@"optionId"]];
+			if([[option[@"optionId"] description] isEqualToString:allowId])
+				name = [name stringByAppendingString:@" ↩"];
+			else if([[option[@"optionId"] description] isEqualToString:rejectId])
+				name = [name stringByAppendingString:@" ⎋"];
 			NSMutableAttributedString* link = [[self link:name url:[self actionURL:@"permission" item:item parameters:@{ @"option": [option[@"optionId"] description] ?: @"" }]] mutableCopy];
 			[link addAttribute:NSFontAttributeName value:[NSFont systemFontOfSize:NSFont.systemFontSize weight:NSFontWeightMedium] range:NSMakeRange(0, link.length)];
 			[card appendAttributedString:link];

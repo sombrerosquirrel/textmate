@@ -8,6 +8,9 @@
 #import <document/OakDocument.h>
 #import <document/OakDocumentController.h>
 #import <settings/settings.h>
+#import <bundles/bundles.h>
+#import <theme/OakTheme.h>
+#import <text/case.h>
 #import <text/types.h>
 #import <ns/ns.h>
 #import <objc/runtime.h>
@@ -22,6 +25,7 @@
 - (NSRange)selectedRange;
 - (NSAttributedString*)attributedSubstringForProposedRange:(NSRange)range actualRange:(NSRangePointer)actualRange;
 - (void)insertSnippetWithOptions:(NSDictionary*)someOptions;
+- (NSMutableAttributedString*)syntaxHighlight:(NSString*)code withGrammar:(NSString*)grammarScope; // OakTextView+Hover, in the view’s theme
 @end
 
 // Implemented by OakDocument but not declared in its public header
@@ -109,6 +113,52 @@ static NSString* InsertedTextSelectionString (std::string const& text, size_t fr
 	if(first == last)
 		std::tie(first, last) = std::make_pair(from, to);
 	return first == last ? PositionString(text, first) : [NSString stringWithFormat:@"%@-%@", PositionString(text, first), PositionString(text, last)];
+}
+
+// The grammar for a code fence’s language (“python”, “py”, “objc”, “sh”, …):
+// a common alias, or a grammar whose name or file type is the language, or
+// whose scope is source.‹language›. Nil if none is installed.
+static NSString* GrammarScopeForLanguage (NSString* language)
+{
+	static NSDictionary<NSString*, NSString*>* const aliases = @{
+		@"objc":  @"source.objc",   @"objective-c":   @"source.objc",
+		@"objc++": @"source.objc++", @"objective-c++": @"source.objc++",
+		@"c++":   @"source.c++",    @"cpp":           @"source.c++",
+		@"sh":    @"source.shell",  @"bash":          @"source.shell", @"zsh": @"source.shell", @"shell": @"source.shell", @"console": @"source.shell",
+		@"js":    @"source.js",     @"javascript":    @"source.js",    @"jsx": @"source.js",
+		@"html":  @"text.html.basic", @"xml":         @"text.xml",
+		@"md":    @"text.html.markdown", @"markdown": @"text.html.markdown",
+		@"diff":  @"source.diff",   @"patch":         @"source.diff",
+	};
+	static NSMutableDictionary<NSString*, id>* const cache = [NSMutableDictionary dictionary];
+
+	NSString* key = language.lowercaseString;
+	if(id cached = cache[key])
+		return cached == NSNull.null ? nil : cached;
+
+	std::string res;
+	if(NSString* alias = aliases[key])
+	{
+		if(!bundles::query(bundles::kFieldGrammarScope, to_s(alias), scope::wildcard, bundles::kItemTypeGrammar).empty())
+			res = to_s(alias);
+	}
+
+	std::string const name = to_s(key);
+	for(auto const& item : res.empty() ? bundles::query(bundles::kFieldAny, NULL_STR, scope::wildcard, bundles::kItemTypeGrammar) : std::vector<bundles::item_ptr>())
+	{
+		std::string const scope = item->value_for_field(bundles::kFieldGrammarScope);
+		bool matches = text::lowercase(item->name()) == name || scope == "source." + name;
+		for(auto const& extension : item->values_for_field(bundles::kFieldGrammarExtension))
+			matches = matches || text::lowercase(extension) == name;
+		if(matches && !scope.empty())
+		{
+			res = scope;
+			break;
+		}
+	}
+
+	cache[key] = res.empty() ? (id)NSNull.null : to_ns(res);
+	return res.empty() ? nil : to_ns(res);
 }
 
 static BOOL IsSameFile (NSString* lhs, NSString* rhs)
@@ -258,6 +308,13 @@ static void* kFirstResponderContext = &kFirstResponderContext;
 	[self updateAgentPanelPlacement];
 }
 
+- (IBAction)newAgentChat:(id)sender
+{
+	self.agentPanelVisible = YES;
+	[self.agentPanel newChat:self];
+	[self.agentPanel focusPrompt];
+}
+
 - (IBAction)askAgentAboutSelection:(id)sender
 {
 	self.agentPanelVisible = YES;
@@ -277,7 +334,7 @@ static void* kFirstResponderContext = &kFirstResponderContext;
 - (BOOL)isAgentPanelMenuItem:(NSMenuItem*)menuItem
 {
 	SEL action = menuItem.action;
-	return action == @selector(toggleAgentPanel:) || action == @selector(toggleAgentPanelPlacement:) || action == @selector(askAgentAboutSelection:);
+	return action == @selector(toggleAgentPanel:) || action == @selector(toggleAgentPanelPlacement:) || action == @selector(newAgentChat:) || action == @selector(askAgentAboutSelection:);
 }
 
 - (BOOL)validateAgentPanelMenuItem:(NSMenuItem*)menuItem
@@ -294,6 +351,26 @@ static void* kFirstResponderContext = &kFirstResponderContext;
 - (NSString*)projectPathForAgentPanel:(AgentPanelViewController*)agentPanel
 {
 	return self.projectPath ?: self.selectedDocument.directory ?: NSHomeDirectory();
+}
+
+- (NSDictionary<NSString*, NSColor*>*)codeColorsForAgentPanel:(AgentPanelViewController*)agentPanel
+{
+	bundles::item_ptr themeItem = self.textView.themeUUID ? bundles::lookup(to_s(self.textView.themeUUID)) : bundles::item_ptr();
+	OakTheme* theme = themeItem ? [[OakTheme alloc] initWithBundleItem:themeItem] : nil;
+	if(!theme.backgroundColor || !theme.foregroundColor)
+		return nil;
+	return @{ @"backgroundColor": theme.backgroundColor, @"textColor": theme.foregroundColor };
+}
+
+- (NSAttributedString*)agentPanel:(AgentPanelViewController*)agentPanel highlightCode:(NSString*)code language:(NSString*)language
+{
+	NSString* grammarScope = GrammarScopeForLanguage(language);
+	return grammarScope ? [self.textView syntaxHighlight:code withGrammar:grammarScope] : nil;
+}
+
+- (void)agentPanelThemeDidChange
+{
+	[self.agentPanel themeDidChange];
 }
 
 - (NSDictionary<NSString*, NSString*>*)agentSettingsForAgentPanel:(AgentPanelViewController*)agentPanel

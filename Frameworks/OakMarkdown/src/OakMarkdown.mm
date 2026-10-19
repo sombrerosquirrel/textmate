@@ -344,6 +344,8 @@ namespace
 				// The parser includes the fence’s trailing newline; we add our own separators
 				if([text hasSuffix:@"\n"])
 					text = [text substringToIndex:text.length - 1];
+				if(!currentCode.length)
+					currentCodeStart = output.length;
 				[currentCode appendString:text];
 			}
 
@@ -456,7 +458,7 @@ namespace
 				currentLanguage     = block.codeBlock.languageHint.length ? block.codeBlock.languageHint : nil;
 
 				codeTextBlock = [[NSTextBlock alloc] init];
-				codeTextBlock.backgroundColor = style.codeBackgroundColor;
+				codeTextBlock.backgroundColor = style.codeBlockBackgroundColor ?: style.codeBackgroundColor;
 				[codeTextBlock setValue:100 type:NSTextBlockPercentageValueType forDimension:NSTextBlockWidth];
 				[codeTextBlock setWidth:8 type:NSTextBlockAbsoluteValueType forLayer:NSTextBlockPadding];
 				[codeTextBlock setWidth:4 type:NSTextBlockAbsoluteValueType forLayer:NSTextBlockMargin edge:NSMinYEdge];
@@ -546,6 +548,7 @@ namespace
 			codeBlock.code     = currentCode;
 			codeBlock.language = currentLanguage;
 			[codeBlocks addObject:codeBlock];
+			highlight_code(currentCode, currentLanguage, currentCodeStart);
 
 			if(footer)
 			{
@@ -565,6 +568,32 @@ namespace
 			currentCode         = nil;
 			currentLanguage     = nil;
 			currentCodeIdentity = NSNotFound;
+		}
+
+		// Copies the highlighter’s colours and bold or italic onto the code
+		// block, which starts at `start` in the output
+		void highlight_code (NSString* code, NSString* language, NSUInteger start)
+		{
+			if(!style.codeHighlighter || !code.length || start + code.length > output.length || ![[output.string substringWithRange:NSMakeRange(start, code.length)] isEqualToString:code])
+				return;
+
+			NSAttributedString* highlighted = style.codeHighlighter(code, language);
+			if(highlighted.length != code.length)
+				return;
+
+			[highlighted enumerateAttributesInRange:NSMakeRange(0, highlighted.length) options:0 usingBlock:^(NSDictionary<NSAttributedStringKey, id>* attributes, NSRange range, BOOL*){
+				NSRange target = NSMakeRange(start + range.location, range.length);
+				if(NSColor* color = attributes[NSForegroundColorAttributeName])
+					[output addAttribute:NSForegroundColorAttributeName value:color range:target];
+				if(NSFont* font = attributes[NSFontAttributeName])
+				{
+					NSFontDescriptorSymbolicTraits traits = font.fontDescriptor.symbolicTraits & (NSFontDescriptorTraitBold|NSFontDescriptorTraitItalic);
+					if(traits & NSFontDescriptorTraitBold)
+						[output addAttribute:NSFontAttributeName value:FontWithTrait(style.codeFont, NSFontDescriptorTraitBold) range:target];
+					if(traits & NSFontDescriptorTraitItalic)
+						[output addAttribute:NSFontAttributeName value:FontWithTrait(traits & NSFontDescriptorTraitBold ? FontWithTrait(style.codeFont, NSFontDescriptorTraitBold) : style.codeFont, NSFontDescriptorTraitItalic) range:target];
+				}
+			}];
 		}
 
 		NSDictionary* inline_attributes (NSDictionary* attributes, block_info_t const& block)
@@ -589,9 +618,13 @@ namespace
 			if(html.small || html.superscript || html.subscript)
 				font = [NSFont fontWithDescriptor:font.fontDescriptor size:round(pointSize * (html.small ? 0.85 : 0.75))] ?: font;
 
+			NSColor* textColor = block.quoteDepth || html.quote ? style.secondaryTextColor : style.textColor;
+			if(block.codeBlock && style.codeBlockTextColor)
+				textColor = style.codeBlockTextColor;
+
 			NSMutableDictionary* res = [NSMutableDictionary dictionaryWithDictionary:@{
 				NSFontAttributeName:            font,
-				NSForegroundColorAttributeName: block.quoteDepth || html.quote ? style.secondaryTextColor : style.textColor,
+				NSForegroundColorAttributeName: textColor,
 				NSParagraphStyleAttributeName:  paragraphStyle,
 			}];
 
@@ -1052,6 +1085,7 @@ namespace
 
 		NSInteger currentCodeIdentity = NSNotFound;
 		NSMutableString* currentCode;
+		NSUInteger currentCodeStart = 0; // where currentCode starts in output
 		NSString* currentLanguage;
 		NSTextBlock* codeTextBlock;
 

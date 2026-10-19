@@ -22,6 +22,14 @@
 @property (nonatomic) CGFloat maximumImageWidth; // local images are scaled down to fit; 0 for no limit
 @property (nonatomic) BOOL marksSourceLines;      // add OakMarkdownSourceLineAttributeName, e.g. for scroll sync
 
+// Code blocks (not inline code), e.g. in the editor’s theme: background and
+// text colour (nil: codeBackgroundColor and textColor), and a highlighter
+// that returns `code` with foreground colours and bold or italic fonts for
+// its syntax, or nil to leave it plain. `language` is the fence’s, or nil.
+@property (nonatomic) NSColor* codeBlockBackgroundColor;
+@property (nonatomic) NSColor* codeBlockTextColor;
+@property (nonatomic, copy) NSAttributedString*(^codeHighlighter)(NSString* code, NSString* language);
+
 // nil: every <details> is shown open. Otherwise each starts as written (closed
 // unless it has `open`), the other way round if its index (0 for the first in
 // the document) is in the set, and its summary links to OakMarkdownDetailsURL().

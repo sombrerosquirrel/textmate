@@ -87,6 +87,47 @@ void test_code_block_footer ()
 	OAK_ASSERT_EQ(ParagraphStyleAt(str, @"Copy 0").textBlocks.count, 0);
 }
 
+void test_code_block_highlighter ()
+{
+	__block NSString* seenLanguage;
+	OakMarkdownStyle* style = [OakMarkdownStyle defaultStyle];
+	style.codeBlockTextColor       = NSColor.blueColor;
+	style.codeBlockBackgroundColor = NSColor.blackColor;
+	style.codeHighlighter = ^NSAttributedString*(NSString* code, NSString* language){
+		seenLanguage = language;
+		NSMutableAttributedString* res = [[NSMutableAttributedString alloc] initWithString:code attributes:@{ NSForegroundColorAttributeName: NSColor.whiteColor }];
+		NSRange keyword = [code rangeOfString:@"let"];
+		if(keyword.location != NSNotFound)
+		{
+			[res addAttribute:NSForegroundColorAttributeName value:NSColor.redColor range:keyword];
+			[res addAttribute:NSFontAttributeName value:[NSFont boldSystemFontOfSize:11] range:keyword];
+		}
+		return res;
+	};
+
+	NSAttributedString* str = [OakMarkdownRenderer attributedStringFromMarkdown:@"Use `let` here:\n\n```swift\nlet x = 1\nprint(x)\n```\n\nAfter" style:style codeBlocks:nullptr codeBlockFooter:nil];
+	OAK_ASSERT_EQ(S(seenLanguage), "swift");
+
+	NSUInteger let = [str.string rangeOfString:@"let x"].location;
+	OAK_ASSERT([[str attribute:NSForegroundColorAttributeName atIndex:let effectiveRange:nullptr] isEqual:NSColor.redColor]);
+	OAK_ASSERT(IsBold([str attribute:NSFontAttributeName atIndex:let effectiveRange:nullptr]));
+	OAK_ASSERT(IsMonospace([str attribute:NSFontAttributeName atIndex:let effectiveRange:nullptr]));
+	OAK_ASSERT([[str attribute:NSForegroundColorAttributeName atIndex:[str.string rangeOfString:@"print"].location effectiveRange:nullptr] isEqual:NSColor.whiteColor]);
+	OAK_ASSERT([ParagraphStyleAt(str, @"print").textBlocks.firstObject.backgroundColor isEqual:NSColor.blackColor]);
+
+	// Inline code and other text keep their colours
+	OAK_ASSERT(![[str attribute:NSForegroundColorAttributeName atIndex:[str.string rangeOfString:@"let"].location effectiveRange:nullptr] isEqual:NSColor.redColor]);
+	OAK_ASSERT(![[str attribute:NSForegroundColorAttributeName atIndex:[str.string rangeOfString:@"After"].location effectiveRange:nullptr] isEqual:NSColor.whiteColor]);
+}
+
+void test_code_block_text_color ()
+{
+	OakMarkdownStyle* style = [OakMarkdownStyle defaultStyle];
+	style.codeBlockTextColor = NSColor.blueColor;
+	NSAttributedString* str = [OakMarkdownRenderer attributedStringFromMarkdown:@"```\nplain\n```" style:style codeBlocks:nullptr codeBlockFooter:nil];
+	OAK_ASSERT([[str attribute:NSForegroundColorAttributeName atIndex:0 effectiveRange:nullptr] isEqual:NSColor.blueColor]);
+}
+
 void test_unterminated_code_fence ()
 {
 	// While streaming, the closing fence hasn’t arrived yet

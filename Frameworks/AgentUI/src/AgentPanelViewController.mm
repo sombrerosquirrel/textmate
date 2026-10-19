@@ -104,6 +104,7 @@ static NSView* Separator ()
 	BOOL _restartOnRetry;                       // the agent needs starting again (e.g. after signing in)
 	BOOL _reportedSignedOut;                    // the session said it isn’t signed in
 	NSString* _usageText;
+	NSCache<NSString*, NSAttributedString*>* _highlightedCode; // language + code → highlighted, as replies re-render while streaming
 
 	NSPopUpButton* _agentPopUp;
 	NSButton* _historyButton;
@@ -303,6 +304,34 @@ static NSView* Separator ()
 	[self updatePlaceholders];
 	[self updateStatus];
 	[self currentFileDidChange];
+	[self themeDidChange];
+}
+
+- (void)themeDidChange
+{
+	if(!self.isViewLoaded)
+		return;
+
+	NSDictionary<NSString*, NSColor*>* colors = [_delegate respondsToSelector:@selector(codeColorsForAgentPanel:)] ? [_delegate codeColorsForAgentPanel:self] : nil;
+	NSAttributedString*(^highlighter)(NSString*, NSString*) = nil;
+	if([_delegate respondsToSelector:@selector(agentPanel:highlightCode:language:)])
+	{
+		_highlightedCode = [[NSCache alloc] init];
+		_highlightedCode.countLimit = 200;
+
+		__weak AgentPanelViewController* weakSelf = self;
+		highlighter = ^NSAttributedString*(NSString* code, NSString* language){
+			AgentPanelViewController* strongSelf = weakSelf;
+			if(!strongSelf || !language.length)
+				return nil;
+			NSString* key = [NSString stringWithFormat:@"%@\n%@", language, code];
+			NSAttributedString* res = [strongSelf->_highlightedCode objectForKey:key];
+			if(!res && (res = [strongSelf.delegate agentPanel:strongSelf highlightCode:code language:language]))
+				[strongSelf->_highlightedCode setObject:res forKey:key];
+			return res;
+		};
+	}
+	[_transcriptView setCodeBlockBackgroundColor:colors[@"backgroundColor"] textColor:colors[@"textColor"] highlighter:highlighter];
 }
 
 - (void)updatePlaceholders
@@ -1129,6 +1158,8 @@ static NSString* RelativeDate (NSString* isoDate)
 	[_permissionReplies removeObjectForKey:item.identifier];
 	[_transcript resolvePermissionItem:item selectedOptionId:optionId];
 	[self showItem:item];
+	if(AgentTranscriptItem* next = _transcript.pendingPermissionItems.firstObject)
+		[self showItem:next]; // now answers ↩ and ⎋
 	[self updateStatus];
 
 	if(reply)
@@ -1214,6 +1245,16 @@ static NSString* RelativeDate (NSString* isoDate)
 - (void)transcriptView:(AgentTranscriptView*)transcriptView showDiffOfFile:(NSString*)path oldText:(NSString*)oldText newText:(NSString*)newText
 {
 	[self showDiffOfFile:path oldText:oldText newText:newText];
+}
+
+- (BOOL)promptView:(AgentPromptView*)promptView answerPermission:(BOOL)allow
+{
+	AgentTranscriptItem* item = _transcript.pendingPermissionItems.firstObject;
+	NSString* optionId = [item permissionOptionIdAllowing:allow];
+	if(!optionId || !_permissionReplies[item.identifier])
+		return NO;
+	[self resolvePermissionItem:item selectedOptionId:optionId];
+	return YES;
 }
 
 - (void)transcriptView:(AgentTranscriptView*)transcriptView selectPermissionOption:(NSString*)optionId forItem:(AgentTranscriptItem*)item

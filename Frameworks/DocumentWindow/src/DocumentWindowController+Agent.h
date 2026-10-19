@@ -12,11 +12,13 @@ extern NSString* const kUserDefaultsAgentPanelPlacementKey; // @"left" or @"righ
 - (void)updateAgentPanelPlacement;      // after user defaults change
 - (void)shutdownAgentPanel;             // when the window closes
 - (void)agentPanelCurrentFileDidChange; // when the selected document changes
+- (void)agentPanelThemeDidChange;       // when the editor’s theme changes
 - (BOOL)isAgentPanelMenuItem:(NSMenuItem*)menuItem;
 - (BOOL)validateAgentPanelMenuItem:(NSMenuItem*)menuItem;
 
 - (IBAction)toggleAgentPanel:(id)sender;
 - (IBAction)toggleAgentPanelPlacement:(id)sender;
+- (IBAction)newAgentChat:(id)sender;
 - (IBAction)askAgentAboutSelection:(id)sender;
 - (IBAction)addFilesToAgentChat:(id)sender; // sender provides selectedFileURLs
 @end

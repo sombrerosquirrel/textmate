@@ -26,6 +26,11 @@
 // The agent edited the file at `path` itself; `previousText` is the text
 // before this edit (nil if the agent created the file).
 - (void)agentPanel:(AgentPanelViewController*)agentPanel didEditFileAtPath:(NSString*)path previousText:(NSString*)previousText;
+// Code blocks in replies look like the editor: { backgroundColor, textColor }
+// of the window’s theme, and `code` highlighted by the grammar for the
+// fence’s `language` (nil if there is none, or no grammar for it).
+- (NSDictionary<NSString*, NSColor*>*)codeColorsForAgentPanel:(AgentPanelViewController*)agentPanel;
+- (NSAttributedString*)agentPanel:(AgentPanelViewController*)agentPanel highlightCode:(NSString*)code language:(NSString*)language;
 // Open documents, for the agent’s file access (unsaved edits, undoable writes).
 - (id<AgentDocumentProvider>)documentProviderForAgentPanel:(AgentPanelViewController*)agentPanel;
 @end
@@ -40,6 +45,8 @@ extern NSString* const kUserDefaultsAgentPanelUsesCurrentFileKey; // requests go
 - (void)focusPrompt;
 // The editor switched files (or saved one); updates the prompt’s current-file line.
 - (void)currentFileDidChange;
+// The window’s theme changed; re-renders code blocks.
+- (void)themeDidChange;
 // Attaches the editor selection (or the current file) and focuses the prompt.
 - (void)askAboutSelection;
 // Attaches files (e.g. selected in the file browser) and focuses the prompt.

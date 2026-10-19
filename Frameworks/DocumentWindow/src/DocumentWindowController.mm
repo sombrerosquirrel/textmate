@@ -803,6 +803,7 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 	{
 		theme_ptr theme = self.textView.themeUUID ? parse_theme(bundles::lookup(to_s(self.textView.themeUUID))) : theme_ptr();
 		self.window.appearance = theme ? [NSAppearance appearanceNamed:(theme->is_dark() ? NSAppearanceNameDarkAqua : NSAppearanceNameAqua)] : nil;
+		[self agentPanelThemeDidChange];
 	}
 
 	if([keyPath hasSuffix:@"arrangedObjects.path"] || [keyPath hasSuffix:@"arrangedObjects.displayName"] || [keyPath hasSuffix:@"arrangedObjects.documentEdited"])

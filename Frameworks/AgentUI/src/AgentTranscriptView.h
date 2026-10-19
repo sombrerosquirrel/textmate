@@ -29,6 +29,10 @@
 @property (nonatomic) NSString* emptyStateString; // shown while the transcript is empty
 @property (nonatomic) AgentTerminalManager* terminalManager; // output of tool calls with terminal content
 
+// Code blocks in replies, e.g. in the editor’s theme (see OakMarkdownStyle);
+// re-renders the transcript.
+- (void)setCodeBlockBackgroundColor:(NSColor*)backgroundColor textColor:(NSColor*)textColor highlighter:(NSAttributedString*(^)(NSString* code, NSString* language))highlighter;
+
 - (void)setNeedsDisplayItem:(AgentTranscriptItem*)item; // coalesced re-render
 - (void)reloadData;                                       // re-render everything now
 @end
