@@ -1,7 +1,7 @@
 ---
 title: TextMate Agent Harness — Design
 created: 2026-10-13
-status: approved 2026-10-13 — M1 done, M2 done (2026-10-16), M3 done (2026-10-18), M4 done (2026-10-19)
+status: approved 2026-10-13 — M1 done, M2 done (2026-10-16), M3 done (2026-10-18), M4 done (2026-10-19), M5 steps 1–6 implemented (2026-10-19)
 branch: feature/agent
 related: textmate-ai-plan.md
 ---
@@ -189,7 +189,7 @@ The chat panel aims to match VS Code's chat view where ACP makes it possible. Ma
 | Terminal command output | Terminal output in tool rows | M3 |
 | Chat history (previous chats) | Session list / load / resume (both agents support it) | M4 |
 | MCP servers | One list for all agents, Preferences ▸ Agents (changed from per agent, see [06-m4-configuration.md](../implementation/06-m4-configuration.md#decisions)) | M4 |
-| Inline chat in the editor (⌘I) | Inline prompt at the caret | M5 |
+| Inline chat in the editor (⌘I) | Inline prompt at the caret, ⌃⌥⌘I (⌘I is Italic in Markdown/HTML) | M5 |
 | Syntax-highlighted code blocks | TextMate grammars + theme | M5 |
 | Voice input | macOS Dictation works in the input field | M2 (built-in) |
 
