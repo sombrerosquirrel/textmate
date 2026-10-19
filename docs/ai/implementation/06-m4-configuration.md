@@ -1,13 +1,14 @@
 ---
 title: M4 — Configuration: Preferences, Keychain, Project Overrides, Chat History, MCP
-status: awaiting user check
+status: complete
 started: 2026-10-18
+completed: 2026-10-19
 tags: [textmate, implementation, acp, agent]
 ---
 
 # M4 — Configuration: Preferences, Keychain, Project Overrides, Chat History, MCP
 
-**Status:** 🔄 Implemented 2026-10-19, awaiting user check ([To check](#to-check-user))
+**Status:** ✅ Complete (2026-10-19): implemented and checked by the user the same day, with the fixes under [Changes after the first check](#changes-after-the-first-check-2026-10-19)
 **Branch:** `feature/agent-config` (from `feature/agent-tools`)
 **Design:** [agent-harness-design.md §5.1, §5.5–§5.8, §6, §6a](../plans/agent-harness-design.md)
 
@@ -67,7 +68,7 @@ Checked in the running app (2026-10-19, via a probe): the Agents pane renders an
 Tests: AgentClient 66 (new: registry 8 incl. Keychain round-trip, sessions 9: list, load, load at start and fallback, MCP filtering). The fake agent learned `--sessions` and `mcp`. `ctest` 28/28.
 
 ## Commits
-344317b2 configuration, Keychain, MCP, list and load · 364513ce Agents pane · 402ec2be register pane, Agent Settings… · 7649ae25 picker, history, restore · 2267d3b6 `.tm_properties`, Add to Agent Chat · 717777c2 MCP skip reasons · c700c8fc Agents pane tables, toolbar icons · Copilot MCP on the command line · Agents pane width
+344317b2 configuration, Keychain, MCP, list and load · 364513ce Agents pane · 402ec2be register pane, Agent Settings… · 7649ae25 picker, history, restore · 2267d3b6 `.tm_properties`, Add to Agent Chat · 717777c2 MCP skip reasons · c700c8fc Agents pane tables, toolbar icons · 205529aa Copilot MCP on the command line · db9d90f9 Agents pane width
 
 ## Changes after the first check (2026-10-19)
 - The user put the MCP command in the Name column and got a notice blaming the transport. Notices now give each skipped server's reason (no name, no command, no URL, not found on the PATH, transport not supported), and point out a command typed into Name. + in MCP Servers starts editing the command, with a placeholder.
@@ -77,15 +78,15 @@ Tests: AgentClient 66 (new: registry 8 incl. Keychain round-trip, sessions 9: li
 - Copilot didn't list the `everything` server (user). Checked outside TextMate: Copilot CLI 1.0.97's ACP `newSession`/`loadSession` ignore `mcpServers` (it announces `mcpCapabilities` but only loads its own configuration); Claude Code connected to the same server. Copilot takes `--additional-mcp-config <json>` (its `mcp-config.json` format, types `local`/`http`/`sse`), which works with `--acp`, so agents whose command is `copilot` get the servers that way (`takesMCPServersAsArgument`, `+argumentsForMCPServers:`). They apply when Copilot starts, like other agent settings.
 
 ## To check (user)
-1. Preferences ▸ Agents: both agents listed; edit Claude's command (e.g. add `--debug`), Restore Defaults brings it back. Add an agent, give it a command, check it appears in the panel's picker; remove it.
-2. Turn an agent off: it leaves the picker (stays while its chat is open).
-3. API key: for Claude, tick “Use an API key”, paste a key, start a New Chat; the agent should use it (Claude's `/status` or usage shows API billing). Untick to go back to the subscription. The key is in Keychain Access under “TextMate Agent API Key”.
-4. `.tm_properties` in a project: `agentName = "Claude Code"` makes new windows of that project start with Claude; `agentCommand` with an unknown `agentName` adds that agent to the picker.
-5. MCP Servers tab: add a stdio server (e.g. `npx -y @modelcontextprotocol/server-everything`), New Chat, ask the agent to list its MCP tools. A server with a wrong command gives a notice in the chat.
-6. History button: lists earlier chats with dates; choosing one shows it and continues it. Check how replayed user messages look (attachments appear as Markdown links; the current-file note may show).
-7. Quit the agent's process (e.g. `pkill -f claude-agent-acp`), send a message: the chat continues with its context, without duplicating the transcript.
-8. File browser: select files ▸ right-click ▸ Add to Agent Chat: chips appear in the prompt.
-9. Agent picker ▸ Agent Settings… opens Preferences on the Agents pane.
+- [x] Preferences ▸ Agents: both agents listed; edit Claude's command (e.g. add `--debug`), Restore Defaults brings it back. Add an agent, give it a command, check it appears in the panel's picker; remove it.
+- [x] Turn an agent off: it leaves the picker (stays while its chat is open).
+- [x] API key: for Claude, tick “Use an API key”, paste a key, start a New Chat; the agent should use it (Claude's `/status` or usage shows API billing). Untick to go back to the subscription. The key is in Keychain Access under “TextMate Agent API Key”.
+- [x] `.tm_properties` in a project: `agentName = "Claude Code"` makes new windows of that project start with Claude; `agentCommand` with an unknown `agentName` adds that agent to the picker.
+- [x] MCP Servers tab: add a stdio server (e.g. `npx -y @modelcontextprotocol/server-everything`), New Chat, ask the agent to list its MCP tools. A server with a wrong command gives a notice in the chat.
+- [x] History button: lists earlier chats with dates; choosing one shows it and continues it. Check how replayed user messages look (attachments appear as Markdown links; the current-file note may show).
+- [x] Quit the agent's process (e.g. `pkill -f claude-agent-acp`), send a message: the chat continues with its context, without duplicating the transcript.
+- [x] File browser: select files ▸ right-click ▸ Add to Agent Chat: chips appear in the prompt.
+- [x] Agent picker ▸ Agent Settings… opens Preferences on the Agents pane.
 
 ## Future work
 - Replayed user messages show the prompt as sent, including attachment links and the current-file note; strip TextMate's own additions when replaying.

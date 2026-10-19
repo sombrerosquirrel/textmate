@@ -1,7 +1,7 @@
 ---
 title: TextMate Agent Harness — Design
 created: 2026-10-13
-status: approved 2026-10-13 — M1 done, M2 done (2026-10-16), M3 done (2026-10-18), M4 implemented (2026-10-19)
+status: approved 2026-10-13 — M1 done, M2 done (2026-10-16), M3 done (2026-10-18), M4 done (2026-10-19)
 branch: feature/agent
 related: textmate-ai-plan.md
 ---
