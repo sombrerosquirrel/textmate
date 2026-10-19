@@ -10,6 +10,8 @@
 @protocol AgentPanelDelegate <NSObject>
 - (NSString*)projectPathForAgentPanel:(AgentPanelViewController*)agentPanel;
 @optional
+// The project’s `.tm_properties` agent settings: { agentName, agentCommand }, either may be missing.
+- (NSDictionary<NSString*, NSString*>*)agentSettingsForAgentPanel:(AgentPanelViewController*)agentPanel;
 - (AgentAttachment*)currentFileAttachmentForAgentPanel:(AgentPanelViewController*)agentPanel;
 - (AgentAttachment*)selectionAttachmentForAgentPanel:(AgentPanelViewController*)agentPanel; // nil without a selection
 - (NSArray<AgentAttachment*>*)openFileAttachmentsForAgentPanel:(AgentPanelViewController*)agentPanel;
@@ -40,6 +42,8 @@ extern NSString* const kUserDefaultsAgentPanelUsesCurrentFileKey; // requests go
 - (void)currentFileDidChange;
 // Attaches the editor selection (or the current file) and focuses the prompt.
 - (void)askAboutSelection;
+// Attaches files (e.g. selected in the file browser) and focuses the prompt.
+- (void)addFilesAtPaths:(NSArray<NSString*>*)paths;
 - (IBAction)newChat:(id)sender;
 // Terminates the agent; call when the window closes.
 - (void)shutdown;

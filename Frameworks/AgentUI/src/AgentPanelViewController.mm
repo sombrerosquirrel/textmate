@@ -53,8 +53,11 @@ static NSView* Separator ()
 
 @interface AgentPanelViewController () <AgentSessionDelegate, AgentPromptViewDelegate, AgentTranscriptViewDelegate, AgentFileSystemDelegate, AgentChangesViewDelegate, AgentTerminalManagerDelegate>
 {
+	NSArray<AgentDescriptor*>* _agents; // the agent picker’s agents, with the project’s overrides
 	AgentDescriptor* _agent;
 	AgentSession* _session;
+	NSString* _lastSessionId;   // the chat to load if the agent is started again
+	BOOL _restoringChat;        // loading _lastSessionId: the transcript already shows its replay
 	BOOL _creatingSession;
 	AgentFileSystem* _fileSystem;              // one per chat, so its changes outlive an agent restart
 	AgentTerminalManager* _terminals;          // one per chat, so output stays visible after a restart
@@ -68,6 +71,7 @@ static NSView* Separator ()
 	NSString* _usageText;
 
 	NSPopUpButton* _agentPopUp;
+	NSButton* _historyButton;
 	AgentTranscriptView* _transcriptView;
 	AgentChangesView* _changesView;
 	AgentPromptView* _promptView;
@@ -92,14 +96,94 @@ static NSView* Separator ()
 		_transcript = [[AgentTranscript alloc] init];
 		_permissionReplies = [NSMutableDictionary dictionary];
 		_finishedToolCallIds = [NSMutableSet set];
-		_agent      = [AgentRegistry agentWithIdentifier:[NSUserDefaults.standardUserDefaults stringForKey:kUserDefaultsAgentPanelAgentKey]] ?: AgentRegistry.agents.firstObject;
+		[NSNotificationCenter.defaultCenter addObserver:self selector:@selector(agentRegistryDidChange:) name:AgentRegistryDidChangeNotification object:nil];
 	}
 	return self;
 }
 
 - (void)dealloc
 {
+	[NSNotificationCenter.defaultCenter removeObserver:self];
 	[_session close];
+}
+
+// ==========
+// = Agents =
+// ==========
+
+// The configured agents with the project’s `.tm_properties` overrides; the
+// agent `agentName` names is preferred over the last one used.
+- (AgentDescriptor*)reloadAgents
+{
+	NSDictionary* settings = [_delegate respondsToSelector:@selector(agentSettingsForAgentPanel:)] ? [_delegate agentSettingsForAgentPanel:self] : nil;
+	AgentDescriptor* projectAgent;
+	_agents = [AgentRegistry agentsForProjectWithAgentName:settings[@"agentName"] command:settings[@"agentCommand"] projectAgent:&projectAgent];
+	if(projectAgent)
+		return projectAgent;
+
+	NSString* lastUsed = [NSUserDefaults.standardUserDefaults stringForKey:kUserDefaultsAgentPanelAgentKey];
+	for(AgentDescriptor* agent in _agents)
+	{
+		if([agent.identifier isEqualToString:lastUsed])
+			return agent;
+	}
+	return _agents.firstObject;
+}
+
+- (AgentDescriptor*)agentWithIdentifier:(NSString*)identifier
+{
+	for(AgentDescriptor* agent in _agents)
+	{
+		if([agent.identifier isEqualToString:identifier])
+			return agent;
+	}
+	return nil;
+}
+
+- (void)rebuildAgentPopUp
+{
+	[_agentPopUp removeAllItems];
+	for(AgentDescriptor* agent in _agents)
+	{
+		[_agentPopUp addItemWithTitle:agent.name];
+		_agentPopUp.lastItem.representedObject = agent.identifier;
+	}
+	// The current agent stays listed while its chat lasts, even if it was disabled meanwhile
+	if(_agent && ![self agentWithIdentifier:_agent.identifier])
+	{
+		[_agentPopUp addItemWithTitle:_agent.name];
+		_agentPopUp.lastItem.representedObject = _agent.identifier;
+	}
+	[_agentPopUp.menu addItem:[NSMenuItem separatorItem]];
+	NSMenuItem* settingsItem = [_agentPopUp.menu addItemWithTitle:@"Agent Settings…" action:@selector(showAgentSettings:) keyEquivalent:@""];
+	settingsItem.target = self;
+
+	NSInteger index = [_agentPopUp indexOfItemWithRepresentedObject:_agent.identifier];
+	if(index != -1)
+		[_agentPopUp selectItemAtIndex:index];
+}
+
+- (void)showAgentSettings:(id)sender
+{
+	[_agentPopUp selectItemAtIndex:[_agentPopUp indexOfItemWithRepresentedObject:_agent.identifier]];
+	[NSApp sendAction:@selector(showAgentPreferences:) to:nil from:self];
+}
+
+// Changed settings take effect when the agent is next started (New Chat,
+// switching agents, or after it stopped); the running chat isn’t interrupted.
+- (void)agentRegistryDidChange:(NSNotification*)notification
+{
+	AgentDescriptor* preferred = [self reloadAgents];
+	if(!_agent)
+		_agent = preferred;
+	else if(AgentDescriptor* updated = [self agentWithIdentifier:_agent.identifier])
+		_agent = updated;
+	if(self.isViewLoaded)
+	{
+		[self rebuildAgentPopUp];
+		[self updatePlaceholders];
+		[self updateStatus];
+	}
 }
 
 - (void)loadView
@@ -110,18 +194,18 @@ static NSView* Separator ()
 	_agentPopUp.target      = self;
 	_agentPopUp.action      = @selector(agentChanged:);
 	_agentPopUp.toolTip     = @"Agent";
-	for(AgentDescriptor* agent in AgentRegistry.agents)
-	{
-		[_agentPopUp addItemWithTitle:agent.name];
-		_agentPopUp.lastItem.representedObject = agent.identifier;
-	}
-	[_agentPopUp selectItemAtIndex:[AgentRegistry.agents indexOfObject:_agent]];
+	_agent = [self reloadAgents];
+	[self rebuildAgentPopUp];
+
+	_historyButton = [NSButton buttonWithImage:[NSImage imageWithSystemSymbolName:@"clock.arrow.circlepath" accessibilityDescription:@"Previous Chats"] target:self action:@selector(showHistory:)];
+	_historyButton.bordered = NO;
+	_historyButton.toolTip  = @"Previous Chats";
 
 	NSButton* newChatButton = [NSButton buttonWithImage:[NSImage imageWithSystemSymbolName:@"square.and.pencil" accessibilityDescription:@"New Chat"] target:self action:@selector(newChat:)];
 	newChatButton.bordered = NO;
 	newChatButton.toolTip  = @"New Chat";
 
-	NSStackView* header = [NSStackView stackViewWithViews:@[ _agentPopUp, [NSView new], newChatButton ]];
+	NSStackView* header = [NSStackView stackViewWithViews:@[ _agentPopUp, [NSView new], _historyButton, newChatButton ]];
 	header.orientation = NSUserInterfaceLayoutOrientationHorizontal;
 	header.edgeInsets  = NSEdgeInsetsMake(6, 8, 6, 8);
 
@@ -209,7 +293,7 @@ static NSView* Separator ()
 
 - (BOOL)sessionIsUsable
 {
-	return _session && (_session.state == AgentSessionStateStarting || _session.state == AgentSessionStateReady || _session.state == AgentSessionStatePrompting);
+	return _session && (_session.state == AgentSessionStateStarting || _session.state == AgentSessionStateReady || _session.state == AgentSessionStatePrompting || _session.state == AgentSessionStateLoading);
 }
 
 - (void)startSessionIfNeeded
@@ -221,6 +305,8 @@ static NSView* Separator ()
 	_creatingSession = YES;
 	[self updateStatus];
 
+	if(!_agent)
+		_agent = [self reloadAgents];
 	AgentDescriptor* agent = _agent;
 	NSString* projectPath  = [_delegate projectPathForAgentPanel:self] ?: NSHomeDirectory();
 	[AgentRegistry makeSessionForAgent:agent workingDirectory:projectPath completion:^(AgentSession* session, NSError* error){
@@ -242,9 +328,21 @@ static NSView* Separator ()
 		_session.clientCapabilities = @{ @"_meta": @{ @"terminal_output": @YES, @"terminal_output_delta": @YES } };
 		_session.fileSystem = [self fileSystemForProjectPath:projectPath];
 		_session.terminals  = [self terminalsForProjectPath:projectPath environment:session.connection.environment];
+		// Started again after it stopped: continue the chat the transcript shows
+		if(_lastSessionId && _transcript.items.count)
+		{
+			_session.sessionIdToLoad = _lastSessionId;
+			_restoringChat = YES;
+		}
 		[session startWithCompletion:^(NSError* error){
 			if(session != _session)
 				return;
+			if(_restoringChat && session.loadError)
+				[self showNotice:[NSString stringWithFormat:@"%@ couldn’t continue the earlier chat, so it doesn’t know what was said above.", agent.name]];
+			_restoringChat = NO;
+			_lastSessionId = session.sessionId;
+			if(session.skippedMCPServerNames.count)
+				[self showNotice:[NSString stringWithFormat:@"MCP servers not available to %@: %@. Check their command or URL in Preferences ▸ Agents; %@ may not support their transport.", agent.name, [session.skippedMCPServerNames componentsJoinedByString:@", "], agent.name]];
 			if(error)
 			{
 				[self showError:[self message:[NSString stringWithFormat:@"%@ didn’t start: %@", agent.name, error.localizedDescription] withOutputOfSession:session]];
@@ -307,6 +405,15 @@ static NSView* Separator ()
 - (void)resetConversation
 {
 	[self closeSession];
+	[self clearConversation];
+	[self updatePlaceholders];
+	[self startSessionIfNeeded];
+}
+
+// Clears the transcript and the chat’s changes and commands, but keeps the agent running
+- (void)clearConversation
+{
+	_lastSessionId = nil;
 	_fileSystem = nil;
 	[_terminals killAll];
 	_terminals = nil;
@@ -319,8 +426,6 @@ static NSView* Separator ()
 	_pendingAttachments = nil;
 	_pendingCurrentFile = nil;
 	_promptView.working = NO;
-	[self updatePlaceholders];
-	[self startSessionIfNeeded];
 }
 
 - (IBAction)newChat:(id)sender
@@ -331,13 +436,113 @@ static NSView* Separator ()
 
 - (void)agentChanged:(NSPopUpButton*)sender
 {
-	AgentDescriptor* agent = [AgentRegistry agentWithIdentifier:sender.selectedItem.representedObject];
+	AgentDescriptor* agent = [self agentWithIdentifier:sender.selectedItem.representedObject];
 	if(!agent || agent == _agent)
 		return;
 	_agent = agent;
 	[NSUserDefaults.standardUserDefaults setObject:agent.identifier forKey:kUserDefaultsAgentPanelAgentKey];
 	[self resetConversation];
 	[self focusPrompt];
+}
+
+// =================
+// = Chat History =
+// =================
+
+static NSString* RelativeDate (NSString* isoDate)
+{
+	static NSISO8601DateFormatter* parser = [] {
+		NSISO8601DateFormatter* res = [[NSISO8601DateFormatter alloc] init];
+		res.formatOptions = NSISO8601DateFormatWithInternetDateTime|NSISO8601DateFormatWithFractionalSeconds;
+		return res;
+	}();
+	static NSRelativeDateTimeFormatter* formatter = [[NSRelativeDateTimeFormatter alloc] init];
+
+	if(![isoDate isKindOfClass:[NSString class]])
+		return nil;
+	NSDate* date = [parser dateFromString:isoDate];
+	if(!date)
+	{
+		NSISO8601DateFormatter* plain = [[NSISO8601DateFormatter alloc] init];
+		date = [plain dateFromString:isoDate];
+	}
+	return date ? [formatter localizedStringForDate:date relativeToDate:NSDate.date] : nil;
+}
+
+- (void)showHistory:(id)sender
+{
+	if(_session.state != AgentSessionStateReady || !_session.canListSessions)
+		return;
+
+	AgentSession* session = _session;
+	_historyButton.enabled = NO;
+	[session listSessionsWithCompletion:^(NSArray<NSDictionary*>* sessions, NSError* error){
+		[self updateHistoryButton];
+		if(session != _session)
+			return;
+		if(error)
+			return [self showError:[NSString stringWithFormat:@"Couldn’t list previous chats: %@", error.localizedDescription]];
+
+		NSMenu* menu = [[NSMenu alloc] initWithTitle:@"Previous Chats"];
+		[menu addItem:[NSMenuItem sectionHeaderWithTitle:[NSString stringWithFormat:@"Previous Chats with %@", _agent.name]]];
+		NSUInteger count = 0;
+		for(NSDictionary* info in sessions)
+		{
+			if(++count > 30)
+				break;
+			NSString* title = [info[@"title"] isKindOfClass:[NSString class]] && [info[@"title"] length] ? info[@"title"] : @"Untitled Chat";
+			if(title.length > 60)
+				title = [[title substringToIndex:59] stringByAppendingString:@"…"];
+			NSMenuItem* item = [menu addItemWithTitle:title action:@selector(loadChatFromMenu:) keyEquivalent:@""];
+			item.target            = self;
+			item.representedObject = info[@"sessionId"];
+			item.state             = [info[@"sessionId"] isEqual:_session.sessionId] ? NSControlStateValueOn : NSControlStateValueOff;
+			if(NSString* date = RelativeDate(info[@"updatedAt"]))
+			{
+				NSMutableAttributedString* attributedTitle = [[NSMutableAttributedString alloc] initWithString:title attributes:@{ NSFontAttributeName: [NSFont menuFontOfSize:0] }];
+				[attributedTitle appendAttributedString:[[NSAttributedString alloc] initWithString:[@"  " stringByAppendingString:date] attributes:@{ NSFontAttributeName: [NSFont menuFontOfSize:NSFont.smallSystemFontSize], NSForegroundColorAttributeName: NSColor.secondaryLabelColor }]];
+				item.attributedTitle = attributedTitle;
+			}
+		}
+		if(!count)
+			[menu addItemWithTitle:@"No previous chats in this folder" action:nil keyEquivalent:@""].enabled = NO;
+
+		[menu popUpMenuPositioningItem:nil atLocation:NSMakePoint(0, NSHeight(_historyButton.bounds) + 4) inView:_historyButton];
+	}];
+}
+
+- (void)loadChatFromMenu:(NSMenuItem*)sender
+{
+	NSString* sessionId = sender.representedObject;
+	if(!sessionId || [sessionId isEqual:_session.sessionId] || _session.state != AgentSessionStateReady)
+		return;
+
+	[self cancelPendingPermissionRequests];
+	[self clearConversation];
+
+	// The loaded chat gets its own changed-files list and commands
+	AgentSession* session = _session;
+	NSString* projectPath = session.workingDirectory;
+	session.fileSystem = [self fileSystemForProjectPath:projectPath];
+	session.terminals  = [self terminalsForProjectPath:projectPath environment:session.connection.environment];
+	[session loadSession:sessionId completion:^(NSError* error){
+		if(session != _session)
+			return;
+		if(error)
+			[self showError:[NSString stringWithFormat:@"Couldn’t load the chat: %@", error.localizedDescription]];
+		else
+			_lastSessionId = sessionId;
+		[_transcriptView reloadData];
+		[self rebuildOptions];
+		[self updateStatus];
+	}];
+	[self updateStatus];
+}
+
+- (void)updateHistoryButton
+{
+	_historyButton.hidden  = _session && _session.state != AgentSessionStateStarting && !_session.canListSessions;
+	_historyButton.enabled = _session.state == AgentSessionStateReady && _session.canListSessions && _session.canLoadSessions;
 }
 
 - (void)askAboutSelection
@@ -349,6 +554,14 @@ static NSView* Separator ()
 		attachment = [_delegate currentFileAttachmentForAgentPanel:self];
 	if(attachment)
 		[_promptView addAttachment:attachment];
+	[self startSessionIfNeeded];
+	[self focusPrompt];
+}
+
+- (void)addFilesAtPaths:(NSArray<NSString*>*)paths
+{
+	for(NSString* path in paths)
+		[_promptView addAttachment:[AgentAttachment fileAttachmentWithPath:path text:nil]];
 	[self startSessionIfNeeded];
 	[self focusPrompt];
 }
@@ -619,6 +832,8 @@ static NSView* Separator ()
 	NSString* status;
 	if(_creatingSession || _session.state == AgentSessionStateStarting)
 		status = [NSString stringWithFormat:@"Starting %@…", _agent.name];
+	else if(_session.state == AgentSessionStateLoading)
+		status = _restoringChat ? [NSString stringWithFormat:@"Starting %@…", _agent.name] : @"Loading chat…";
 	else if(!_session || _session.state == AgentSessionStateFailed || _session.state == AgentSessionStateTerminated)
 		status = @"Not running";
 	else if(_transcript.pendingPermissionItems.count)
@@ -630,6 +845,7 @@ static NSView* Separator ()
 
 	_statusField.stringValue = status;
 	_statusField.toolTip     = _session.workingDirectory;
+	[self updateHistoryButton];
 }
 
 // =========================
@@ -658,7 +874,7 @@ static NSView* Separator ()
 
 - (void)agentSession:(AgentSession*)session didReceiveUpdate:(NSDictionary*)update
 {
-	if(session != _session)
+	if(session != _session || (_restoringChat && session.state == AgentSessionStateLoading))
 		return;
 
 	if([update[@"sessionUpdate"] isEqualToString:@"usage_update"])
@@ -674,7 +890,8 @@ static NSView* Separator ()
 	if(AgentTranscriptItem* item = [_transcript applyUpdate:update])
 	{
 		[self showItem:item];
-		if(item.kind == AgentTranscriptItemKindToolCall)
+		// A loaded chat’s edits were made before, not now
+		if(item.kind == AgentTranscriptItemKindToolCall && session.state != AgentSessionStateLoading)
 			[self trackFilesOfToolCall:item.toolCall];
 	}
 }
