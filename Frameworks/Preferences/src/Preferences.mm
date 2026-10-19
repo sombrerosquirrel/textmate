@@ -6,6 +6,7 @@
 #import "TerminalPreferences.h"
 #import "FormattersPreferences.h"
 #import "AdvancedPreferences.h"
+#import "AgentsPreferences.h"
 #import "Keys.h"
 #import <OakAppKit/OakTransitionViewController.h>
 
@@ -101,6 +102,7 @@ static NSString* const kMASPreferencesSelectedViewKey = @"MASPreferences Selecte
 			[[BundlesPreferences alloc] init],
 			[[VariablesPreferences alloc] init],
 			[[FormattersPreferences alloc] init],
+			[[AgentsPreferences alloc] init],
 			[[TerminalPreferences alloc] init],
 			[[AdvancedPreferences alloc] init]
 		];
@@ -127,6 +129,17 @@ static NSString* const kMASPreferencesSelectedViewKey = @"MASPreferences Selecte
 		}
 	}
 	return self;
+}
+
+- (void)showWindowWithPaneIdentifier:(NSString*)identifier
+{
+	if([_preferencesViewController viewControllerForIdentifier:identifier])
+	{
+		[NSUserDefaults.standardUserDefaults setObject:identifier forKey:kMASPreferencesSelectedViewKey];
+		if(self.window.isVisible)
+			_preferencesViewController.selectedViewIdentifier = identifier;
+	}
+	[self showWindow:self];
 }
 
 - (void)windowDidMove:(NSNotification*)aNotification

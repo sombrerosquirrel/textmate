@@ -26,6 +26,7 @@
 - (IBAction)showCommandPalette:(id)sender;
 
 - (IBAction)showPreferences:(id)sender;
+- (IBAction)showAgentPreferences:(id)sender;
 - (IBAction)showBundleEditor:(id)sender;
 
 - (IBAction)newDocumentAndActivate:(id)sender;

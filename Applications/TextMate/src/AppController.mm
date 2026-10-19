@@ -748,6 +748,11 @@ BOOL HasDocumentWindow (NSArray* windows)
 	[Preferences.sharedInstance showWindow:self];
 }
 
+- (IBAction)showAgentPreferences:(id)sender
+{
+	[Preferences.sharedInstance showWindowWithPaneIdentifier:@"Agents"];
+}
+
 - (IBAction)showBundleEditor:(id)sender
 {
 	[BundleEditor.sharedInstance showWindow:self];
