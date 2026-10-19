@@ -24,6 +24,7 @@
 @interface OakTextView (AgentEditorAccess)
 - (NSRange)selectedRange;
 - (NSAttributedString*)attributedSubstringForProposedRange:(NSRange)range actualRange:(NSRangePointer)actualRange;
+- (NSRect)firstRectForCharacterRange:(NSRange)range actualRange:(NSRangePointer)actualRange;
 - (void)insertSnippetWithOptions:(NSDictionary*)someOptions;
 - (NSMutableAttributedString*)syntaxHighlight:(NSString*)code withGrammar:(NSString*)grammarScope; // OakTextView+Hover, in the view’s theme
 @end
@@ -261,6 +262,11 @@ static void* kFirstResponderContext = &kFirstResponderContext;
 	[self.agentPanel shutdown];
 }
 
+- (void)agentPanelThemeDidChange
+{
+	[self.agentPanel themeDidChange];
+}
+
 - (void)agentPanelCurrentFileDidChange
 {
 	[self.agentPanel currentFileDidChange];
@@ -321,6 +327,22 @@ static void* kFirstResponderContext = &kFirstResponderContext;
 	[self.agentPanel askAboutSelection];
 }
 
+- (IBAction)askAgentAtCaret:(id)sender
+{
+	OakTextView* textView = self.textView;
+	if(!textView)
+		return;
+	[self.window makeFirstResponder:textView];
+
+	NSRange selection = textView.selectedRange;
+	NSRect screenRect = [textView firstRectForCharacterRange:NSMakeRange(selection.location, 0) actualRange:nullptr];
+	NSRect caretRect  = [textView convertRect:[self.window convertRectFromScreen:screenRect] fromView:nil];
+	if(!NSIntersectsRect(caretRect, textView.visibleRect))
+		caretRect = NSMakeRect(NSMidX(textView.visibleRect), NSMinY(textView.visibleRect), 1, 1);
+	caretRect.size.width = MAX(caretRect.size.width, 1);
+	[[self agentPanelCreatingIfNeeded] showInlinePromptRelativeToRect:caretRect ofView:textView];
+}
+
 // Sent by the file browser’s Add to Agent Chat
 - (IBAction)addFilesToAgentChat:(id)sender
 {
@@ -334,7 +356,7 @@ static void* kFirstResponderContext = &kFirstResponderContext;
 - (BOOL)isAgentPanelMenuItem:(NSMenuItem*)menuItem
 {
 	SEL action = menuItem.action;
-	return action == @selector(toggleAgentPanel:) || action == @selector(toggleAgentPanelPlacement:) || action == @selector(newAgentChat:) || action == @selector(askAgentAboutSelection:);
+	return action == @selector(toggleAgentPanel:) || action == @selector(toggleAgentPanelPlacement:) || action == @selector(newAgentChat:) || action == @selector(askAgentAboutSelection:) || action == @selector(askAgentAtCaret:);
 }
 
 - (BOOL)validateAgentPanelMenuItem:(NSMenuItem*)menuItem
@@ -368,9 +390,10 @@ static void* kFirstResponderContext = &kFirstResponderContext;
 	return grammarScope ? [self.textView syntaxHighlight:code withGrammar:grammarScope] : nil;
 }
 
-- (void)agentPanelThemeDidChange
+- (void)agentPanelShowChat:(AgentPanelViewController*)agentPanel
 {
-	[self.agentPanel themeDidChange];
+	self.agentPanelVisible = YES;
+	[agentPanel focusPrompt];
 }
 
 - (NSDictionary<NSString*, NSString*>*)agentSettingsForAgentPanel:(AgentPanelViewController*)agentPanel

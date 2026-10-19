@@ -16,6 +16,8 @@
 - (AgentAttachment*)selectionAttachmentForAgentPanel:(AgentPanelViewController*)agentPanel; // nil without a selection
 - (NSArray<AgentAttachment*>*)openFileAttachmentsForAgentPanel:(AgentPanelViewController*)agentPanel;
 - (void)agentPanel:(AgentPanelViewController*)agentPanel insertText:(NSString*)text;
+// Show the panel (e.g. Show in Chat from the inline prompt).
+- (void)agentPanelShowChat:(AgentPanelViewController*)agentPanel;
 // Replaces the editor’s selection, or adds to the end of the document without
 // one, as one undoable edit, and selects the new text. Returns { path (if
 // saved), originalText, currentText }, or nil.
@@ -49,6 +51,10 @@ extern NSString* const kUserDefaultsAgentPanelUsesCurrentFileKey; // requests go
 - (void)themeDidChange;
 // Attaches the editor selection (or the current file) and focuses the prompt.
 - (void)askAboutSelection;
+// Inline chat: a prompt in a popover at `rect` of `view` (the editor’s caret).
+// The request goes into this chat, about the selection or the caret, and
+// edits the open file; the popover shows progress and the outcome.
+- (void)showInlinePromptRelativeToRect:(NSRect)rect ofView:(NSView*)view;
 // Attaches files (e.g. selected in the file browser) and focuses the prompt.
 - (void)addFilesAtPaths:(NSArray<NSString*>*)paths;
 - (IBAction)newChat:(id)sender;

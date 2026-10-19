@@ -4,6 +4,7 @@
 #import "AgentChangesView.h"
 #import "AgentLog.h"
 #import "AgentLogWindowController.h"
+#import "AgentInlinePromptController.h"
 #import <AgentClient/AgentDiff.h>
 #import <AgentClient/AgentEnvironment.h>
 #import <AgentClient/AgentRegistry.h>
@@ -80,7 +81,7 @@ static NSView* Separator ()
 	return box;
 }
 
-@interface AgentPanelViewController () <AgentSessionDelegate, AgentPromptViewDelegate, AgentTranscriptViewDelegate, AgentFileSystemDelegate, AgentChangesViewDelegate, AgentTerminalManagerDelegate>
+@interface AgentPanelViewController () <AgentInlinePromptDelegate, AgentSessionDelegate, AgentPromptViewDelegate, AgentTranscriptViewDelegate, AgentFileSystemDelegate, AgentChangesViewDelegate, AgentTerminalManagerDelegate>
 {
 	NSArray<AgentDescriptor*>* _agents; // the agent picker’s agents, with the project’s overrides
 	AgentDescriptor* _agent;
@@ -103,6 +104,14 @@ static NSView* Separator ()
 	AgentAttachment* _retryCurrentFile;
 	BOOL _restartOnRetry;                       // the agent needs starting again (e.g. after signing in)
 	BOOL _reportedSignedOut;                    // the session said it isn’t signed in
+
+	AgentInlinePromptController* _inlinePrompt;   // the popover at the caret, if shown
+	AgentAttachment* _inlineAttachment;           // what it asks about
+	AgentInlinePromptController* _pendingInline;  // sent with the pending prompt
+	AgentInlinePromptController* _activeInline;   // its prompt is running
+	NSString* _inlineStatus;
+	NSDictionary<NSString*, id>* _inlineSnapshot; // path → currentText of changes before the prompt
+	NSArray<AgentFileChange*>* _inlineChanges;    // changed by it
 	NSString* _usageText;
 	NSCache<NSString*, NSAttributedString*>* _highlightedCode; // language + code → highlighted, as replies re-render while streaming
 
@@ -643,6 +652,134 @@ static NSString* RelativeDate (NSString* isoDate)
 	[self focusPrompt];
 }
 
+// =================
+// = Inline prompt =
+// =================
+
+- (void)showInlinePromptRelativeToRect:(NSRect)rect ofView:(NSView*)view
+{
+	(void)self.view; // the chat runs whether or not the panel is shown
+	[_inlinePrompt close];
+
+	_inlineAttachment = nil;
+	if([_delegate respondsToSelector:@selector(selectionAttachmentForAgentPanel:)])
+		_inlineAttachment = [_delegate selectionAttachmentForAgentPanel:self];
+	if(!_inlineAttachment && [_delegate respondsToSelector:@selector(currentFileAttachmentForAgentPanel:)])
+		_inlineAttachment = [_delegate currentFileAttachmentForAgentPanel:self];
+
+	_inlinePrompt = [[AgentInlinePromptController alloc] initWithAgentName:_agent.name context:_inlineAttachment.name];
+	_inlinePrompt.delegate = self;
+	[_inlinePrompt showInPopoverRelativeToRect:rect ofView:view];
+	[self startSessionIfNeeded];
+}
+
+- (void)inlinePrompt:(AgentInlinePromptController*)inlinePrompt submitText:(NSString*)text
+{
+	if(_pendingText || _pendingAttachments || _activeInline || _session.state == AgentSessionStatePrompting || _session.state == AgentSessionStateLoading)
+		return [inlinePrompt showFailure:[NSString stringWithFormat:@"%@ is busy with another message. Wait for it to finish, or stop it in the chat.", _agent.name]];
+
+	NSMutableDictionary* snapshot = [NSMutableDictionary dictionary];
+	for(AgentFileChange* change in _fileSystem.changes)
+		snapshot[change.path] = change.currentText ?: NSNull.null;
+	_inlineSnapshot = snapshot;
+	_inlineChanges  = nil;
+	_inlineStatus   = nil;
+
+	_pendingInline = inlinePrompt;
+	[inlinePrompt showWorking:nil];
+	[self submitText:text attachments:(_inlineAttachment ? @[ _inlineAttachment ] : @[ ]) currentFile:YES];
+}
+
+- (void)updateInlinePrompt
+{
+	if(!_activeInline)
+		return;
+
+	if(AgentTranscriptItem* item = _transcript.pendingPermissionItems.firstObject)
+	{
+		NSDictionary* toolCall = [item.permissionRequest[@"toolCall"] isKindOfClass:[NSDictionary class]] ? item.permissionRequest[@"toolCall"] : nil;
+		NSString* title = [toolCall[@"title"] isKindOfClass:[NSString class]] ? toolCall[@"title"] : @"Use a tool";
+		_inlineStatus = nil;
+		return [_activeInline showPermissionRequest:title];
+	}
+
+	AgentTranscriptItem* last = _transcript.items.lastObject;
+	NSString* status = last.kind == AgentTranscriptItemKindToolCall && [last.toolCall[@"title"] isKindOfClass:[NSString class]] ? last.toolCall[@"title"] : @"";
+	if(![status isEqualToString:_inlineStatus ?: @"-"])
+	{
+		_inlineStatus = status;
+		[_activeInline showWorking:status];
+	}
+}
+
+- (void)finishInlinePrompt:(AgentInlinePromptController*)inlinePrompt stopReason:(NSString*)stopReason error:(NSError*)error
+{
+	_activeInline = nil;
+	if(error)
+	{
+		NSString* message = AgentErrorIsAuthenticationRequired(error) ? [NSString stringWithFormat:@"%@ needs you to sign in. The chat has a Sign In link.", _agent.name] : [NSString stringWithFormat:@"%@ The chat has the details.", error.localizedDescription];
+		return [inlinePrompt showFailure:message];
+	}
+	if([stopReason isEqualToString:@"cancelled"])
+		return [inlinePrompt showFailure:@"Stopped."];
+
+	NSMutableArray<AgentFileChange*>* changes = [NSMutableArray array];
+	for(AgentFileChange* change in _fileSystem.changes)
+	{
+		id before = _inlineSnapshot[change.path];
+		if(!before || ![before isEqual:change.currentText ?: NSNull.null])
+			[changes addObject:change];
+	}
+	_inlineChanges = changes;
+
+	NSString* reply;
+	for(AgentTranscriptItem* item in _transcript.items.reverseObjectEnumerator)
+	{
+		if(item.kind == AgentTranscriptItemKindUser)
+			break;
+		if(item.kind == AgentTranscriptItemKindAgent)
+		{
+			reply = [item.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+			break;
+		}
+	}
+
+	NSMutableArray* names = [NSMutableArray array];
+	for(AgentFileChange* change in changes)
+		[names addObject:[self displayNameForPath:change.path]];
+	[inlinePrompt showFinishedWithChangedFiles:names reply:reply];
+}
+
+- (void)inlinePromptStop:(AgentInlinePromptController*)inlinePrompt
+{
+	[self promptViewDidRequestStop:_promptView];
+}
+
+- (void)inlinePrompt:(AgentInlinePromptController*)inlinePrompt answerPermission:(BOOL)allow
+{
+	[self promptView:_promptView answerPermission:allow];
+}
+
+- (void)inlinePromptKeepChanges:(AgentInlinePromptController*)inlinePrompt
+{
+	for(AgentFileChange* change in _inlineChanges)
+		[_fileSystem keepChange:change];
+	_inlineChanges = nil;
+}
+
+- (void)inlinePromptUndoChanges:(AgentInlinePromptController*)inlinePrompt
+{
+	if(_inlineChanges.count)
+		[self changesView:_changesView undoChanges:_inlineChanges];
+	_inlineChanges = nil;
+}
+
+- (void)inlinePromptShowChat:(AgentInlinePromptController*)inlinePrompt
+{
+	if([_delegate respondsToSelector:@selector(agentPanelShowChat:)])
+		[_delegate agentPanelShowChat:self];
+}
+
 - (void)addFilesAtPaths:(NSArray<NSString*>*)paths
 {
 	for(NSString* path in paths)
@@ -778,16 +915,20 @@ static NSString* RelativeDate (NSString* isoDate)
 {
 	NSString* text = promptView.text;
 	NSArray<AgentAttachment*>* attachments = promptView.attachments;
-
-	[promptView rememberPrompt:text];
-	[self showItem:[_transcript addUserMessage:text attachmentNames:[attachments valueForKey:@"name"]]];
 	promptView.text = @"";
 	[promptView removeAllAttachments];
+	[self submitText:text attachments:attachments currentFile:promptView.usesCurrentFile];
+}
+
+- (void)submitText:(NSString*)text attachments:(NSArray<AgentAttachment*>*)attachments currentFile:(BOOL)withCurrentFile
+{
+	[_promptView rememberPrompt:text];
+	[self showItem:[_transcript addUserMessage:text attachmentNames:[attachments valueForKey:@"name"]]];
 
 	_pendingText        = text;
 	_pendingAttachments = attachments;
-	_pendingCurrentFile = promptView.usesCurrentFile && [_delegate respondsToSelector:@selector(currentFileAttachmentForAgentPanel:)] ? [_delegate currentFileAttachmentForAgentPanel:self] : nil;
-	promptView.working  = YES;
+	_pendingCurrentFile = withCurrentFile && [_delegate respondsToSelector:@selector(currentFileAttachmentForAgentPanel:)] ? [_delegate currentFileAttachmentForAgentPanel:self] : nil;
+	_promptView.working = YES;
 
 	if(_restartOnRetry) // e.g. signed in since the agent started
 	{
@@ -807,6 +948,9 @@ static NSString* RelativeDate (NSString* isoDate)
 	_retryText        = _pendingText;
 	_retryAttachments = _pendingAttachments;
 	_retryCurrentFile = _pendingCurrentFile;
+	AgentInlinePromptController* inlinePrompt = _pendingInline;
+	_pendingInline = nil;
+	_activeInline  = inlinePrompt;
 	_pendingText        = nil;
 	_pendingAttachments = nil;
 	_pendingCurrentFile = nil;
@@ -817,6 +961,8 @@ static NSString* RelativeDate (NSString* isoDate)
 			return;
 		_promptView.working = NO;
 		[self cancelPendingPermissionRequests];
+		if(inlinePrompt)
+			[self finishInlinePrompt:inlinePrompt stopReason:stopReason error:error];
 		if(error)
 		{
 			if(session.state != AgentSessionStateTerminated) // reported as “stopped running”
@@ -838,6 +984,8 @@ static NSString* RelativeDate (NSString* isoDate)
 {
 	if(!_pendingText && !_pendingAttachments)
 		return;
+	[_pendingInline showFailure:[NSString stringWithFormat:@"%@ didn’t start. The chat says why.", _agent.name]];
+	_pendingInline = nil;
 	_retryText          = _pendingText;
 	_retryAttachments   = _pendingAttachments;
 	_retryCurrentFile   = _pendingCurrentFile;
@@ -1091,6 +1239,8 @@ static NSString* RelativeDate (NSString* isoDate)
 	if(AgentTranscriptItem* item = [_transcript applyUpdate:update])
 	{
 		[self showItem:item];
+		if(item.kind == AgentTranscriptItemKindToolCall)
+			[self updateInlinePrompt];
 		// A loaded chat’s edits were made before, not now
 		if(item.kind == AgentTranscriptItemKindToolCall && session.state != AgentSessionStateLoading)
 			[self trackFilesOfToolCall:item.toolCall];
@@ -1147,6 +1297,7 @@ static NSString* RelativeDate (NSString* isoDate)
 	_permissionReplies[item.identifier] = reply;
 	[self showItem:item];
 	[self updateStatus];
+	[self updateInlinePrompt];
 
 	if(!NSApp.isActive)
 		[NSApp requestUserAttention:NSInformationalRequest];
@@ -1160,6 +1311,7 @@ static NSString* RelativeDate (NSString* isoDate)
 	[self showItem:item];
 	if(AgentTranscriptItem* next = _transcript.pendingPermissionItems.firstObject)
 		[self showItem:next]; // now answers ↩ and ⎋
+	[self updateInlinePrompt];
 	[self updateStatus];
 
 	if(reply)
@@ -1339,7 +1491,7 @@ static NSString* RelativeDate (NSString* isoDate)
 	alert.informativeText = [NSString stringWithFormat:@"Undo restores the file as it was before the agent changed it, so later edits are lost too.%@", editedSince.count > 1 ? [@"\n\n" stringByAppendingString:[editedSince componentsJoinedByString:@"\n"]] : @""];
 	[alert addButtonWithTitle:@"Undo Anyway"];
 	[alert addButtonWithTitle:@"Cancel"];
-	[alert beginSheetModalForWindow:self.view.window completionHandler:^(NSModalResponse response){
+	[alert beginSheetModalForWindow:(self.view.window ?: NSApp.mainWindow) completionHandler:^(NSModalResponse response){
 		if(response == NSAlertFirstButtonReturn)
 			[self undoChanges:changes];
 	}];

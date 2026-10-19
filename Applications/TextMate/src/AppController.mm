@@ -400,6 +400,7 @@ BOOL HasDocumentWindow (NSArray* windows)
 				{ @"Copilot Complete",                      @selector(lspCopilotComplete:),          .modifierFlags = NSEventModifierFlagOption, .key = 0x1B },
 				{ /* -------- */ },
 				{ @"Ask Agent About Selection",           @selector(askAgentAboutSelection:) },
+				{ @"Ask Agent at Caret…",                 @selector(askAgentAtCaret:), @"i", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagOption|NSEventModifierFlagControl },
 			}
 		},
 		{ @"File Browser",

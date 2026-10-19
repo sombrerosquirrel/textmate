@@ -20,5 +20,6 @@ extern NSString* const kUserDefaultsAgentPanelPlacementKey; // @"left" or @"righ
 - (IBAction)toggleAgentPanelPlacement:(id)sender;
 - (IBAction)newAgentChat:(id)sender;
 - (IBAction)askAgentAboutSelection:(id)sender;
+- (IBAction)askAgentAtCaret:(id)sender;           // inline chat
 - (IBAction)addFilesToAgentChat:(id)sender; // sender provides selectedFileURLs
 @end
