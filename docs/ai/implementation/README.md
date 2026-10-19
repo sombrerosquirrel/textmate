@@ -24,12 +24,12 @@ User guides are in [`../user/`](../user/): [markdown-preview.md](../user/markdow
 | M2. Chat panel | [03-m2-chat-panel.md](03-m2-chat-panel.md) | ✅ Complete (2026-10-16) |
 | M3. Tools: files, permissions, diff review, terminal | [05-m3-tools.md](05-m3-tools.md) | ✅ Complete (2026-10-18) |
 | M4. Preferences, Keychain, project overrides, chat history, MCP | [06-m4-configuration.md](06-m4-configuration.md) | ✅ Complete (2026-10-19) |
-| M5. Polish, inline chat, docs, `pr/agent` port | — | ⏳ Not started |
+| M5. Polish, inline chat, docs, `pr/agent` port | [07-m5-polish.md](07-m5-polish.md) | 🔄 In progress (started 2026-10-19) |
 | Markdown preview pane (P1–P5) | [04-markdown-preview.md](04-markdown-preview.md) | 🔄 In progress: P1–P5 done (2026-10-15); P5 awaiting user check |
 
 ## Current state (2026-10-19)
 
-- **Branches:** `main` = `pr-1467` + all `fix/*` branches. `feature/agent` = `main` + agent harness (M1, M2). `feature/markdown-preview` = `feature/agent` + Markdown preview work. `feature/agent-tools` = `feature/markdown-preview` + M3. All pushed to `origin` (`sombrerosquirrel/textmate`). `feature/agent-config` = `feature/agent-tools` + M4 (local only).
+- **Branches:** `main` = `pr-1467` + all `fix/*` branches. `feature/agent` = `main` + agent harness (M1, M2). `feature/markdown-preview` = `feature/agent` + Markdown preview work. `feature/agent-tools` = `feature/markdown-preview` + M3. All pushed to `origin` (`sombrerosquirrel/textmate`). `feature/agent-config` = `feature/agent-tools` + M4, `feature/agent-polish` = `feature/agent-config` + M5 (both local only).
 - **Build:** `make debug` builds cleanly with Xcode 27 / Swift 6.4 on macOS 27. No new warnings. Known remaining warnings are listed in [01-build-and-bug-fixes.md](01-build-and-bug-fixes.md#future-work).
 - **Tests:** `ctest` passes 23/23 on `main`, 25/25 on `feature/agent` (adds AgentClient and AgentUI suites), 28/28 on `feature/markdown-preview` (adds OakEditorPanels, OakMarkdown and MarkdownPreview; AgentUI's Markdown tests moved to OakMarkdown) and on `feature/agent-tools` (AgentClient grows to 50 tests) and `feature/agent-config` (AgentClient 66).
 - **Next:** user checks P5 (user guide, tests); then the Markdown preview is complete. M2 is complete (its UX pass is deferred to the end). M3 is complete on `feature/agent-tools`, pushed 2026-10-18 (tested against the [checklist](05-m3-tools.md#to-check-user)). M4 is complete on `feature/agent-config` (local only). M5 started 2026-10-19. Checkpoints with the user after each milestone.
@@ -40,7 +40,7 @@ Work not yet assigned to a phase document. Items move into a phase document when
 
 - [x] **M3 — Tools:** moved to [05-m3-tools.md](05-m3-tools.md) (2026-10-16).
 - [x] **M4 — Configuration:** moved to [06-m4-configuration.md](06-m4-configuration.md) (2026-10-18).
-- [ ] **M5 — Polish:** theme colours and syntax-highlighted code blocks, inline chat at the caret, error states, log view, user documentation, `pr/agent` port onto `master`.
+- [x] **M5 — Polish:** moved to [07-m5-polish.md](07-m5-polish.md) (2026-10-19).
 - [ ] Fix the commit grouping on `feature/agent`: 7723847e deletes the M1 debug window files while AppController still references them until d6d22909, so 7723847e alone doesn't build. Needs a force-push; awaiting the user's decision.
 - [ ] Optional clean-up: delete upstream's leftover branches on the fork (`10_7`, `gh-pages`, `no-copy-of-scopes`) and local `backup/pre-trailer-removal/*` branches and `refs/original`.
 - [ ] **Agent panel UX pass** (user, 2026-10-15: "ux of the panel needs some work but we'll tackle that at the end"). Scheduled after the Markdown preview and M3–M4; collect specifics from the user then. Include the Markdown preview's scroll smoothness (user: "make a note to revisit this later after completion and when doing UX"); ideas in [04-markdown-preview.md](04-markdown-preview.md#future-work).
