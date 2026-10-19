@@ -86,14 +86,29 @@ NSView* OakSetupGridViewWithSeparators (NSGridView* gridView, std::vector<NSUInt
 }
 @end
 
+// Symbols differ in shape (doc.on.doc is tall, gearshape.2 wide), so each
+// is drawn scaled to fit the same box, centred in an image of the same size.
+// Images of their own sizes looked uneven, and tall ones ran into the label.
 NSImage* PreferencesToolbarImage (NSString* symbolName, NSString* description, NSImage* fallbackImage)
 {
-	if(NSImage* image = [NSImage imageWithSystemSymbolName:symbolName accessibilityDescription:description])
-	{
-		if(NSImageSymbolConfiguration* configuration = [NSImageSymbolConfiguration configurationWithScale:NSImageSymbolScaleLarge])
-			image = [image imageWithSymbolConfiguration:configuration] ?: image;
-		[image setTemplate:YES];
-		return image;
-	}
-	return fallbackImage;
+	static NSSize const kImageSize = NSMakeSize(32, 24);
+	static NSSize const kSymbolBox = NSMakeSize(28, 21);
+
+	NSImage* symbol = [NSImage imageWithSystemSymbolName:symbolName accessibilityDescription:description];
+	symbol = [symbol imageWithSymbolConfiguration:[NSImageSymbolConfiguration configurationWithPointSize:19 weight:NSFontWeightRegular scale:NSImageSymbolScaleMedium]] ?: symbol;
+	if(!symbol || symbol.size.width <= 0 || symbol.size.height <= 0)
+		return fallbackImage;
+
+	NSSize size  = symbol.size;
+	CGFloat scale = MIN(1, MIN(kSymbolBox.width / size.width, kSymbolBox.height / size.height));
+	size = NSMakeSize(size.width * scale, size.height * scale);
+
+	NSImage* res = [NSImage imageWithSize:kImageSize flipped:NO drawingHandler:^BOOL(NSRect dstRect){
+		NSRect rect = NSMakeRect(round((kImageSize.width - size.width) / 2), round((kImageSize.height - size.height) / 2), size.width, size.height);
+		[symbol drawInRect:rect];
+		return YES;
+	}];
+	[res setTemplate:YES]; // “template” is a C++ keyword
+	res.accessibilityDescription = description;
+	return res;
 }

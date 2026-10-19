@@ -80,11 +80,54 @@ static NSTableColumn* Column (NSUserInterfaceItemIdentifier identifier, NSString
 	return res;
 }
 
+static CGFloat const kRowHeight = 24;
+
+// Text cells draw at the top of their row; this one centres its text vertically, also while editing
+@interface AgentsCenteredTextFieldCell : NSTextFieldCell
+@end
+
+@implementation AgentsCenteredTextFieldCell
+- (NSRect)centeredRectForBounds:(NSRect)rect
+{
+	CGFloat height = ceil(self.font.ascender - self.font.descender + self.font.leading) + 2;
+	if(height < NSHeight(rect))
+	{
+		rect.origin.y  += floor((NSHeight(rect) - height) / 2);
+		rect.size.height = height;
+	}
+	return rect;
+}
+
+- (void)drawInteriorWithFrame:(NSRect)frame inView:(NSView*)view
+{
+	[super drawInteriorWithFrame:[self centeredRectForBounds:frame] inView:view];
+}
+
+- (void)editWithFrame:(NSRect)rect inView:(NSView*)view editor:(NSText*)editor delegate:(id)delegate event:(NSEvent*)event
+{
+	[super editWithFrame:[self centeredRectForBounds:rect] inView:view editor:editor delegate:delegate event:event];
+}
+
+- (void)selectWithFrame:(NSRect)rect inView:(NSView*)view editor:(NSText*)editor delegate:(id)delegate start:(NSInteger)start length:(NSInteger)length
+{
+	[super selectWithFrame:[self centeredRectForBounds:rect] inView:view editor:editor delegate:delegate start:start length:length];
+}
+@end
+
+static NSTextFieldCell* TextCell (NSFont* font = nil)
+{
+	NSTextFieldCell* res = [[AgentsCenteredTextFieldCell alloc] initTextCell:@""];
+	res.font          = font ?: [NSFont systemFontOfSize:NSFont.systemFontSize];
+	res.lineBreakMode = NSLineBreakByTruncatingTail;
+	res.editable      = YES;
+	return res;
+}
+
 static NSButtonCell* CheckBoxCell ()
 {
 	NSButtonCell* res = [[NSButtonCell alloc] init];
 	res.buttonType  = NSButtonTypeSwitch;
-	res.controlSize = NSControlSizeSmall;
+	res.controlSize = NSControlSizeRegular;
 	res.title       = @"";
 	return res;
 }
@@ -95,6 +138,7 @@ static NSTableView* TableView (NSArray<NSTableColumn*>* columns, id<NSTableViewD
 	res.allowsColumnReordering  = NO;
 	res.allowsEmptySelection    = YES;
 	res.columnAutoresizingStyle = NSTableViewLastColumnOnlyAutoresizingStyle;
+	res.rowHeight               = kRowHeight;
 	res.delegate                = delegate;
 	res.dataSource              = delegate;
 	for(NSTableColumn* column in columns)
@@ -226,6 +270,7 @@ static BOOL DiffersFromDefault (AgentDescriptor* agent)
 	enabledColumn.dataCell = CheckBoxCell();
 	enabledColumn.headerToolTip = @"Show in the agent panel";
 	NSTableColumn* nameColumn = Column(kColumnName, @"Agent", NO, 150, NSTableColumnAutoresizingMask);
+	nameColumn.dataCell = TextCell();
 
 	NSScrollView* tableScrollView;
 	_agentsTableView = TableView(@[ enabledColumn, nameColumn ], self, &tableScrollView);
@@ -418,14 +463,16 @@ static BOOL DiffersFromDefault (AgentDescriptor* agent)
 {
 	NSTableColumn* enabledColumn = Column(kColumnEnabled, @"", YES, 16, NSTableColumnNoResizing);
 	enabledColumn.dataCell = CheckBoxCell();
-	NSTableColumn* nameColumn   = Column(kColumnName, @"Name", YES, 120, NSTableColumnUserResizingMask);
-	NSTableColumn* typeColumn   = Column(kColumnType, @"Type", YES, 70, NSTableColumnNoResizing);
+	NSTableColumn* nameColumn   = Column(kColumnName, @"Name", YES, 130, NSTableColumnUserResizingMask);
+	NSTableColumn* typeColumn   = Column(kColumnType, @"Type", YES, 76, NSTableColumnNoResizing);
 	NSTableColumn* targetColumn = Column(kColumnTarget, @"Command or URL", YES, 360, NSTableColumnAutoresizingMask);
+	nameColumn.dataCell   = TextCell();
+	targetColumn.dataCell = TextCell([NSFont userFixedPitchFontOfSize:NSFont.smallSystemFontSize + 1]);
 
 	NSPopUpButtonCell* typeCell = [[NSPopUpButtonCell alloc] initTextCell:@"" pullsDown:NO];
 	typeCell.bordered    = NO;
-	typeCell.controlSize = NSControlSizeSmall;
-	typeCell.font        = [NSFont systemFontOfSize:NSFont.smallSystemFontSize];
+	typeCell.controlSize = NSControlSizeRegular;
+	typeCell.font        = [NSFont systemFontOfSize:NSFont.systemFontSize];
 	[typeCell addItemsWithTitles:kMCPServerTypes];
 	typeColumn.dataCell = typeCell;
 
@@ -483,13 +530,23 @@ static BOOL DiffersFromDefault (AgentDescriptor* agent)
 - (void)addServer:(id)sender
 {
 	[self commitEditing];
-	AgentMCPServer* server = [[AgentMCPServer alloc] initWithDictionary:@{ @"name": @"server", @"type": @"stdio" }];
+	AgentMCPServer* server = [[AgentMCPServer alloc] initWithDictionary:@{ @"name": [self unusedServerName], @"type": @"stdio" }];
 	[_servers addObject:server];
 	[self saveServers];
 	[_serversTableView reloadData];
 	NSInteger row = _servers.count - 1;
 	[_serversTableView selectRowIndexes:[NSIndexSet indexSetWithIndex:row] byExtendingSelection:NO];
-	[_serversTableView editColumn:[_serversTableView columnWithIdentifier:kColumnName] row:row withEvent:nil select:YES];
+	// The command is what a new server needs; the name has a default
+	[_serversTableView editColumn:[_serversTableView columnWithIdentifier:kColumnTarget] row:row withEvent:nil select:YES];
+}
+
+- (NSString*)unusedServerName
+{
+	NSSet* names = [NSSet setWithArray:[_servers valueForKey:@"name"]];
+	NSString* name = @"server";
+	for(NSUInteger i = 2; [names containsObject:name]; ++i)
+		name = [NSString stringWithFormat:@"server %lu", i];
+	return name;
 }
 
 - (void)removeServer:(id)sender
@@ -582,6 +639,12 @@ static BOOL DiffersFromDefault (AgentDescriptor* agent)
 // =======================
 // = NSTableViewDelegate =
 // =======================
+
+- (void)tableView:(NSTableView*)tableView willDisplayCell:(id)cell forTableColumn:(NSTableColumn*)column row:(NSInteger)row
+{
+	if(tableView == _serversTableView && [column.identifier isEqualToString:kColumnTarget])
+		[cell setPlaceholderString:[self serverUsesHeaders:_servers[row]] ? @"https://example.com/mcp" : @"npx -y package-name"];
+}
 
 - (void)tableViewSelectionDidChange:(NSNotification*)notification
 {
