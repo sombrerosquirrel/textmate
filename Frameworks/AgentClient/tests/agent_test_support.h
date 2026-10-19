@@ -43,6 +43,7 @@ static NSArray<NSDictionary*>* TextPrompt (NSString* text)
 @property (nonatomic) NSMutableArray<NSString*>* notificationMethods;
 @property (nonatomic) NSMutableString* standardError;
 @property (nonatomic) NSMutableString* messageText;
+@property (nonatomic) NSMutableString* userText;
 @property (nonatomic) dispatch_semaphore_t terminated;
 @property (nonatomic) dispatch_semaphore_t updateReceived;
 @property (nonatomic) dispatch_semaphore_t notificationReceived;
@@ -60,6 +61,7 @@ static NSArray<NSDictionary*>* TextPrompt (NSString* text)
 		_notificationMethods  = [NSMutableArray array];
 		_standardError        = [NSMutableString string];
 		_messageText          = [NSMutableString string];
+		_userText             = [NSMutableString string];
 		_terminated           = dispatch_semaphore_create(0);
 		_updateReceived       = dispatch_semaphore_create(0);
 		_notificationReceived = dispatch_semaphore_create(0);
@@ -97,6 +99,10 @@ static NSArray<NSDictionary*>* TextPrompt (NSString* text)
 	{
 		[_messageText appendString:update[@"content"][@"text"]];
 		dispatch_semaphore_signal(_updateReceived);
+	}
+	else if([update[@"sessionUpdate"] isEqualToString:@"user_message_chunk"])
+	{
+		[_userText appendString:update[@"content"][@"text"]];
 	}
 }
 

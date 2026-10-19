@@ -25,6 +25,7 @@ typedef NS_ENUM(NSInteger, AgentSessionState) {
 	AgentSessionStateStarting,
 	AgentSessionStateReady,
 	AgentSessionStatePrompting,
+	AgentSessionStateLoading,   // session/load: the agent replays the chat as session/update notifications
 	AgentSessionStateFailed,
 	AgentSessionStateTerminated,
 };
@@ -69,6 +70,18 @@ typedef NS_ENUM(NSInteger, AgentSessionState) {
 // when the session closes or the agent exits.
 @property (nonatomic) AgentTerminalManager* terminals;
 
+// ACP McpServer objects sent with session/new and session/load. Servers
+// whose transport the agent doesn’t support (mcpCapabilities http, sse) are
+// left out, and their names added to skippedMCPServerNames.
+@property (nonatomic, copy) NSArray<NSDictionary*>* mcpServers;
+@property (nonatomic, copy) NSArray<NSString*>* skippedMCPServerNames;
+
+// Set before -startWithCompletion: to continue an earlier chat: if the agent
+// supports loadSession, start sends session/load instead of session/new.
+// If loading fails, start falls back to session/new and sets loadError.
+@property (nonatomic, copy) NSString* sessionIdToLoad;
+@property (nonatomic, readonly) NSError* loadError;
+
 @property (nonatomic, readonly) AgentSessionState state;
 @property (nonatomic, readonly) NSError* error; // reason for AgentSessionStateFailed
 // The agent’s last few lines of standard error, which often explain why it
@@ -87,7 +100,11 @@ typedef NS_ENUM(NSInteger, AgentSessionState) {
 @property (nonatomic, readonly) NSDictionary* modes;
 @property (nonatomic, readonly) NSArray<NSDictionary*>* availableCommands;
 
-// Launches the agent, then initialize and session/new.
+// The agent announces session/list and session/load.
+@property (nonatomic, readonly) BOOL canListSessions;
+@property (nonatomic, readonly) BOOL canLoadSessions;
+
+// Launches the agent, then initialize and session/new (or session/load).
 - (void)startWithCompletion:(void(^)(NSError* error))completion;
 // `prompt` is an array of ACP content blocks, e.g. @[ @{ @"type": @"text", @"text": … } ].
 - (void)sendPrompt:(NSArray<NSDictionary*>*)prompt completion:(void(^)(NSString* stopReason, NSError* error))completion;
@@ -97,6 +114,13 @@ typedef NS_ENUM(NSInteger, AgentSessionState) {
 - (void)setConfigOption:(NSString*)configId value:(id)value completion:(void(^)(NSError* error))completion;
 // session/set_mode, for agents that only provide `modes`.
 - (void)setMode:(NSString*)modeId completion:(void(^)(NSError* error))completion;
+// session/list for the working directory, newest first as the agent sends
+// them: { sessionId, title, updatedAt, … }. Only the first page.
+- (void)listSessionsWithCompletion:(void(^)(NSArray<NSDictionary*>* sessions, NSError* error))completion;
+// Switches a ready session to an earlier chat with session/load; the
+// delegate receives the replayed chat as updates, then the completion runs.
+// The previous chat is closed if the agent supports session/close.
+- (void)loadSession:(NSString*)sessionId completion:(void(^)(NSError* error))completion;
 // Terminates the agent.
 - (void)close;
 @end

@@ -8,6 +8,7 @@
 #   “permission”  — ask the client for permission, echo the outcome
 #   “crash”       — exit with status 3 without answering
 #   “big”         — stream one 1 MB chunk
+#   “mcp”         — stream “MCP: <names of the MCP servers in session/new or session/load>”
 #   “stderr”      — write a line to stderr, then answer normally
 #   “garbage”     — write a non-JSON line to stdout, then answer normally
 #   “read PATH [LINE LIMIT]” — fs/read_text_file, stream “Read: <content>”
@@ -22,6 +23,9 @@
 # Arguments: --version N  answer initialize with protocol version N
 #            --fail-new   answer session/new with an error
 #            --exit-early write to stderr and exit with status 1 before initialize
+#            --sessions   announce loadSession, session/list and session/close,
+#                         and http MCP servers; session/list returns two chats,
+#                         session/load replays “old-1” and fails for other ids
 
 require 'json'
 
@@ -30,12 +34,14 @@ $stdout.sync = true
 protocol_version = 1
 fail_new         = false
 exit_early       = false
+sessions         = false
 args = ARGV.dup
 while arg = args.shift
 	case arg
 	when '--version'  then protocol_version = args.shift.to_i
 	when '--fail-new'   then fail_new = true
 	when '--exit-early' then exit_early = true
+	when '--sessions'   then sessions = true
 	end
 end
 
@@ -66,6 +72,8 @@ current_mode    = 'ask'
 client_caps     = {}
 waiting_prompt  = nil  # id of a prompt waiting for session/cancel
 pending_replies = {}   # our request id → proc handling the client’s response
+mcp_names       = []   # MCP servers of the last session/new or session/load
+closed_sessions = []
 
 $stdin.each_line do |line|
 	msg = JSON.parse(line)
@@ -84,7 +92,9 @@ $stdin.each_line do |line|
 		client_caps = params['clientCapabilities'] || {}
 		send_message('id' => id, 'result' => {
 			'protocolVersion'   => protocol_version,
-			'agentCapabilities' => { 'loadSession' => false, 'promptCapabilities' => { 'embeddedContext' => true } },
+			'agentCapabilities' => sessions ?
+				{ 'loadSession' => true, 'promptCapabilities' => { 'embeddedContext' => true }, 'mcpCapabilities' => { 'http' => true }, 'sessionCapabilities' => { 'list' => {}, 'close' => {} } } :
+				{ 'loadSession' => false, 'promptCapabilities' => { 'embeddedContext' => true } },
 			'agentInfo'         => { 'name' => 'fake-agent', 'title' => 'Fake Agent', 'version' => '1.0' },
 			'authMethods'       => [],
 			'_meta'             => { 'clientInfo' => params['clientInfo'], 'clientCapabilities' => params['clientCapabilities'] },
@@ -95,6 +105,7 @@ $stdin.each_line do |line|
 		if fail_new
 			send_message('id' => id, 'error' => { 'code' => -32000, 'message' => 'Authentication required' })
 		else
+			mcp_names = (params['mcpServers'] || []).map { |server| server['name'] }
 			session_id = "sess-#{params['cwd']}"
 			send_message('id' => id, 'result' => {
 				'sessionId'     => session_id,
@@ -106,6 +117,26 @@ $stdin.each_line do |line|
 				{ 'name' => 'review', 'description' => 'Review changes' },
 			])
 		end
+
+	when 'session/list'
+		send_message('id' => id, 'result' => { 'sessions' => [
+			{ 'sessionId' => 'old-1', 'cwd' => params['cwd'], 'title' => 'First chat', 'updatedAt' => '2026-10-18T10:00:00Z' },
+			{ 'sessionId' => 'old-2', 'cwd' => params['cwd'], 'title' => 'Second chat', 'updatedAt' => '2026-10-17T10:00:00Z' },
+		] })
+
+	when 'session/load'
+		if params['sessionId'] == 'old-1'
+			mcp_names = (params['mcpServers'] || []).map { |server| server['name'] }
+			update('old-1', 'sessionUpdate' => 'user_message_chunk', 'content' => { 'type' => 'text', 'text' => 'Earlier question' })
+			update('old-1', text_chunk('Earlier answer'))
+			send_message('id' => id, 'result' => { 'configOptions' => config_options(current_mode) })
+		else
+			send_message('id' => id, 'error' => { 'code' => -32002, 'message' => "Session not found: #{params['sessionId']}" })
+		end
+
+	when 'session/close'
+		closed_sessions << params['sessionId']
+		send_message('id' => id, 'result' => {})
 
 	when 'session/set_config_option'
 		if params['configId'] == 'mode' && %w[ask code].include?(params['value'])
@@ -200,6 +231,8 @@ $stdin.each_line do |line|
 			})
 		when 'crash'
 			exit 3
+		when 'mcp'
+			finish.call("MCP: #{mcp_names.join(',')} closed: #{closed_sessions.join(',')}")
 		when 'big'
 			update(session_id, text_chunk('x' * (1024 * 1024)))
 			send_message('id' => id, 'result' => { 'stopReason' => 'end_turn' })

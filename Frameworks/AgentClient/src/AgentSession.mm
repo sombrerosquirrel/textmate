@@ -26,6 +26,7 @@ static NSString* ClientVersion ()
 @property (nonatomic, readwrite) NSDictionary* agentInfo;
 @property (nonatomic, readwrite) NSDictionary* agentCapabilities;
 @property (nonatomic, readwrite) NSArray<NSDictionary*>* authMethods;
+@property (nonatomic, readwrite) NSError* loadError;
 @property (nonatomic, readwrite) NSArray<NSDictionary*>* configOptions;
 @property (nonatomic, readwrite) NSDictionary* modes;
 @property (nonatomic, readwrite) NSArray<NSDictionary*>* availableCommands;
@@ -139,9 +140,67 @@ static NSUInteger const kMaxStandardErrorLineLength = 300;
 	return res;
 }
 
+- (BOOL)canListSessions
+{
+	id capabilities = _agentCapabilities[@"sessionCapabilities"];
+	return [capabilities isKindOfClass:[NSDictionary class]] && capabilities[@"list"] && capabilities[@"list"] != [NSNull null];
+}
+
+- (BOOL)canLoadSessions
+{
+	return [_agentCapabilities[@"loadSession"] respondsToSelector:@selector(boolValue)] && [_agentCapabilities[@"loadSession"] boolValue];
+}
+
+- (BOOL)canCloseSessions
+{
+	id capabilities = _agentCapabilities[@"sessionCapabilities"];
+	return [capabilities isKindOfClass:[NSDictionary class]] && capabilities[@"close"] && capabilities[@"close"] != [NSNull null];
+}
+
+// The configured MCP servers the agent can use: stdio always, http and sse
+// when it says so.
+- (NSArray<NSDictionary*>*)supportedMCPServers
+{
+	NSDictionary* capabilities = [_agentCapabilities[@"mcpCapabilities"] isKindOfClass:[NSDictionary class]] ? _agentCapabilities[@"mcpCapabilities"] : @{ };
+	NSMutableArray* res     = [NSMutableArray array];
+	NSMutableArray* skipped = [NSMutableArray arrayWithArray:_skippedMCPServerNames ?: @[ ]];
+	for(NSDictionary* server in _mcpServers)
+	{
+		NSString* type = server[@"type"];
+		if(!type || [capabilities[type] boolValue])
+				[res addObject:server];
+		else if(![skipped containsObject:server[@"name"]])
+				[skipped addObject:server[@"name"] ?: @""];
+	}
+	_skippedMCPServerNames = skipped;
+	return res;
+}
+
 - (void)createSessionWithCompletion:(void(^)(NSError* error))completion
 {
-	NSDictionary* params = @{ @"cwd": _workingDirectory, @"mcpServers": @[ ] };
+	if(_sessionIdToLoad && self.canLoadSessions)
+	{
+		NSString* sessionId = _sessionIdToLoad;
+		self.state = AgentSessionStateLoading;
+		[self sendLoadSession:sessionId completion:^(NSError* error){
+			if(!error)
+			{
+				self.state = AgentSessionStateReady;
+				if(completion)
+					completion(nil);
+				return;
+			}
+			self.loadError = error;
+			self.sessionId = nil;
+			self.state     = AgentSessionStateStarting;
+			[self createSessionWithCompletion:completion];
+		}];
+		_sessionIdToLoad = nil;
+		return;
+	}
+	_sessionIdToLoad = nil;
+
+	NSDictionary* params = @{ @"cwd": _workingDirectory, @"mcpServers": self.supportedMCPServers };
 	[_connection sendRequest:@"session/new" params:params completion:^(id result, NSError* error){
 		NSString* sessionId = [result isKindOfClass:[NSDictionary class]] && [result[@"sessionId"] isKindOfClass:[NSString class]] ? result[@"sessionId"] : nil;
 		if(!error && !sessionId)
@@ -160,6 +219,64 @@ static NSUInteger const kMaxStandardErrorLineLength = 300;
 		self.state     = AgentSessionStateReady;
 		if(completion)
 			completion(nil);
+	}];
+}
+
+// The agent replays the chat before it answers, so sessionId is set first:
+// updates for any other session are ignored.
+- (void)sendLoadSession:(NSString*)sessionId completion:(void(^)(NSError* error))completion
+{
+	self.sessionId = sessionId;
+	NSDictionary* params = @{ @"sessionId": sessionId, @"cwd": _workingDirectory, @"mcpServers": self.supportedMCPServers };
+	[_connection sendRequest:@"session/load" params:params completion:^(id result, NSError* error){
+		if(!error && [result isKindOfClass:[NSDictionary class]])
+			[self updateConfigurationFromDictionary:result];
+		completion(error);
+	}];
+}
+
+- (void)listSessionsWithCompletion:(void(^)(NSArray<NSDictionary*>* sessions, NSError* error))completion
+{
+	[self performOnQueue:^{
+		if(self.state != AgentSessionStateReady && self.state != AgentSessionStatePrompting)
+			return completion(nil, SessionError(AgentSessionErrorInvalidState, @"Session is not ready"));
+
+		[_connection sendRequest:@"session/list" params:@{ @"cwd": _workingDirectory } completion:^(id result, NSError* error){
+			NSMutableArray<NSDictionary*>* sessions = [NSMutableArray array];
+			id list = [result isKindOfClass:[NSDictionary class]] ? result[@"sessions"] : nil;
+			for(NSDictionary* info in [list isKindOfClass:[NSArray class]] ? list : @[ ])
+			{
+				if([info isKindOfClass:[NSDictionary class]] && [info[@"sessionId"] isKindOfClass:[NSString class]])
+					[sessions addObject:info];
+			}
+			if(!error && !list)
+				error = SessionError(AgentSessionErrorInvalidResponse, @"Invalid response to session/list");
+			completion(error ? nil : sessions, error);
+		}];
+	}];
+}
+
+- (void)loadSession:(NSString*)sessionId completion:(void(^)(NSError* error))completion
+{
+	[self performOnQueue:^{
+		if(self.state != AgentSessionStateReady)
+		{
+			if(completion)
+				completion(SessionError(AgentSessionErrorInvalidState, self.state == AgentSessionStatePrompting ? @"A prompt is in progress" : @"Session is not ready"));
+			return;
+		}
+
+		NSString* previousSessionId = self.sessionId;
+		if(previousSessionId && self.canCloseSessions && ![previousSessionId isEqualToString:sessionId])
+			[_connection sendRequest:@"session/close" params:@{ @"sessionId": previousSessionId } completion:nil];
+
+		self.state = AgentSessionStateLoading;
+		[self sendLoadSession:sessionId completion:^(NSError* error){
+			if(self.state == AgentSessionStateLoading)
+				self.state = AgentSessionStateReady;
+			if(completion)
+				completion(error);
+		}];
 	}];
 }
 

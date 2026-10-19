@@ -313,3 +313,130 @@ void test_close ()
 	OAK_ASSERT(Wait(t.recorder.terminated));
 	OAK_ASSERT_EQ((NSInteger)t.state(), (NSInteger)AgentSessionStateTerminated);
 }
+
+// ================
+// = Chat History =
+// ================
+
+static NSError* LoadSession (test_session_t& t, NSString* sessionId)
+{
+	dispatch_semaphore_t done = dispatch_semaphore_create(0);
+	__block NSError* res;
+	[t.session loadSession:sessionId completion:^(NSError* error){
+		res = error;
+		dispatch_semaphore_signal(done);
+	}];
+	OAK_ASSERT(Wait(done));
+	return res;
+}
+
+void test_list_sessions ()
+{
+	test_session_t t(@[ @"--sessions" ]);
+	OAK_ASSERT(t.start() == nil);
+	OAK_ASSERT(t.session.canListSessions);
+	OAK_ASSERT(t.session.canLoadSessions);
+
+	dispatch_semaphore_t done = dispatch_semaphore_create(0);
+	__block NSArray<NSDictionary*>* sessions;
+	[t.session listSessionsWithCompletion:^(NSArray<NSDictionary*>* list, NSError* error){
+		sessions = list;
+		dispatch_semaphore_signal(done);
+	}];
+	OAK_ASSERT(Wait(done));
+	OAK_ASSERT([[sessions valueForKey:@"title"] isEqual:(@[ @"First chat", @"Second chat" ])]);
+	OAK_ASSERT([sessions.firstObject[@"cwd"] isEqualToString:@"/tmp/project"]);
+}
+
+void test_no_session_list ()
+{
+	test_session_t t;
+	OAK_ASSERT(t.start() == nil);
+	OAK_ASSERT(!t.session.canListSessions);
+	OAK_ASSERT(!t.session.canLoadSessions);
+}
+
+void test_load_session ()
+{
+	test_session_t t(@[ @"--sessions" ]);
+	OAK_ASSERT(t.start() == nil);
+	OAK_ASSERT(LoadSession(t, @"old-1") == nil);
+	OAK_ASSERT([t.session.sessionId isEqualToString:@"old-1"]);
+	OAK_ASSERT_EQ((NSInteger)t.state(), (NSInteger)AgentSessionStateReady);
+
+	// The replay arrives before the reply, so it’s complete when loading finishes
+	AgentTestRecorder* recorder = t.recorder;
+	__block NSString* userText;
+	dispatch_sync(t.queue, ^{ userText = [recorder.userText copy]; });
+	OAK_ASSERT([userText isEqualToString:@"Earlier question"]);
+	OAK_ASSERT([t.messageText() isEqualToString:@"Earlier answer"]);
+
+	// Prompts go to the loaded chat; the previous one was closed
+	OAK_ASSERT([t.prompt(@"mcp") isEqualToString:@"end_turn"]);
+	OAK_ASSERT([t.messageText() hasSuffix:@"closed: sess-/tmp/project"]);
+}
+
+void test_load_unknown_session ()
+{
+	test_session_t t(@[ @"--sessions" ]);
+	OAK_ASSERT(t.start() == nil);
+	OAK_ASSERT(LoadSession(t, @"missing") != nil);
+	OAK_ASSERT_EQ((NSInteger)t.state(), (NSInteger)AgentSessionStateReady);
+}
+
+void test_start_with_session_to_load ()
+{
+	test_session_t t(@[ @"--sessions" ]);
+	t.session.sessionIdToLoad = @"old-1";
+	OAK_ASSERT(t.start() == nil);
+	OAK_ASSERT([t.session.sessionId isEqualToString:@"old-1"]);
+	OAK_ASSERT(t.session.loadError == nil);
+	OAK_ASSERT([t.messageText() isEqualToString:@"Earlier answer"]);
+}
+
+void test_start_with_missing_session_falls_back ()
+{
+	test_session_t t(@[ @"--sessions" ]);
+	t.session.sessionIdToLoad = @"missing";
+	OAK_ASSERT(t.start() == nil);
+	OAK_ASSERT([t.session.sessionId isEqualToString:@"sess-/tmp/project"]);
+	OAK_ASSERT(t.session.loadError != nil);
+}
+
+void test_start_with_session_to_load_unsupported ()
+{
+	test_session_t t;
+	t.session.sessionIdToLoad = @"old-1";
+	OAK_ASSERT(t.start() == nil);
+	OAK_ASSERT([t.session.sessionId isEqualToString:@"sess-/tmp/project"]);
+}
+
+// ===============
+// = MCP Servers =
+// ===============
+
+void test_mcp_servers ()
+{
+	test_session_t t(@[ @"--sessions" ]);
+	t.session.mcpServers = @[
+		@{ @"name": @"local", @"command": @"/bin/cat", @"args": @[ ], @"env": @[ ] },
+		@{ @"type": @"http", @"name": @"web", @"url": @"https://example.com/mcp", @"headers": @[ ] },
+		@{ @"type": @"sse", @"name": @"events", @"url": @"https://example.com/sse", @"headers": @[ ] },
+	];
+	t.session.skippedMCPServerNames = @[ @"missing" ];
+	OAK_ASSERT(t.start() == nil);
+	OAK_ASSERT([t.prompt(@"mcp") isEqualToString:@"end_turn"]);
+	OAK_ASSERT([t.messageText() hasPrefix:@"MCP: local,web closed:"]);
+	OAK_ASSERT([t.session.skippedMCPServerNames isEqual:(@[ @"missing", @"events" ])]);
+}
+
+void test_mcp_servers_without_capabilities ()
+{
+	test_session_t t;
+	t.session.mcpServers = @[
+		@{ @"name": @"local", @"command": @"/bin/cat", @"args": @[ ], @"env": @[ ] },
+		@{ @"type": @"http", @"name": @"web", @"url": @"https://example.com/mcp", @"headers": @[ ] },
+	];
+	OAK_ASSERT(t.start() == nil);
+	OAK_ASSERT([t.session.skippedMCPServerNames isEqual:(@[ @"web" ])]);
+}
