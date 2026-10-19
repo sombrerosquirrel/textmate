@@ -8,7 +8,7 @@ static NSString* const kColumnName    = @"name";
 static NSString* const kColumnType    = @"type";
 static NSString* const kColumnTarget  = @"target";
 
-static NSRect const kTabItemFrame = NSMakeRect(0, 0, 660, 450);
+static NSRect const kTabItemFrame = NSMakeRect(0, 0, 560, 450);
 
 static NSArray<NSString*>* const kMCPServerTypes = @[ @"stdio", @"http", @"sse" ];
 
@@ -44,7 +44,7 @@ static NSTextField* HintLabel (NSString* text)
 	NSTextField* res = [NSTextField wrappingLabelWithString:text];
 	res.font      = [NSFont systemFontOfSize:NSFont.smallSystemFontSize];
 	res.textColor = NSColor.secondaryLabelColor;
-	res.preferredMaxLayoutWidth = 380;
+	res.preferredMaxLayoutWidth = 270;
 	return res;
 }
 
@@ -240,7 +240,7 @@ static BOOL DiffersFromDefault (AgentDescriptor* agent)
 
 - (void)loadView
 {
-	NSTabView* tabView = [[NSTabView alloc] initWithFrame:NSMakeRect(0, 0, 680, 500)];
+	NSTabView* tabView = [[NSTabView alloc] initWithFrame:NSMakeRect(0, 0, 582, 500)];
 	NSTabViewItem* agentsItem  = [[NSTabViewItem alloc] initWithIdentifier:@"agents"];
 	agentsItem.label = @"Agents";
 	agentsItem.view  = [self makeAgentsView];
@@ -250,10 +250,12 @@ static BOOL DiffersFromDefault (AgentDescriptor* agent)
 	[tabView addTabViewItem:agentsItem];
 	[tabView addTabViewItem:serversItem];
 
-	// NSTabView doesn’t size itself to its items, so it gets a size they fit in
+	// NSTabView doesn’t size itself to its items, so it gets a size they fit
+	// in. 582 + margins = 622, the other panes’ width: a different width
+	// resizes the window, and its centred toolbar icons move.
 	NSView* view = [[NSView alloc] initWithFrame:NSZeroRect];
 	OakAddAutoLayoutViewsToSuperview(@[ tabView ], view);
-	[view addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"H:|-[tabView(>=680)]-|" options:0 metrics:nil views:@{ @"tabView": tabView }]];
+	[view addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"H:|-[tabView(==582)]-|" options:0 metrics:nil views:@{ @"tabView": tabView }]];
 	[view addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"V:|-[tabView(>=500)]-|" options:0 metrics:nil views:@{ @"tabView": tabView }]];
 	// The preferences window keeps each pane at its frame’s size
 	view.frame = (NSRect){ .size = view.fittingSize };
@@ -325,9 +327,9 @@ static BOOL DiffersFromDefault (AgentDescriptor* agent)
 	[form rowAtIndex:3].yPlacement   = NSGridCellPlacementTop;
 	[form cellForView:_restoreButton].xPlacement = NSGridCellPlacementLeading;
 	// Preferred sizes: required ones could exceed the tab item while it’s being sized
-	NSMutableArray<NSLayoutConstraint*>* sizes = [NSMutableArray arrayWithObjects:[environmentScrollView.heightAnchor constraintEqualToConstant:70], [_apiKeyVariableField.widthAnchor constraintEqualToConstant:220], nil];
+	NSMutableArray<NSLayoutConstraint*>* sizes = [NSMutableArray arrayWithObjects:[environmentScrollView.heightAnchor constraintEqualToConstant:70], [_apiKeyVariableField.widthAnchor constraintEqualToConstant:190], nil];
 	for(NSView* view in @[ _nameField, _commandField, environmentScrollView, _apiKeyField ])
-		[sizes addObject:[view.widthAnchor constraintEqualToConstant:380]];
+		[sizes addObject:[view.widthAnchor constraintEqualToConstant:270]];
 	for(NSLayoutConstraint* constraint in sizes)
 		constraint.priority = NSLayoutPriorityDefaultHigh;
 	[NSLayoutConstraint activateConstraints:sizes];
@@ -335,12 +337,12 @@ static BOOL DiffersFromDefault (AgentDescriptor* agent)
 	_agentControls = @[ _nameField, _commandField, _usesAPIKeyCheckBox, _apiKeyVariableField, _apiKeyField, _restoreButton ];
 
 	NSTextField* footnote = HintLabel(@"In a project’s .tm_properties, agentName picks the agent to use (by name) and agentCommand replaces its command.");
-	footnote.preferredMaxLayoutWidth = 600;
+	footnote.preferredMaxLayoutWidth = 530;
 
 	NSView* view = [[NSView alloc] initWithFrame:kTabItemFrame]; // tab items are sized by autoresizing, and nothing fits in 0×0
 	NSDictionary* views = @{ @"table": tableScrollView, @"add": addButton, @"remove": _removeAgentButton, @"form": form, @"footnote": footnote };
 	OakAddAutoLayoutViewsToSuperview(views.allValues, view);
-	[view addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"H:|-12-[table(==150@750)]-16-[form]-(>=12)-|" options:0 metrics:nil views:views]];
+	[view addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"H:|-12-[table(==150@750)]-12-[form]-(>=12)-|" options:0 metrics:nil views:views]];
 	[view addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"H:|-12-[add(==20)]-(-1)-[remove(==add)]" options:NSLayoutFormatAlignAllTop|NSLayoutFormatAlignAllBottom metrics:nil views:views]];
 	[view addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"H:|-12-[footnote]-12-|" options:0 metrics:nil views:views]];
 	[view addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"V:|-12-[table]-8-[add(==19)]-12-[footnote]-12-|" options:0 metrics:nil views:views]];
@@ -463,9 +465,9 @@ static BOOL DiffersFromDefault (AgentDescriptor* agent)
 {
 	NSTableColumn* enabledColumn = Column(kColumnEnabled, @"", YES, 16, NSTableColumnNoResizing);
 	enabledColumn.dataCell = CheckBoxCell();
-	NSTableColumn* nameColumn   = Column(kColumnName, @"Name", YES, 130, NSTableColumnUserResizingMask);
+	NSTableColumn* nameColumn   = Column(kColumnName, @"Name", YES, 110, NSTableColumnUserResizingMask);
 	NSTableColumn* typeColumn   = Column(kColumnType, @"Type", YES, 76, NSTableColumnNoResizing);
-	NSTableColumn* targetColumn = Column(kColumnTarget, @"Command or URL", YES, 360, NSTableColumnAutoresizingMask);
+	NSTableColumn* targetColumn = Column(kColumnTarget, @"Command or URL", YES, 300, NSTableColumnAutoresizingMask);
 	nameColumn.dataCell   = TextCell();
 	targetColumn.dataCell = TextCell([NSFont userFixedPitchFontOfSize:NSFont.smallSystemFontSize + 1]);
 
@@ -487,7 +489,7 @@ static BOOL DiffersFromDefault (AgentDescriptor* agent)
 	NSScrollView* variablesScrollView = VariablesEditor(&_serverVariablesView, self);
 
 	NSTextField* footnote = HintLabel(@"These servers are passed to every agent when a chat starts, in addition to the agent’s own MCP configuration. A stdio server runs a command (found on your login shell’s PATH); http and sse servers are reached at a URL, if the agent supports them.");
-	footnote.preferredMaxLayoutWidth = 600;
+	footnote.preferredMaxLayoutWidth = 530;
 
 	NSView* view = [[NSView alloc] initWithFrame:kTabItemFrame]; // tab items are sized by autoresizing, and nothing fits in 0×0
 	NSDictionary* views = @{ @"table": tableScrollView, @"add": addButton, @"remove": _removeServerButton, @"label": _serverVariablesLabel, @"variables": variablesScrollView, @"footnote": footnote };
