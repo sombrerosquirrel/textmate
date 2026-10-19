@@ -67,12 +67,14 @@ Checked in the running app (2026-10-19, via a probe): the Agents pane renders an
 Tests: AgentClient 66 (new: registry 8 incl. Keychain round-trip, sessions 9: list, load, load at start and fallback, MCP filtering). The fake agent learned `--sessions` and `mcp`. `ctest` 28/28.
 
 ## Commits
-344317b2 configuration, Keychain, MCP, list and load · 364513ce Agents pane · 402ec2be register pane, Agent Settings… · 7649ae25 picker, history, restore · 2267d3b6 `.tm_properties`, Add to Agent Chat · 717777c2 MCP skip reasons · c700c8fc Agents pane tables, toolbar icons
+344317b2 configuration, Keychain, MCP, list and load · 364513ce Agents pane · 402ec2be register pane, Agent Settings… · 7649ae25 picker, history, restore · 2267d3b6 `.tm_properties`, Add to Agent Chat · 717777c2 MCP skip reasons · c700c8fc Agents pane tables, toolbar icons · Copilot MCP on the command line · Agents pane width
 
 ## Changes after the first check (2026-10-19)
 - The user put the MCP command in the Name column and got a notice blaming the transport. Notices now give each skipped server's reason (no name, no command, no URL, not found on the PATH, transport not supported), and point out a command typed into Name. + in MCP Servers starts editing the command, with a placeholder.
 - Agents pane tables: taller rows, text centred vertically, regular-size controls.
 - Preferences toolbar (user): icons of uneven size, and the Files label ran into its icon. Each SF Symbol is now drawn scaled to fit a 28×21 box in a 32×24 image.
+- Toolbar icons moved when switching to Agents (user): the pane was 720 pt wide, the others 622, and the window's toolbar is centred. Now 622.
+- Copilot didn't list the `everything` server (user). Checked outside TextMate: Copilot CLI 1.0.97's ACP `newSession`/`loadSession` ignore `mcpServers` (it announces `mcpCapabilities` but only loads its own configuration); Claude Code connected to the same server. Copilot takes `--additional-mcp-config <json>` (its `mcp-config.json` format, types `local`/`http`/`sse`), which works with `--acp`, so agents whose command is `copilot` get the servers that way (`takesMCPServersAsArgument`, `+argumentsForMCPServers:`). They apply when Copilot starts, like other agent settings.
 
 ## To check (user)
 1. Preferences ▸ Agents: both agents listed; edit Claude's command (e.g. add `--debug`), Restore Defaults brings it back. Add an agent, give it a command, check it appears in the panel's picker; remove it.
