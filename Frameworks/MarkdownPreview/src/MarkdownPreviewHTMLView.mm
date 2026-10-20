@@ -1,6 +1,7 @@
 #import "MarkdownPreviewHTMLView.h"
 #import <WebKit/WebKit.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
+#import "MarkdownPreviewScrollMap.h"
 
 static NSString* const kScheme = @"x-txmt-preview";
 
@@ -58,18 +59,58 @@ function tmSetContent (html) {
 	tmAnchors = null;
 }
 
+function tmMaxY () {
+	return Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+}
+
 // Page scrolling is in whole pixels; the rest is a transform on the content
 let tmOffset = 0;
 
-function tmScrollToY (y) {
-	const maxY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
-	y = Math.min(Math.max(0, y), maxY);
+function tmSetY (y) {
+	y = Math.min(Math.max(0, y), tmMaxY());
 	window.scrollTo(0, Math.floor(y));
 	const offset = Math.min(Math.max(0, y - window.scrollY), 1);
 	if(offset != tmOffset) {
 		tmOffset = offset;
 		document.getElementById("content").style.transform = offset ? `translateY(${-offset}px)` : "";
 	}
+}
+
+// With an easing time, a jump of more than half the view moves there a
+// little each frame, as MarkdownPreviewEase does; smaller steps are followed
+// exactly. Hidden pages get no frames, so they jump.
+let tmTarget = 0, tmCurrent = 0, tmEasingTime = 0, tmFrame = 0, tmLastFrame = null;
+
+function tmScrollToY (y, easingTime) {
+	tmTarget = Math.min(Math.max(0, y), tmMaxY());
+	const jump = Math.abs(tmTarget - (window.scrollY + tmOffset)) > window.innerHeight / 2;
+	if(!easingTime || document.visibilityState != "visible" || (!tmFrame && !jump)) {
+		if(tmFrame)
+			cancelAnimationFrame(tmFrame);
+		tmFrame = 0;
+		return tmSetY(tmCurrent = tmTarget);
+	}
+
+	tmEasingTime = easingTime;
+	if(!tmFrame) {
+		tmCurrent   = window.scrollY + tmOffset;
+		tmLastFrame = null;
+		tmFrame     = requestAnimationFrame(tmScrollStep);
+	}
+}
+
+function tmScrollStep (now) {
+	const elapsed = tmLastFrame === null ? 1/60 : (now - tmLastFrame) / 1000;
+	tmLastFrame = now;
+	tmCurrent = tmTarget + (tmCurrent - tmTarget) * Math.exp(-Math.max(elapsed, 0) / tmEasingTime);
+	if(Math.abs(tmCurrent - tmTarget) < 0.1)
+		tmCurrent = tmTarget;
+	tmSetY(tmCurrent);
+	tmFrame = tmCurrent == tmTarget ? 0 : requestAnimationFrame(tmScrollStep);
+}
+
+function tmScrollToFraction (fraction, easingTime) {
+	tmScrollToY(fraction * tmMaxY(), easingTime);
 }
 
 function tmTop (el) {
@@ -110,50 +151,20 @@ function tmCurrentAnchors () {
 	return tmAnchors;
 }
 
-// For the editor, which maps its scroll position to a line between two of these
-function tmAnchorLines () {
-	if(!document.querySelector("#content [data-sourcepos]"))
-		return [];
-	return tmCurrentAnchors().map(anchor => anchor.line);
+// Sent to the app as [line, y] pairs, which the editor maps its position
+// through; empty without source positions
+function tmPostAnchors () {
+	const anchors = document.querySelector("#content [data-sourcepos]") ? tmCurrentAnchors().map(anchor => [ anchor.line, anchor.y ]) : [];
+	window.webkit.messageHandlers.tmAnchors.postMessage(anchors);
 }
 
-// Scrolls so `line` of the source is at the top. Elements carry their source
-// lines as data-sourcepos="startLine:startColumn-endLine:endColumn"; between
-// the starts of two elements, the position is interpolated, so scrolling
-// through the editor scrolls the page continuously.
-function tmScrollTo (line, fraction) {
-	const maxY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
-	if(!document.querySelector("#content [data-sourcepos]"))
-		return tmScrollToY(fraction * maxY);
-
-	const anchors = tmCurrentAnchors();
-	let lo = 0, hi = anchors.length - 1;
-	if(line >= anchors[hi].line)
-		return tmScrollToY(anchors[hi].y);
-	while(hi - lo > 1) { // anchors[lo].line <= line < anchors[hi].line
-		const mid = (lo + hi) >> 1;
-		if(anchors[mid].line <= line)
-			lo = mid;
-		else
-			hi = mid;
-	}
-
-	// A monotone cubic between anchors, so the speed changes gradually (as in MarkdownPreviewInterpolation.h)
-	const secant = i => (anchors[i+1].y - anchors[i].y) / (anchors[i+1].line - anchors[i].line);
-	const slope = i => {
-		if(i == 0)
-			return secant(0);
-		if(i == anchors.length - 1)
-			return secant(i - 1);
-		const before = secant(i - 1), after = secant(i);
-		return before > 0 && after > 0 ? 2 * before * after / (before + after) : 0;
-	};
-
-	const a = anchors[lo], b = anchors[hi];
-	const h = b.line - a.line, t = (line - a.line) / h, t2 = t * t, t3 = t2 * t;
-	const y = (2*t3 - 3*t2 + 1) * a.y + (t3 - 2*t2 + t) * h * slope(lo) + (-2*t3 + 3*t2) * b.y + (t3 - t2) * h * slope(hi);
-	tmScrollToY(y);
-}
+// Positions move when the layout does, e.g. as images load or the width changes
+document.addEventListener("DOMContentLoaded", () => {
+	new ResizeObserver(() => {
+		tmAnchors = null;
+		tmPostAnchors();
+	}).observe(document.getElementById("content"));
+});
 )JS";
 
 static NSURL* PreviewURLForPath (NSString* path)
@@ -208,7 +219,23 @@ static NSString* PathForPreviewURL (NSURL* url)
 // = The view =
 // ============
 
+// Passes the page’s messages on without the content controller retaining the view
+@interface MarkdownPreviewMessageHandler : NSObject <WKScriptMessageHandler>
+@property (nonatomic, weak) MarkdownPreviewHTMLView* view;
+@end
+
 @interface MarkdownPreviewHTMLView () <WKNavigationDelegate>
+- (void)didReceiveAnchors:(id)anchors;
+@end
+
+@implementation MarkdownPreviewMessageHandler
+- (void)userContentController:(WKUserContentController*)userContentController didReceiveScriptMessage:(WKScriptMessage*)message
+{
+	[_view didReceiveAnchors:message.body];
+}
+@end
+
+@interface MarkdownPreviewHTMLView ()
 {
 	WKWebView* _webView;
 	MarkdownPreviewSchemeHandler* _schemeHandler;
@@ -216,10 +243,6 @@ static NSString* PathForPreviewURL (NSURL* url)
 	NSURL* _documentURL;
 	NSString* _body;
 	BOOL _loaded;
-
-	BOOL _hasScrollPosition;
-	CGFloat _line;
-	CGFloat _fraction;
 }
 @end
 
@@ -235,6 +258,10 @@ static NSString* PathForPreviewURL (NSURL* url)
 		configuration.websiteDataStore = WKWebsiteDataStore.nonPersistentDataStore;
 		[configuration setURLSchemeHandler:_schemeHandler forURLScheme:kScheme];
 		[configuration.userContentController addUserScript:[[WKUserScript alloc] initWithSource:kScript injectionTime:WKUserScriptInjectionTimeAtDocumentStart forMainFrameOnly:YES inContentWorld:WKContentWorld.defaultClientWorld]];
+
+		MarkdownPreviewMessageHandler* messageHandler = [[MarkdownPreviewMessageHandler alloc] init];
+		messageHandler.view = self;
+		[configuration.userContentController addScriptMessageHandler:messageHandler contentWorld:WKContentWorld.defaultClientWorld name:@"tmAnchors"];
 
 		_webView = [[WKWebView alloc] initWithFrame:self.bounds configuration:configuration];
 		_webView.autoresizingMask   = NSViewWidthSizable|NSViewHeightSizable;
@@ -253,42 +280,45 @@ static NSString* PathForPreviewURL (NSURL* url)
 		return [self pushContent];
 
 	// A new document: load the page; the content follows once it has loaded
-	_documentURL       = documentURL;
-	_loaded            = NO;
-	_hasScrollPosition = NO;
+	_documentURL = documentURL;
+	_loaded      = NO;
 	NSString* page = [NSString stringWithFormat:@"<!DOCTYPE html><html><head><meta charset=\"utf-8\"><meta name=\"color-scheme\" content=\"light dark\"><style>%@</style></head><body><article id=\"content\" class=\"markdown-body\"></article></body></html>", kStyleSheet];
 	[_webView loadHTMLString:page baseURL:PreviewURLForPath(documentURL.path)];
 }
 
+// The page keeps its scroll position; the delegate re-syncs it once the new anchors arrive
 - (void)pushContent
 {
-	__weak MarkdownPreviewHTMLView* weakSelf = self;
-	[_webView callAsyncJavaScript:@"tmSetContent(html); return tmAnchorLines();" arguments:@{ @"html": _body ?: @"" } inFrame:nil inContentWorld:WKContentWorld.defaultClientWorld completionHandler:^(id result, NSError* error){
-		MarkdownPreviewHTMLView* strongSelf = weakSelf;
-		if(!strongSelf)
-			return;
-		strongSelf->_anchorLines = [result isKindOfClass:[NSArray class]] ? result : @[ ];
-		if([strongSelf.delegate respondsToSelector:@selector(HTMLViewDidUpdateAnchorLines:)])
-			[strongSelf.delegate HTMLViewDidUpdateAnchorLines:strongSelf];
-	}];
-	if(_hasScrollPosition)
-		[self scrollToSourceLine:_line fraction:_fraction];
+	[_webView callAsyncJavaScript:@"tmSetContent(html); tmPostAnchors();" arguments:@{ @"html": _body ?: @"" } inFrame:nil inContentWorld:WKContentWorld.defaultClientWorld completionHandler:nil];
 }
 
-- (void)scrollToSourceLine:(CGFloat)line fraction:(CGFloat)fraction
+- (void)didReceiveAnchors:(id)anchors
 {
-	_hasScrollPosition = YES;
-	_line              = line;
-	_fraction          = fraction;
-	[self sendScrollPosition];
+	NSMutableArray* res = [NSMutableArray array];
+	if([anchors isKindOfClass:[NSArray class]])
+	{
+		for(NSArray* anchor in anchors)
+		{
+			if([anchor isKindOfClass:[NSArray class]] && anchor.count == 2)
+				[res addObject:[NSValue valueWithPoint:NSMakePoint([anchor[0] doubleValue], [anchor[1] doubleValue])]];
+		}
+	}
+	_anchors = res;
+	if([self.delegate respondsToSelector:@selector(HTMLViewDidUpdateAnchors:)])
+		[self.delegate HTMLViewDidUpdateAnchors:self];
 }
 
-// Every position is sent: the page’s anchors are cached, so each is cheap,
-// and skipping some would make slow scrolling uneven
-- (void)sendScrollPosition
+// Every position is sent: each is cheap, and skipping some would make slow scrolling uneven
+- (void)scrollToPosition:(CGFloat)y animated:(BOOL)animated
 {
 	if(_loaded)
-		[_webView callAsyncJavaScript:@"tmScrollTo(line, fraction)" arguments:@{ @"line": @(_line), @"fraction": @(_fraction) } inFrame:nil inContentWorld:WKContentWorld.defaultClientWorld completionHandler:nil];
+		[_webView callAsyncJavaScript:@"tmScrollToY(y, easingTime)" arguments:@{ @"y": @(y), @"easingTime": @(animated ? kMarkdownPreviewEasingTime : 0) } inFrame:nil inContentWorld:WKContentWorld.defaultClientWorld completionHandler:nil];
+}
+
+- (void)scrollToFraction:(CGFloat)fraction animated:(BOOL)animated
+{
+	if(_loaded)
+		[_webView callAsyncJavaScript:@"tmScrollToFraction(fraction, easingTime)" arguments:@{ @"fraction": @(fraction), @"easingTime": @(animated ? kMarkdownPreviewEasingTime : 0) } inFrame:nil inContentWorld:WKContentWorld.defaultClientWorld completionHandler:nil];
 }
 
 - (void)evaluateJavaScript:(NSString*)script completionHandler:(void(^)(id result, NSError* error))completion

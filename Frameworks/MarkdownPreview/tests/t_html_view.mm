@@ -88,7 +88,28 @@ void test_serves_local_files_below_read_access_url ()
 	[NSFileManager.defaultManager removeItemAtPath:root error:nil];
 }
 
-void test_scrolls_to_source_line ()
+static NSArray<NSValue*>* WaitForAnchors (MarkdownPreviewHTMLView* view, NSUInteger count)
+{
+	__block NSArray<NSValue*>* anchors;
+	for(NSUInteger i = 0; i < 200 && anchors.count != count; ++i)
+	{
+		dispatch_sync(dispatch_get_main_queue(), ^{
+			anchors = view.anchors;
+		});
+		if(anchors.count != count)
+			usleep(50000);
+	}
+	return anchors;
+}
+
+static void ScrollTo (MarkdownPreviewHTMLView* view, CGFloat y)
+{
+	dispatch_sync(dispatch_get_main_queue(), ^{
+		[view scrollToPosition:y animated:NO];
+	});
+}
+
+void test_reports_anchors_and_scrolls ()
 {
 	NSMutableString* html = [NSMutableString string];
 	for(NSUInteger i = 0; i < 100; ++i)
@@ -99,40 +120,44 @@ void test_scrolls_to_source_line ()
 	OAK_ASSERT(WaitFor(view, @"document.querySelectorAll('#content p').length == 100"));
 
 	// Reported for the editor once the content is shown
-	__block NSArray<NSNumber*>* anchorLines;
-	for(NSUInteger i = 0; i < 200 && anchorLines.count == 0; ++i)
-	{
-		dispatch_sync(dispatch_get_main_queue(), ^{
-			anchorLines = view.anchorLines;
-		});
-		if(anchorLines.count == 0)
-			usleep(50000);
-	}
-	OAK_ASSERT_EQ(anchorLines.count, 101); // line 1 (also paragraph 0), paragraphs 1–99, the end
-	OAK_ASSERT_EQ(anchorLines[1].intValue, 3);
-	OAK_ASSERT_EQ(anchorLines.lastObject.intValue, 200);
+	NSArray<NSValue*>* anchors = WaitForAnchors(view, 101);
+	OAK_ASSERT_EQ(anchors.count, 101); // line 1 (also paragraph 0), paragraphs 1–99, the end
+	OAK_ASSERT_EQ(anchors[1].pointValue.x, 3);
+	OAK_ASSERT_EQ(anchors.lastObject.pointValue.x, 200);
+	CGFloat paragraph50 = [Evaluate(view, @"tmTop(document.querySelectorAll('#content p')[50])") doubleValue];
+	OAK_ASSERT(fabs(anchors[50].pointValue.y - paragraph50) < 0.01);
 
-	// Line 101 is paragraph 50: it should be at the top
-	dispatch_sync(dispatch_get_main_queue(), ^{
-		[view scrollToSourceLine:101 fraction:0];
-	});
-	OAK_ASSERT(WaitFor(view, @"Math.abs(document.querySelectorAll('#content p')[50].getBoundingClientRect().top) < 2"));
-
-	// Line 102 is the blank line after it: halfway to the next paragraph
-	dispatch_sync(dispatch_get_main_queue(), ^{
-		[view scrollToSourceLine:102 fraction:0];
-	});
-	OAK_ASSERT(WaitFor(view, @"(() => { const p = document.querySelectorAll('#content p'); const a = p[50].getBoundingClientRect().top, b = p[51].getBoundingClientRect().top; return a < -1 && b > 1 && Math.abs(a + b) < 2; })()"));
+	// Paragraph 50 at the top
+	ScrollTo(view, paragraph50);
+	OAK_ASSERT(WaitFor(view, @"Math.abs(document.querySelectorAll('#content p')[50].getBoundingClientRect().top) < 0.01"));
 
 	// Positions between whole pixels: the page scrolls by whole pixels, and the content moves by the rest
-	dispatch_sync(dispatch_get_main_queue(), ^{
-		[view scrollToSourceLine:101.3 fraction:0];
-	});
-	OAK_ASSERT(WaitFor(view, @"(() => { const p = document.querySelectorAll('#content p'); const a = tmTop(p[50]), b = tmTop(p[51]); const y = a + 0.15 * (b - a); return Math.abs(window.scrollY + tmOffset - y) < 0.01 && tmOffset < 1; })()"));
+	ScrollTo(view, paragraph50 + 10.3);
+	OAK_ASSERT(WaitFor(view, [NSString stringWithFormat:@"Math.abs(window.scrollY + tmOffset - %f) < 0.01 && tmOffset < 1", paragraph50 + 10.3]));
 
-	// The end of the document scrolls to the bottom
-	dispatch_sync(dispatch_get_main_queue(), ^{
-		[view scrollToSourceLine:500 fraction:0];
-	});
+	// Past the end: the bottom
+	ScrollTo(view, 1e6);
 	OAK_ASSERT(WaitFor(view, @"Math.abs(window.scrollY + window.innerHeight - document.documentElement.scrollHeight) < 2"));
+
+	// Without source positions: none
+	ShowHTML(view, @"<p>Plain</p>", nil, nil);
+	OAK_ASSERT_EQ(WaitForAnchors(view, 0).count, 0);
+}
+
+void test_reports_anchors_when_layout_changes ()
+{
+	MarkdownPreviewHTMLView* view = MakeView();
+	ShowHTML(view, @"<div id='box' data-sourcepos='1:1-1:5' style='height: 10px'></div><p data-sourcepos='3:1-3:5'>After</p>", nil, nil);
+	NSArray<NSValue*>* anchors = WaitForAnchors(view, 3);
+	OAK_ASSERT_EQ(anchors.count, 3);
+	CGFloat before = anchors[1].pointValue.y;
+
+	// As when an image loads above it, the paragraph moves down
+	Evaluate(view, @"document.getElementById('box').style.height = '200px'");
+	for(NSUInteger i = 0; i < 200 && anchors[1].pointValue.y < before + 150; ++i)
+	{
+		usleep(50000);
+		anchors = WaitForAnchors(view, 3);
+	}
+	OAK_ASSERT(fabs(anchors[1].pointValue.y - (before + 190)) < 1);
 }

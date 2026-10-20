@@ -1,9 +1,10 @@
 #import "MarkdownPreviewViewController.h"
 #import "MarkdownPreviewHTMLView.h"
-#import "MarkdownPreviewInterpolation.h"
+#import "MarkdownPreviewScrollMap.h"
 #import <OakMarkdown/OakMarkdown.h>
 #import <OakFoundation/OakStringListTransformer.h>
 #import <Preferences/Keys.h>
+#import <QuartzCore/QuartzCore.h>
 
 static CGFloat const kTextInset = 16;
 static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSettingsTransformer";
@@ -26,6 +27,11 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 	NSMutableSet<NSNumber*>* _toggledDetails; // <details> opened or closed by the user
 	CGFloat _renderedWidth;
 	std::vector<std::pair<CGFloat, CGFloat>> _anchors; // source line → y in the text view, both increasing
+
+	CADisplayLink* _displayLink; // while easing towards _targetY
+	CGFloat _scrollY;
+	CGFloat _targetY;
+	CFTimeInterval _lastFrame;
 }
 @end
 
@@ -304,8 +310,13 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 	return height > 0 ? MIN(MAX(NSMinY(_scrollView.contentView.bounds) / height, 0), 1) : 0;
 }
 
-// Where the text from each marked source line starts; between two of them,
-// positions are interpolated, so the view scrolls continuously with the editor
+- (void)setScrollFraction:(CGFloat)fraction
+{
+	[self view];
+	[self scrollToFraction:fraction animated:NO];
+}
+
+// Where the text from each marked source line starts
 - (void)updateAnchors
 {
 	_anchors.clear();
@@ -331,49 +342,93 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 	if(_anchors.size() > 1 && bottom > _anchors.back().second)
 		_anchors.emplace_back(lastLine + 1, bottom);
 
-	if([self.delegate respondsToSelector:@selector(markdownPreviewDidUpdateAnchorLines:)])
-		[self.delegate markdownPreviewDidUpdateAnchorLines:self];
+	if([self.delegate respondsToSelector:@selector(markdownPreviewDidUpdateAnchors:)])
+		[self.delegate markdownPreviewDidUpdateAnchors:self];
 }
 
-- (NSArray<NSNumber*>*)anchorLines
+- (NSArray<NSValue*>*)anchors
 {
 	if(self.showsHTML)
-		return _htmlView.anchorLines ?: @[ ];
+		return _htmlView.anchors ?: @[ ];
 	if(_anchors.size() < 3)
 		return @[ ];
 
 	NSMutableArray* res = [NSMutableArray array];
-	for(auto const& anchor : _anchors)
-		[res addObject:@(anchor.first)];
+	for(auto const& [line, y] : _anchors)
+		[res addObject:[NSValue valueWithPoint:NSMakePoint(line, y)]];
 	return res;
 }
 
-- (void)HTMLViewDidUpdateAnchorLines:(MarkdownPreviewHTMLView*)view
+- (void)HTMLViewDidUpdateAnchors:(MarkdownPreviewHTMLView*)view
 {
-	if([self.delegate respondsToSelector:@selector(markdownPreviewDidUpdateAnchorLines:)])
-		[self.delegate markdownPreviewDidUpdateAnchorLines:self];
+	if([self.delegate respondsToSelector:@selector(markdownPreviewDidUpdateAnchors:)])
+		[self.delegate markdownPreviewDidUpdateAnchors:self];
 }
 
-- (void)scrollToSourceLine:(CGFloat)line fraction:(CGFloat)fraction
+- (void)scrollToPosition:(CGFloat)y animated:(BOOL)animated
 {
 	if(self.showsHTML)
-		return [_htmlView scrollToSourceLine:line fraction:fraction];
-	if(_anchors.size() < 3)
-		return [self setScrollFraction:fraction];
+		return [_htmlView scrollToPosition:y animated:animated];
 
-	// Fractional positions, aligned to the screen’s pixels, so slow scrolling doesn’t move in whole points
-	CGFloat const scale = _scrollView.window.backingScaleFactor ?: 2;
-	CGFloat y = MarkdownPreviewInterpolate(_anchors, line);
-	y = round(MIN(MAX(y, 0), [self scrollableHeight]) * scale) / scale;
-	[_scrollView.contentView scrollToPoint:NSMakePoint(0, y)];
-	[_scrollView reflectScrolledClipView:_scrollView.contentView];
+	_targetY = MIN(MAX(y, 0), [self scrollableHeight]);
+	BOOL jump = fabs(_targetY - NSMinY(_scrollView.contentView.bounds)) > NSHeight(_scrollView.contentView.bounds) / 2;
+	if(!animated || !_scrollView.window || (!_displayLink && !jump))
+	{
+		[self stopScrollAnimation];
+		return [self setScrollY:_targetY];
+	}
+
+	if(!_displayLink)
+	{
+		_scrollY     = NSMinY(_scrollView.contentView.bounds);
+		_lastFrame   = 0;
+		_displayLink = [_scrollView displayLinkWithTarget:self selector:@selector(scrollAnimationStep:)];
+		[_displayLink addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
+	}
 }
 
-- (void)setScrollFraction:(CGFloat)fraction
+- (void)scrollToFraction:(CGFloat)fraction animated:(BOOL)animated
 {
-	[self view];
-	CGFloat y = round(MIN(MAX(fraction, 0), 1) * [self scrollableHeight]);
-	[_scrollView.contentView scrollToPoint:NSMakePoint(0, y)];
+	if(self.showsHTML)
+		return [_htmlView scrollToFraction:fraction animated:animated];
+	[self scrollToPosition:MIN(MAX(fraction, 0), 1) * [self scrollableHeight] animated:animated];
+}
+
+- (void)scrollAnimationStep:(CADisplayLink*)displayLink
+{
+	CFTimeInterval elapsed = _lastFrame ? displayLink.targetTimestamp - _lastFrame : displayLink.targetTimestamp - displayLink.timestamp;
+	_lastFrame = displayLink.targetTimestamp;
+
+	_scrollY = MarkdownPreviewEase(_scrollY, _targetY, elapsed);
+	if(fabs(_scrollY - _targetY) < 0.1)
+	{
+		_scrollY = _targetY;
+		[self stopScrollAnimation];
+	}
+	[self setScrollY:_scrollY];
+}
+
+- (void)stopScrollAnimation
+{
+	[_displayLink invalidate];
+	_displayLink = nil;
+}
+
+- (void)viewDidDisappear
+{
+	[super viewDidDisappear];
+	if(_displayLink)
+	{
+		[self stopScrollAnimation];
+		[self setScrollY:_targetY];
+	}
+}
+
+// Fractional positions, aligned to the screen’s pixels, so slow scrolling doesn’t move in whole points
+- (void)setScrollY:(CGFloat)y
+{
+	CGFloat const scale = _scrollView.window.backingScaleFactor ?: 2;
+	[_scrollView.contentView scrollToPoint:NSMakePoint(0, round(y * scale) / scale)];
 	[_scrollView reflectScrolledClipView:_scrollView.contentView];
 }
 
@@ -431,6 +486,7 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 	NSLayoutManager* layoutManager = _textView.layoutManager;
 	NSRect rect = [layoutManager lineFragmentRectForGlyphAtIndex:[layoutManager glyphIndexForCharacterAtIndex:index] effectiveRange:nullptr];
 	CGFloat y = MIN(MAX(NSMinY(rect) + _textView.textContainerOrigin.y - 8, 0), [self scrollableHeight]);
+	[self stopScrollAnimation];
 	[_scrollView.contentView scrollToPoint:NSMakePoint(0, y)];
 	[_scrollView reflectScrolledClipView:_scrollView.contentView];
 	return YES;

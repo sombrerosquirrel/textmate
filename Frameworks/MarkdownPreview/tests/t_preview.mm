@@ -120,7 +120,7 @@ static void notice ()
 	OAK_ASSERT(preview.notice == nil);
 }
 
-static void scrolls_to_source_line ()
+static void reports_anchors_and_scrolls ()
 {
 	NSMutableString* markdown = [NSMutableString string];
 	for(NSUInteger i = 0; i < 200; ++i)
@@ -148,24 +148,31 @@ static void scrolls_to_source_line ()
 	};
 	auto scrollY = [&]() -> CGFloat { return NSMinY(textView.enclosingScrollView.contentView.bounds); };
 
-	// The editor maps its position between these lines
-	NSArray<NSNumber*>* anchorLines = preview.anchorLines;
-	OAK_ASSERT_EQ(anchorLines.firstObject.intValue, 1);
-	OAK_ASSERT([anchorLines containsObject:@101]);
-	for(NSUInteger i = 1; i < anchorLines.count; ++i)
-		OAK_ASSERT(anchorLines[i-1].doubleValue < anchorLines[i].doubleValue);
+	// The editor maps its position through these
+	NSArray<NSValue*>* anchors = preview.anchors;
+	OAK_ASSERT_EQ(anchors.firstObject.pointValue.x, 1);
+	for(NSUInteger i = 1; i < anchors.count; ++i)
+	{
+		OAK_ASSERT(anchors[i-1].pointValue.x < anchors[i].pointValue.x);
+		OAK_ASSERT(anchors[i-1].pointValue.y < anchors[i].pointValue.y);
+	}
+	NSUInteger line101 = [anchors indexOfObjectPassingTest:^BOOL(NSValue* anchor, NSUInteger i, BOOL* stop){ return anchor.pointValue.x == 101; }];
+	OAK_ASSERT(line101 != NSNotFound);
+	OAK_ASSERT(fabs(anchors[line101].pointValue.y - topOfParagraph(50)) < 1); // line 101 is paragraph 50
 
-	// Line 101 is paragraph 50: it should be at the top
-	[preview scrollToSourceLine:101 fraction:0];
+	[preview scrollToPosition:topOfParagraph(50) animated:NO];
 	OAK_ASSERT(fabs(scrollY() - topOfParagraph(50)) < 1);
 
-	// Halfway to the next paragraph, whatever the fraction says
-	[preview scrollToSourceLine:102 fraction:0.9];
-	OAK_ASSERT(fabs(scrollY() - (topOfParagraph(50) + topOfParagraph(51)) / 2) < 1);
+	// Not in a window: animating jumps
+	[preview scrollToPosition:topOfParagraph(60) animated:YES];
+	OAK_ASSERT(fabs(scrollY() - topOfParagraph(60)) < 1);
+
+	[preview scrollToFraction:1 animated:NO];
+	OAK_ASSERT(preview.scrollFraction > 0.99);
 }
 
 void test_renders_markdown () { RunOnMainThread(renders_markdown); }
-void test_scrolls_to_source_line () { RunOnMainThread(scrolls_to_source_line); }
+void test_reports_anchors_and_scrolls () { RunOnMainThread(reports_anchors_and_scrolls); }
 void test_switches_between_renderers () { RunOnMainThread(switches_between_renderers); }
 void test_notice () { RunOnMainThread(notice); }
 void test_placeholder () { RunOnMainThread(placeholder); }

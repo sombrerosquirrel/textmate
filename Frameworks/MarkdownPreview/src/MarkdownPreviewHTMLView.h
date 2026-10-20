@@ -9,7 +9,7 @@
 @protocol MarkdownPreviewHTMLViewDelegate <NSObject>
 - (void)HTMLView:(MarkdownPreviewHTMLView*)view openURL:(NSURL*)url; // file URLs for local links
 @optional
-- (void)HTMLViewDidUpdateAnchorLines:(MarkdownPreviewHTMLView*)view;
+- (void)HTMLViewDidUpdateAnchors:(MarkdownPreviewHTMLView*)view;
 @end
 
 @interface MarkdownPreviewHTMLView : NSView
@@ -19,13 +19,15 @@
 // unsaved). Showing a new body for the same document keeps the scroll position.
 - (void)showHTML:(NSString*)body documentURL:(NSURL*)documentURL readAccessURL:(NSURL*)readAccessURL;
 
-// `line` is 1-based and may be fractional; it’s matched to the elements’
-// source positions. Without source positions, `fraction` of the page is used.
-- (void)scrollToSourceLine:(CGFloat)line fraction:(CGFloat)fraction;
+// Where source lines start on the page, as NSPoint (x: line, y: position),
+// ascending; empty without source positions. Updated after the content
+// changes and when the layout does, e.g. as images load.
+@property (nonatomic, readonly) NSArray<NSValue*>* anchors;
 
-// The source lines whose position on the page is known, ascending; empty
-// without source positions. Updated after the content changes.
-@property (nonatomic, readonly) NSArray<NSNumber*>* anchorLines;
+// Scrolls so `y` is at the top of the page, or `fraction` (0–1) of the way
+// down. Animated, jumps of more than half the view ease there.
+- (void)scrollToPosition:(CGFloat)y animated:(BOOL)animated;
+- (void)scrollToFraction:(CGFloat)fraction animated:(BOOL)animated;
 
 // For tests: calls `completion` once the latest HTML is shown
 - (void)evaluateJavaScript:(NSString*)script completionHandler:(void(^)(id result, NSError* error))completion;

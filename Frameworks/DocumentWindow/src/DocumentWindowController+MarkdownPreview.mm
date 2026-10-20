@@ -6,7 +6,7 @@
 #import <MarkdownPreview/MarkdownPreviewSanitizer.h>
 #import <MarkdownPreview/MarkdownPreviewDocument.h>
 #import <MarkdownPreview/MarkdownPreviewInstallController.h>
-#import <MarkdownPreview/MarkdownPreviewInterpolation.h>
+#import <MarkdownPreview/MarkdownPreviewScrollMap.h>
 #import <OakEditorPanels/OakEditorPanelsView.h>
 #import <OakTextView/OakTextView.h>
 #import <document/OakDocument.h>
@@ -389,19 +389,31 @@ static OakEditorPanelEdge MarkdownPreviewEdge ()
 // =============
 
 // The editor’s first visible line goes to the top of the preview. Both
-// renderers know the source lines of their blocks; `fraction` (of the
-// document scrolled past) is the fallback when they don’t, e.g. for a
+// renderers know where their blocks’ source lines start (anchors); between
+// them, the preview moves in proportion to the editor’s pixels, averaged
+// over part of the editor’s height so lines that are much taller in the
+// preview (images, wrapped paragraphs) don’t make it race. `fraction` (of the
+// document scrolled past) is the fallback without anchors, e.g. for a
 // TM_MARKDOWN command without source positions.
+static CGFloat const kScrollSmoothingRadius = 0.25; // of the editor’s visible height, on each side
+
 - (void)editorDidScroll:(NSNotification*)aNotification
 {
 	OakTextView* textView = _controller.textView;
 	NSScrollView* scrollView = textView.enclosingScrollView;
 	CGFloat top = NSMinY(scrollView.contentView.bounds);
-	CGFloat scrollable = NSHeight(scrollView.documentView.frame) - NSHeight(scrollView.contentView.bounds);
-	CGFloat fraction = scrollable > 0 ? top / scrollable : 0;
+	CGFloat scrollable = MAX(0, NSHeight(scrollView.documentView.frame) - NSHeight(scrollView.contentView.bounds));
+	BOOL animated = aNotification != nil; // not re-syncs after rendering
 
-	CGFloat y = [textView convertPoint:NSMakePoint(0, top) fromView:scrollView.documentView].y;
-	[_preview scrollToSourceLine:[self sourceLineAtEditorY:y] fraction:fraction];
+	NSArray<NSValue*>* anchors = _preview.anchors;
+	if(anchors.count < 2)
+		return [_preview scrollToFraction:(scrollable > 0 ? top / scrollable : 0) animated:animated];
+
+	CGFloat y  = [textView convertPoint:NSMakePoint(0, top) fromView:scrollView.documentView].y;
+	CGFloat lo = [textView convertPoint:NSMakePoint(0, 0) fromView:scrollView.documentView].y;
+	CGFloat hi = [textView convertPoint:NSMakePoint(0, scrollable) fromView:scrollView.documentView].y;
+	CGFloat radius = kScrollSmoothingRadius * NSHeight(scrollView.contentView.bounds);
+	[_preview scrollToPosition:MarkdownPreviewSmoothMap([self scrollMapPointsFrom:y - radius to:y + radius anchors:anchors], y, radius, lo, hi) animated:animated];
 }
 
 // The editor’s y where a 1-based source line starts; past the last line, the end of the text
@@ -414,43 +426,39 @@ static OakEditorPanelEdge MarkdownPreviewEdge ()
 	return [textView lineFragmentForLine:line - 1 column:NSUIntegerMax].lastY; // clamped to the last line
 }
 
-// A fractional source line for the editor’s y. Between the preview’s anchor
-// lines, it moves in proportion to the editor’s pixels rather than its lines:
-// a wrapped paragraph is one line but many rows, and the preview should
-// scroll through it as evenly as through short lines.
-- (CGFloat)sourceLineAtEditorY:(CGFloat)y
+// (editor y, preview y) for the anchors between editor `from` and `to`, plus
+// one on each side, so the map is complete over that range
+- (std::vector<std::pair<CGFloat, CGFloat>>)scrollMapPointsFrom:(CGFloat)from to:(CGFloat)to anchors:(NSArray<NSValue*>*)anchors
 {
 	OakTextView* textView = _controller.textView;
-	GVLineRecord record = [textView lineRecordForPosition:y];
-	if(record.lineNumber == NSNotFound)
-		return 1;
+	auto indexForY = [&](CGFloat y, NSUInteger ifNotFound) -> NSUInteger {
+		GVLineRecord record = [textView lineRecordForPosition:y];
+		if(record.lineNumber == NSNotFound)
+			return ifNotFound;
+		NSValue* line = [NSValue valueWithPoint:NSMakePoint(record.lineNumber + 1, 0)];
+		NSUInteger next = [anchors indexOfObject:line inSortedRange:NSMakeRange(0, anchors.count) options:NSBinarySearchingInsertionIndex|NSBinarySearchingLastEqual usingComparator:^NSComparisonResult(NSValue* lhs, NSValue* rhs){
+			CGFloat a = lhs.pointValue.x, b = rhs.pointValue.x;
+			return a < b ? NSOrderedAscending : (a > b ? NSOrderedDescending : NSOrderedSame);
+		}];
+		return next; // the first anchor after y’s line
+	};
 
-	// The record is for one soft-wrapped row; measure the whole line, so the fraction doesn’t restart on each row
-	CGFloat firstY = [self editorYForSourceLine:record.lineNumber + 1];
-	CGFloat lastY  = [self editorYForSourceLine:record.lineNumber + 2];
-	CGFloat height = lastY - firstY;
-	CGFloat line   = record.lineNumber + 1 + (height > 0 ? MIN(MAX((y - firstY) / height, 0), 1) : 0);
+	NSUInteger first = indexForY(from, 0), last = indexForY(to, anchors.count);
+	first = first > 0 ? first - 1 : 0;
+	last  = MIN(last + 1, anchors.count);
 
-	NSArray<NSNumber*>* anchorLines = _preview.anchorLines;
-	NSUInteger next = [anchorLines indexOfObject:@(line) inSortedRange:NSMakeRange(0, anchorLines.count) options:NSBinarySearchingInsertionIndex|NSBinarySearchingLastEqual usingComparator:^NSComparisonResult(NSNumber* lhs, NSNumber* rhs){
-		return [lhs compare:rhs];
-	}];
-	if(next == 0 || next >= anchorLines.count)
-		return line;
-
-	// The anchors around y, two on each side, so the curve’s slopes match its neighbours’
-	std::vector<std::pair<CGFloat, CGFloat>> points; // editor y → line
-	for(NSUInteger i = next >= 2 ? next - 2 : 0; i < MIN(next + 2, anchorLines.count); ++i)
+	std::vector<std::pair<CGFloat, CGFloat>> points;
+	for(NSUInteger i = first; i < last; ++i)
 	{
-		CGFloat anchorLine = anchorLines[i].doubleValue;
-		CGFloat anchorY    = [self editorYForSourceLine:(NSUInteger)anchorLine];
-		if(points.empty() || (anchorY > points.back().first && anchorLine > points.back().second))
-			points.emplace_back(anchorY, anchorLine);
+		NSPoint anchor = anchors[i].pointValue;
+		CGFloat editorY = [self editorYForSourceLine:(NSUInteger)anchor.x];
+		if(points.empty() || (editorY > points.back().first && anchor.y >= points.back().second)) // folded lines share a y
+			points.emplace_back(editorY, anchor.y);
 	}
-	return points.size() >= 2 ? MarkdownPreviewInterpolate(points, y) : line;
+	return points;
 }
 
-- (void)markdownPreviewDidUpdateAnchorLines:(MarkdownPreviewViewController*)preview
+- (void)markdownPreviewDidUpdateAnchors:(MarkdownPreviewViewController*)preview
 {
 	[self editorDidScroll:nil];
 }
