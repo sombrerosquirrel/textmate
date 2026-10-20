@@ -88,6 +88,8 @@ Include `--sourcepos` (or any `data-sourcepos` attributes) for line-by-line scro
 
 The line at the top of the editor is kept at the top of the preview. Headings, paragraphs, lists, code blocks and tables line up; in between, the preview scrolls smoothly.
 
+Something much taller in the preview than in the editor, such as an image or a paragraph on one long line, is spread over a little more scrolling, so the preview doesn't rush past it; near it the preview's top can be a few lines off, and lines up again after. Jumps in the editor, such as Page Down or ⌘↓, glide in the preview. When images finish loading, the preview adjusts without you having to scroll.
+
 The preview doesn't scroll the editor (one-way only).
 
 ## Links

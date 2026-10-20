@@ -7,7 +7,7 @@ tags: [textmate, implementation, acp, agent]
 
 # M5 — Polish: Theme, Errors, Log, Shortcuts, Inline Chat, Docs
 
-**Status:** 🔄 Steps 1–6 implemented (2026-10-19), awaiting user check ([To check](#to-check-user)); steps 7–8 need the user
+**Status:** 🔄 Steps 1–6 implemented (2026-10-19), awaiting user check; step 7: scroll smoothness done (2026-10-20), awaiting user check, panel UX waiting for the user's notes; step 8 deferred by the user ([To check](#to-check-user))
 **Branch:** `feature/agent-polish` (from `feature/agent-config`)
 **Design:** [agent-harness-design.md §5.1, §5.6, §5.7, §6, §6a](../plans/agent-harness-design.md)
 
@@ -25,7 +25,7 @@ Ready for daily use (design §6, M5): code looks like it does in the editor, fai
 | 5. Inline chat | Text ▸ Ask Agent at Caret (⌃⌥⌘I; ⌘I is Italic in Markdown/HTML): a small prompt field under the caret. The request goes to the window's agent chat with the selection (or current line) attached and the instruction to edit there; the field shows progress and Stop, then the files changed with Keep / Undo and a link to the reply in the panel. The panel doesn't need to be open. | `AgentUI/AgentInlinePrompt`, `OakTextView` (caret rect), `DocumentWindowController+Agent` |
 | 6. Documentation | User guide for the agent panel: setup, agents and API keys, `.tm_properties`, MCP, chat history, permissions and changed files, inline chat, shortcuts, troubleshooting with the log. | `docs/ai/user/agent-panel.md` |
 | 7. UX pass | The panel UX items the user deferred in M2 (to collect from the user) and the Markdown preview's scroll smoothness. | — |
-| 8. `pr/agent` | Port onto upstream `master` (needs a decision: upstream builds with rave, not CMake, and targets macOS 10.12). | — |
+| 8. `pr/agent` | Port onto upstream `master` (needs a decision: upstream builds with rave, not CMake, and targets macOS 10.12). Deferred by the user (2026-10-20: "can wait for now, there's still more work to do first"). | — |
 
 Steps 1–6 are independent of the user's UX notes; 7 and 8 need the user first.
 
@@ -48,6 +48,30 @@ Checked in the running app (2026-10-19, via a probe): a reply with Python, Objec
 
 Tests: AgentClient adds sign-in arguments, install hints and the auth error check; AgentUI adds the log (summaries, detail, search, trimming) and permission keyboard options; OakMarkdown adds the highlighter and code block colours. `ctest` 28/28.
 
+### Step 7a — Markdown preview scroll smoothness (2026-10-20)
+
+The user asked for all four ideas from the Markdown preview's future work. Measured in TextMate-dev with a probe (below) on a test document with long paragraphs (one source line each, many lines in the preview), a 400 pt image, code blocks, lists and tables.
+
+| Idea | Result |
+|---|---|
+| Tall paragraphs and images | The cause of the remaining speed-ups. The editor mapped its position linearly between anchors, so a source line 20 pt tall in the editor and 400 pt in the preview made the preview move 20× faster for that line. `MarkdownPreviewScrollMap.h` now maps editor y → preview y through (editor y, preview y) anchor pairs and averages that map over a window of ±¼ of the editor's height (exact integral of the piecewise-linear map; the window shrinks at the ends so the top and bottom still map exactly). The preview never moves backwards, its speed changes gradually, and where editor and preview have the same proportions nothing changes. Replaces the monotone cubic in both C++ and the page script. |
+| Live measurement of the GitHub renderer | A probe library loaded into the running app with lldb (not in the repo): the editor scrolls itself at a constant speed from a display link; a `requestAnimationFrame` recorder in the page (or the built-in view's clip view) logs the preview's position each frame; results go to a file, nothing waits inside lldb. Lessons: lldb passes literal numbers as `int`, so doubles must be cast (`(double)120`) or the function reads garbage; a probe's frames only fire while its window is on screen (the probe floats it above other windows during a run); give each probe build its own entry point name. |
+| Time-based easing | Implemented (display link in the built-in view, `requestAnimationFrame` in the page; exponential, 40 ms) and measured: easing every step made scrolling *less* even (judder 0.09–0.12 against 0.02–0.06 for the page; also tried 20 ms and a critically damped spring), because the editor already delivers one step per frame. Kept only for jumps of more than half the preview's height (Page Down, ⌘↓, Go to Line), which now glide over about 20 frames instead of cutting; once easing, it follows the editor to the end. Re-syncs after rendering never animate. |
+| Anchors after images load | The page reports its anchors to the app (`tmAnchors` script message, from the client world) after each content change and whenever `#content` changes size (`ResizeObserver`: images loading, width changes), and the editor re-syncs at once. Before, the page only noticed on the next scroll, and the editor's map never learned the new positions. |
+
+Measured (speed-up: the fastest 100 ms over the mean speed, 1 = even; judder: mean change in per-frame step over the mean step, normal-length frames only):
+
+| | Before | After |
+|---|---|---|
+| Built-in, 120 pt/s | speed-up 14.8, judder 0.19 | 2.3, 0.10 |
+| Built-in, 1200 pt/s | 3.8, 0.45 | 2.5, 0.11 |
+| GitHub, 120 pt/s | 11.3, 0.06 | 2.2, 0.02 |
+| GitHub, 1200 pt/s | — (recorder bug in the baseline run) | 1.9, 0.05 |
+
+The remaining speed-up of about 2 is the tall paragraph and image spread over the window; with a wider window it would be lower but the preview would drift further from the editor's top line.
+
+API: the preview reports `anchors` (NSPoint: source line, preview y) and takes `scrollToPosition:animated:` / `scrollToFraction:animated:` instead of `anchorLines` and `scrollToSourceLine:fraction:`; the window category does the mapping. Tests: `t_scroll_map` (7, replaces `t_interpolation`), the HTML view reports anchors and re-reports them when the layout changes, the built-in view's anchors and positions. MarkdownPreview 31 tests; `ctest` 28/28.
+
 ## Commits
 4752a0a7 agent log · 3c5b671c error states · 5e3198e7 theme highlighting · 98808424 permission keys, New Agent Chat · 3a2f3d1b inline chat
 
@@ -60,6 +84,7 @@ Tests: AgentClient adds sign-in arguments, install hints and the auth error chec
 6. Error states without signing out: Preferences ▸ Agents, add an agent with command `env HOME=/tmp copilot --acp`, start a chat with it: “needs you to sign in” with Sign In (opens Terminal with `copilot login` — close it without signing in), Try Again, Agent Settings…. An agent with command `no-such-agent`: “Unable to find…” with Try Again and Agent Settings…. Remove the test agents afterwards.
 7. Kill the agent (`pkill -f claude-agent-acp`): “stopped running” with Restart and Show Log; Restart continues the chat.
 8. Read the [user guide](../user/agent-panel.md).
+9. Markdown preview scrolling (both renderers, a document with images and long paragraphs): scroll slowly and quickly. No rush through images or long paragraphs; the top line drifts a little near them and lines up again after. Page Down / ⌘↓ / ⌘↑ in the editor: the preview glides there. Open a document whose images load after it's shown: the preview stays lined up without scrolling.
 
 ## Future work
 - Inline Undo restores a file to before the agent's first change in the chat, not just this request's change, when the file was already in the changed-files list.
