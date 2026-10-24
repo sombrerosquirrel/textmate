@@ -75,3 +75,17 @@ void test_smooth_map_speed_changes_gradually ()
 	for(CGFloat x = 60; x < 140; x += 1)
 		OAK_ASSERT(fabs(speed(x + 1) - speed(x)) < 0.1);
 }
+
+void test_inverse_map ()
+{
+	auto map = [](CGFloat x) { return MarkdownPreviewSmoothMap(kPoints, x, 8, 0, 41); };
+	for(CGFloat x = 0.5; x < 41; x += 0.5)
+	{
+		CGFloat y = map(x);
+		OAK_ASSERT(fabs(map(MarkdownPreviewInverseMap(map, y, 0, 41, 0.01)) - y) < 0.5);
+	}
+
+	// Outside the range, the ends
+	OAK_ASSERT_EQ(MarkdownPreviewInverseMap(map, -10, 0, 41), 0);
+	OAK_ASSERT_EQ(MarkdownPreviewInverseMap(map, 1000, 0, 41), 41);
+}

@@ -1,4 +1,5 @@
 #import <MarkdownPreview/MarkdownPreviewViewController.h>
+#import "preview_scroll_recorder.h"
 
 // Tests run on background threads, but views must be used on the main thread
 static void RunOnMainThread (void(*test)())
@@ -171,6 +172,42 @@ static void reports_anchors_and_scrolls ()
 	OAK_ASSERT(preview.scrollFraction > 0.99);
 }
 
+static void reports_user_scrolling ()
+{
+	NSMutableString* markdown = [NSMutableString string];
+	for(NSUInteger i = 0; i < 200; ++i)
+		[markdown appendFormat:@"Paragraph %lu\n\n", i];
+
+	PreviewScrollRecorder* recorder = [[PreviewScrollRecorder alloc] init];
+	recorder.positions = [NSMutableArray array];
+	MarkdownPreviewViewController* preview = MakePreview();
+	preview.delegate = recorder;
+	[preview showMarkdown:markdown baseURL:nil];
+
+	NSScrollView* scrollView = nil;
+	NSMutableArray* queue = [NSMutableArray arrayWithObject:preview.view];
+	while(queue.count && !scrollView)
+	{
+		NSView* view = queue.firstObject;
+		[queue removeObjectAtIndex:0];
+		if([view isKindOfClass:[NSScrollView class]])
+			scrollView = (NSScrollView*)view;
+		[queue addObjectsFromArray:view.subviews];
+	}
+	OAK_ASSERT(scrollView != nil);
+
+	// Following the editor, or re-rendering, isn’t reported
+	[preview scrollToPosition:300 animated:NO];
+	[preview showMarkdown:[markdown stringByAppendingString:@"More\n"] baseURL:nil];
+	OAK_ASSERT_EQ(recorder.positions.count, 0);
+
+	// The user scrolling is
+	[scrollView.contentView scrollToPoint:NSMakePoint(0, 500)];
+	OAK_ASSERT_EQ(recorder.positions.count, 1);
+	OAK_ASSERT(fabs(recorder.positions.lastObject.doubleValue - 500) < 1);
+}
+
+void test_reports_user_scrolling () { RunOnMainThread(reports_user_scrolling); }
 void test_renders_markdown () { RunOnMainThread(renders_markdown); }
 void test_reports_anchors_and_scrolls () { RunOnMainThread(reports_anchors_and_scrolls); }
 void test_switches_between_renderers () { RunOnMainThread(switches_between_renderers); }

@@ -209,7 +209,7 @@ Checked by the user (2026-10-16): Preferences ▸ Projects renderer popup switch
 ## Future work
 - [x] The `editorPanelsView` accessor lived in the agent category; moved to `DocumentWindowController+EditorPanels` (P3).
 - [ ] Save the preview's (and agent panel's) visibility in the session.
-- [ ] Two-way scroll sync (preview scrolls the editor).
+- [x] Two-way scroll sync (preview scrolls the editor). Done 2026-10-22 (M5 step 7b).
 - [x] Precise scroll sync by source line for the GitHub renderer (P4).
 - [x] Precise scroll sync for the built-in renderer (source positions from Foundation's parser).
 - [ ] ⌘F find in the GitHub renderer's web view.

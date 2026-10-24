@@ -33,12 +33,18 @@ typedef NS_ENUM(NSUInteger, OakEditorPanelEdge) {
 // When set, the sizes are read from and saved to user defaults as
 // ‹autosaveName›Width and ‹autosaveName›Height
 @property (nonatomic, copy) NSString* autosaveName;
+
+// A suspended panel is taken out of the layout but stays in `panels`, so it
+// comes back in the same place (edge and order) and size. Preview panels are
+// suspended while the selected document isn’t one they can show, e.g. the
+// Markdown preview for a non-Markdown document.
+@property (nonatomic, getter = isSuspended) BOOL suspended;
 @end
 
 @interface OakEditorPanelsView : NSView
 - (instancetype)initWithEditorView:(NSView*)editorView;
 @property (nonatomic, readonly) NSView* editorView;
-@property (nonatomic, readonly) NSArray<OakEditorPanel*>* panels;
+@property (nonatomic, readonly) NSArray<OakEditorPanel*>* panels; // including suspended ones
 
 // Panels never shrink the editor below this (default 320 × 150), whatever
 // their preferred or saved size. Like the panel sizes, it never makes the

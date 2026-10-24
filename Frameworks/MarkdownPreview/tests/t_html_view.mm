@@ -1,4 +1,5 @@
 #import <MarkdownPreview/MarkdownPreviewHTMLView.h>
+#import "preview_scroll_recorder.h"
 
 // The web view loads asynchronously on the main thread, so these tests run on
 // the test thread and only touch the view on the main thread.
@@ -160,4 +161,42 @@ void test_reports_anchors_when_layout_changes ()
 		anchors = WaitForAnchors(view, 3);
 	}
 	OAK_ASSERT(fabs(anchors[1].pointValue.y - (before + 190)) < 1);
+}
+
+void test_reports_user_scrolling ()
+{
+	NSMutableString* html = [NSMutableString string];
+	for(NSUInteger i = 0; i < 100; ++i)
+		[html appendFormat:@"<p data-sourcepos=\"%1$lu:1-%1$lu:10\">Paragraph %1$lu</p>\n", 2*i + 1];
+
+	PreviewScrollRecorder* recorder = [[PreviewScrollRecorder alloc] init];
+	recorder.positions = [NSMutableArray array];
+	MarkdownPreviewHTMLView* view = MakeView();
+	dispatch_sync(dispatch_get_main_queue(), ^{
+		view.delegate = recorder;
+	});
+	ShowHTML(view, html, nil, nil);
+	OAK_ASSERT_EQ(WaitForAnchors(view, 101).count, 101);
+
+	auto positions = [&]() -> NSArray<NSNumber*>* {
+		__block NSArray<NSNumber*>* res;
+		dispatch_sync(dispatch_get_main_queue(), ^{
+			res = [recorder.positions copy];
+		});
+		return res;
+	};
+
+	// Following the editor isn’t reported
+	ScrollTo(view, 300.5);
+	OAK_ASSERT(WaitFor(view, @"window.scrollY == 300"));
+	usleep(200000); // scroll events arrive with the next frame
+	OAK_ASSERT_EQ(positions().count, 0);
+
+	// Scrolling by anything else is, and drops the sub-pixel offset
+	Evaluate(view, @"window.scrollTo(0, 600)");
+	for(NSUInteger i = 0; i < 100 && positions().count == 0; ++i)
+		usleep(50000);
+	OAK_ASSERT_EQ(positions().count, 1);
+	OAK_ASSERT_EQ(positions().lastObject.doubleValue, 600);
+	OAK_ASSERT([Evaluate(view, @"tmOffset") doubleValue] == 0);
 }

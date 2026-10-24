@@ -2,7 +2,9 @@
 
 // A rendered preview of the selected Markdown document, docked on any edge of
 // the editor (by default opposite the agent panel). It updates as you type,
-// from the unsaved text, and scrolls with the editor.
+// from the unsaved text, and scrolls with the editor. While a non-Markdown
+// document is selected the panel is suspended (hidden, keeping its place and
+// size), like any preview panel.
 
 extern NSString* const kUserDefaultsMarkdownPreviewPlacementKey; // @"auto" (default), @"left", @"right", @"top" or @"bottom"
 

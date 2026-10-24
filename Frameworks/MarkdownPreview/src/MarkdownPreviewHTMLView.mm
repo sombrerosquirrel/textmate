@@ -57,6 +57,7 @@ static NSString* const kScript = @R"JS(
 function tmSetContent (html) {
 	document.getElementById("content").innerHTML = html;
 	tmAnchors = null;
+	tmOwnScrollY = window.scrollY; // shorter content may have moved it
 }
 
 function tmMaxY () {
@@ -66,9 +67,13 @@ function tmMaxY () {
 // Page scrolling is in whole pixels; the rest is a transform on the content
 let tmOffset = 0;
 
+// Where we last put the page; scroll events elsewhere are the user’s
+let tmOwnScrollY = 0;
+
 function tmSetY (y) {
 	y = Math.min(Math.max(0, y), tmMaxY());
 	window.scrollTo(0, Math.floor(y));
+	tmOwnScrollY = window.scrollY;
 	const offset = Math.min(Math.max(0, y - window.scrollY), 1);
 	if(offset != tmOffset) {
 		tmOffset = offset;
@@ -162,9 +167,30 @@ function tmPostAnchors () {
 document.addEventListener("DOMContentLoaded", () => {
 	new ResizeObserver(() => {
 		tmAnchors = null;
+		tmOwnScrollY = window.scrollY;
 		tmPostAnchors();
 	}).observe(document.getElementById("content"));
 });
+
+// Scrolled by the user (or an in-page link): stop easing, drop the sub-pixel
+// offset and tell the app, so the editor follows
+window.addEventListener("scroll", () => {
+	if(window.scrollY == tmOwnScrollY)
+		return;
+	tmOwnScrollY = window.scrollY;
+
+	if(tmFrame)
+		cancelAnimationFrame(tmFrame);
+	tmFrame = 0;
+	if(tmOffset) {
+		tmOffset = 0;
+		document.getElementById("content").style.transform = "";
+	}
+	tmCurrent = tmTarget = window.scrollY;
+
+	const maxY = tmMaxY();
+	window.webkit.messageHandlers.tmScroll.postMessage([ window.scrollY, maxY > 0 ? window.scrollY / maxY : 0 ]);
+}, { passive: true });
 )JS";
 
 static NSURL* PreviewURLForPath (NSString* path)
@@ -226,12 +252,15 @@ static NSString* PathForPreviewURL (NSURL* url)
 
 @interface MarkdownPreviewHTMLView () <WKNavigationDelegate>
 - (void)didReceiveAnchors:(id)anchors;
+- (void)didReceiveScroll:(id)scroll;
 @end
 
 @implementation MarkdownPreviewMessageHandler
 - (void)userContentController:(WKUserContentController*)userContentController didReceiveScriptMessage:(WKScriptMessage*)message
 {
-	[_view didReceiveAnchors:message.body];
+	if([message.name isEqualToString:@"tmScroll"])
+		[_view didReceiveScroll:message.body];
+	else	[_view didReceiveAnchors:message.body];
 }
 @end
 
@@ -262,6 +291,7 @@ static NSString* PathForPreviewURL (NSURL* url)
 		MarkdownPreviewMessageHandler* messageHandler = [[MarkdownPreviewMessageHandler alloc] init];
 		messageHandler.view = self;
 		[configuration.userContentController addScriptMessageHandler:messageHandler contentWorld:WKContentWorld.defaultClientWorld name:@"tmAnchors"];
+		[configuration.userContentController addScriptMessageHandler:messageHandler contentWorld:WKContentWorld.defaultClientWorld name:@"tmScroll"];
 
 		_webView = [[WKWebView alloc] initWithFrame:self.bounds configuration:configuration];
 		_webView.autoresizingMask   = NSViewWidthSizable|NSViewHeightSizable;
@@ -306,6 +336,15 @@ static NSString* PathForPreviewURL (NSURL* url)
 	_anchors = res;
 	if([self.delegate respondsToSelector:@selector(HTMLViewDidUpdateAnchors:)])
 		[self.delegate HTMLViewDidUpdateAnchors:self];
+}
+
+// [y, fraction] from the page’s scroll listener
+- (void)didReceiveScroll:(id)scroll
+{
+	if(![scroll isKindOfClass:[NSArray class]] || [scroll count] != 2)
+		return;
+	if([self.delegate respondsToSelector:@selector(HTMLView:didScrollToPosition:fraction:)])
+		[self.delegate HTMLView:self didScrollToPosition:[scroll[0] doubleValue] fraction:[scroll[1] doubleValue]];
 }
 
 // Every position is sent: each is cheap, and skipping some would make slow scrolling uneven

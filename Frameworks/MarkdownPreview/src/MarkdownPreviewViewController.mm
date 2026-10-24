@@ -32,6 +32,9 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 	CGFloat _scrollY;
 	CGFloat _targetY;
 	CFTimeInterval _lastFrame;
+
+	BOOL _settingScroll;  // scrolls we make aren’t reported to the delegate
+	NSSize _clipSize;     // nor are those from resizing
 }
 @end
 
@@ -133,6 +136,9 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 	_textView.delegate              = self;
 	_scrollView.documentView = _textView;
 
+	_scrollView.contentView.postsBoundsChangedNotifications = YES;
+	[NSNotificationCenter.defaultCenter addObserver:self selector:@selector(clipViewBoundsDidChange:) name:NSViewBoundsDidChangeNotification object:_scrollView.contentView];
+
 	_placeholder = [NSTextField wrappingLabelWithString:@""];
 	_placeholder.textColor = NSColor.secondaryLabelColor;
 	_placeholder.alignment = NSTextAlignmentCenter;
@@ -167,6 +173,7 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 
 - (void)dealloc
 {
+	[NSNotificationCenter.defaultCenter removeObserver:self];
 	[_rendererPopUp unbind:NSSelectedTagBinding];
 }
 
@@ -226,7 +233,9 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 	[self view];
 	_markdown = nil;
 	_baseURL  = nil;
+	_settingScroll = YES;
 	[_textView.textStorage setAttributedString:[[NSAttributedString alloc] init]];
+	_settingScroll = NO;
 
 	if(!_htmlView)
 	{
@@ -273,6 +282,7 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 	_style.toggledDetails    = _toggledDetails;
 
 	NSPoint scrollOrigin = _scrollView.contentView.bounds.origin;
+	_settingScroll = YES;
 	[_textView.textStorage setAttributedString:[OakMarkdownRenderer attributedStringFromMarkdown:_markdown style:_style baseURL:_baseURL codeBlocks:nullptr codeBlockFooter:nil]];
 
 	// Keep the scroll position, so the preview doesn’t jump while typing
@@ -282,6 +292,7 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 	CGFloat maxY = MAX(0, NSHeight(_textView.frame) - NSHeight(_scrollView.contentView.bounds));
 	[_scrollView.contentView scrollToPoint:NSMakePoint(0, MIN(scrollOrigin.y, maxY))];
 	[_scrollView reflectScrolledClipView:_scrollView.contentView];
+	_settingScroll = NO;
 }
 
 // Images are scaled to the width, so re-render when it changes
@@ -428,8 +439,30 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 - (void)setScrollY:(CGFloat)y
 {
 	CGFloat const scale = _scrollView.window.backingScaleFactor ?: 2;
+	_settingScroll = YES;
 	[_scrollView.contentView scrollToPoint:NSMakePoint(0, round(y * scale) / scale)];
 	[_scrollView reflectScrolledClipView:_scrollView.contentView];
+	_settingScroll = NO;
+}
+
+// Scrolled by the user (wheel, scroller, keys, find, links): the editor follows
+- (void)clipViewBoundsDidChange:(NSNotification*)aNotification
+{
+	NSRect bounds = _scrollView.contentView.bounds;
+	BOOL resized = !NSEqualSizes(bounds.size, _clipSize);
+	_clipSize = bounds.size;
+	if(_settingScroll || resized || _scrollView.hidden)
+		return;
+
+	[self stopScrollAnimation]; // the user takes over from an editor jump
+	if([self.delegate respondsToSelector:@selector(markdownPreview:didScrollToPosition:fraction:)])
+		[self.delegate markdownPreview:self didScrollToPosition:NSMinY(bounds) fraction:self.scrollFraction];
+}
+
+- (void)HTMLView:(MarkdownPreviewHTMLView*)view didScrollToPosition:(CGFloat)y fraction:(CGFloat)fraction
+{
+	if([self.delegate respondsToSelector:@selector(markdownPreview:didScrollToPosition:fraction:)])
+		[self.delegate markdownPreview:self didScrollToPosition:y fraction:fraction];
 }
 
 // =========
@@ -463,8 +496,8 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 	return YES;
 }
 
-// Links within the document, e.g. to footnotes and back, scroll the preview
-// (not the editor, as with the GitHub renderer)
+// Links within the document, e.g. to footnotes and back, scroll the preview,
+// and the editor follows, as with the GitHub renderer
 - (BOOL)scrollToAnchor:(NSString*)anchor ofURL:(NSURL*)url
 {
 	BOOL sameDocument = url.absoluteURL.isFileURL ? [url.absoluteURL.path isEqualToString:_baseURL.path] : !url.absoluteURL.scheme;

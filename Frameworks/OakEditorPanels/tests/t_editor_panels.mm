@@ -186,6 +186,36 @@ static void panels_clip_to_bounds ()
 	OAK_ASSERT(panel.view.clipsToBounds);
 }
 
+static void suspended_panel_keeps_place_and_size ()
+{
+	host_t h;
+	OakEditorPanel* outer = h.add(OakEditorPanelEdgeRight, 300);
+	OakEditorPanel* inner = h.add(OakEditorPanelEdgeRight, 200);
+
+	outer.suspended = YES;
+	h.layout();
+	OAK_ASSERT(outer.view.superview == nil);
+	OAK_ASSERT([h.container.panels containsObject:outer]);
+	OAK_ASSERT(Equal(inner.view.frame, NSMakeRect(800, 0, 200, 600)));
+	OAK_ASSERT(Equal(h.editor.frame,   NSMakeRect(0, 0, 799, 600)));
+
+	// Back outermost, at its size
+	outer.suspended = NO;
+	h.layout();
+	OAK_ASSERT(Equal(outer.view.frame, NSMakeRect(700, 0, 300, 600)));
+	OAK_ASSERT(Equal(inner.view.frame, NSMakeRect(499, 0, 200, 600)));
+	OAK_ASSERT(Equal(h.editor.frame,   NSMakeRect(0, 0, 498, 600)));
+
+	// Added while suspended: not shown until resumed
+	OakEditorPanel* later = [[OakEditorPanel alloc] initWithView:[[NSView alloc] initWithFrame:NSZeroRect] edge:OakEditorPanelEdgeBottom];
+	later.suspended = YES;
+	[h.container addPanel:later];
+	h.layout();
+	OAK_ASSERT(later.view.superview == nil);
+	OAK_ASSERT(Equal(h.editor.frame, NSMakeRect(0, 0, 498, 600)));
+}
+
+void test_suspended_panel_keeps_place_and_size () { RunOnMainThread(suspended_panel_keeps_place_and_size); }
 void test_editor_alone () { RunOnMainThread(editor_alone); }
 void test_saved_size_keeps_editor_visible () { RunOnMainThread(saved_size_keeps_editor_visible); }
 void test_right_panel () { RunOnMainThread(right_panel); }

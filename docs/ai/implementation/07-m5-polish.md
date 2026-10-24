@@ -72,6 +72,32 @@ The remaining speed-up of about 2 is the tall paragraph and image spread over th
 
 API: the preview reports `anchors` (NSPoint: source line, preview y) and takes `scrollToPosition:animated:` / `scrollToFraction:animated:` instead of `anchorLines` and `scrollToSourceLine:fraction:`; the window category does the mapping. Tests: `t_scroll_map` (7, replaces `t_interpolation`), the HTML view reports anchors and re-reports them when the layout changes, the built-in view's anchors and positions. MarkdownPreview 31 tests; `ctest` 28/28.
 
+
+### Step 7b — The editor follows the preview (2026-10-22)
+
+The user asked for the editor to track the preview's scrolling as well.
+
+| What | How |
+|---|---|
+| Same map, inverted | The editor y whose (smoothed) map gives the preview's y, found by bisection to ¼ pt (`MarkdownPreviewInverseMap`, `MarkdownPreviewScrollMap.h`). Since both directions use one map, scrolling the preview and then the editor (or the other way) doesn't make either jump. Without anchors, by fraction. |
+| Only the user's scrolls | Built-in view: the clip view's bounds changes, except while the view scrolls itself (following the editor, re-rendering, clearing for the GitHub view) or is resized. Page: a `scroll` listener ignores positions the script set (`tmOwnScrollY`, also updated after content and size changes, which can clamp the page), cancels an editor jump's easing and the sub-pixel offset, and posts `tmScroll` `[y, fraction]`. Wheel, scroller, keys, find and in-page links all count. |
+| No feedback | The window category sets `_scrollingEditor` while it scrolls the editor, and `editorDidScroll:` ignores those. The editor's position is rounded to device pixels. |
+| In-page links | Footnotes and ↩ now move the editor too, in both renderers (before, preview only: the next editor scroll jumped the preview back). |
+
+API: `markdownPreview:didScrollToPosition:fraction:` (preview delegate) and `HTMLView:didScrollToPosition:fraction:`. Tests: inverse map round trip and ends; the built-in view and the page each report the user's scrolls and not their own. MarkdownPreview 34 tests; `ctest` 28/28.
+
+
+### Step 7c — Preview panels only for documents they can show (2026-10-22)
+
+The user: the preview should only show while a Markdown document is selected; switching to another document closes it, switching back reopens it in the same position and size; the default for any preview panel.
+
+| What | How |
+|---|---|
+| Suspended panels | `OakEditorPanel.suspended`: the container takes the panel's view and divider out of the layout (and out of hit testing and cursor rects) but keeps it in `panels`, so its edge, order on the edge, and size are unchanged when it's resumed. Removing and re-adding would put it innermost. A panel added while suspended isn't shown until resumed. This is the mechanism for any preview panel. |
+| Markdown preview | The coordinator suspends its panel while the selected document is missing or isn't Markdown (on tab changes and grammar changes), moving focus to the editor if the preview had it, and doesn't follow the editor's scrolling meanwhile. `markdownPreviewVisible` (the user's choice) stays on, so the menu says Hide; Show is disabled for a non-Markdown document, rather than turning on a preview that wouldn't appear. The "isn't a Markdown document" placeholder is no longer seen. |
+
+Tests: `suspended_panel_keeps_place_and_size` (OakEditorPanels 12). `ctest` 28/28.
+
 ## Commits
 4752a0a7 agent log · 3c5b671c error states · 5e3198e7 theme highlighting · 98808424 permission keys, New Agent Chat · 3a2f3d1b inline chat
 
@@ -85,6 +111,8 @@ API: the preview reports `anchors` (NSPoint: source line, preview y) and takes `
 7. Kill the agent (`pkill -f claude-agent-acp`): “stopped running” with Restart and Show Log; Restart continues the chat.
 8. Read the [user guide](../user/agent-panel.md).
 9. Markdown preview scrolling (both renderers, a document with images and long paragraphs): scroll slowly and quickly. No rush through images or long paragraphs; the top line drifts a little near them and lines up again after. Page Down / ⌘↓ / ⌘↑ in the editor: the preview glides there. Open a document whose images load after it's shown: the preview stays lined up without scrolling.
+10. Scroll the **preview** (both renderers; wheel, scroller, and Page Down with the preview focused): the editor follows, and the caret doesn't move. Then scroll the editor: the preview carries on from where it is, no jump. Click a footnote: the editor follows the preview. Type near the end of the document: the editor doesn't move by itself.
+11. With the preview shown and resized, switch to a non-Markdown tab: the preview closes and the editor takes the space. Switch back: it reopens on the same edge at the same size (also with the agent panel open on the same edge). View ▸ Show Markdown Preview is disabled on the non-Markdown tab; Hide works there and stays hidden when you return.
 
 ## Future work
 - Inline Undo restores a file to before the agent's first change in the chat, not just this request's change, when the file was already in the changed-files list.

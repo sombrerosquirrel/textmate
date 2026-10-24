@@ -73,6 +73,27 @@ inline CGFloat MarkdownPreviewSmoothMap (std::vector<std::pair<CGFloat, CGFloat>
 	return MarkdownPreviewLinearMapIntegral(points, x - r, x + r) / (2 * r);
 }
 
+// The other way, for scrolling the editor with the preview: the x in [lo, hi]
+// where the non-decreasing `map` reaches `y`, to within `tolerance`. Using the
+// same map both ways means scrolling one view and then the other doesn’t move
+// the first.
+template <typename F>
+CGFloat MarkdownPreviewInverseMap (F const& map, CGFloat y, CGFloat lo, CGFloat hi, CGFloat tolerance = 0.25)
+{
+	if(hi <= lo || y <= map(lo))
+		return lo;
+	if(y >= map(hi))
+		return hi;
+	while(hi - lo > tolerance)
+	{
+		CGFloat const mid = (lo + hi) / 2;
+		if(map(mid) < y)
+			lo = mid;
+		else	hi = mid;
+	}
+	return (lo + hi) / 2;
+}
+
 // Jumps (e.g. Page Down in the editor) move towards the target by a part of
 // the distance that depends on the time since the last frame, so they take
 // the same time at any frame rate and slow down as they arrive. The same in

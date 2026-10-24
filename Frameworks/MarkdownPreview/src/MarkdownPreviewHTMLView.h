@@ -10,6 +10,7 @@
 - (void)HTMLView:(MarkdownPreviewHTMLView*)view openURL:(NSURL*)url; // file URLs for local links
 @optional
 - (void)HTMLViewDidUpdateAnchors:(MarkdownPreviewHTMLView*)view;
+- (void)HTMLView:(MarkdownPreviewHTMLView*)view didScrollToPosition:(CGFloat)y fraction:(CGFloat)fraction; // by the user or a link, not by the methods below
 @end
 
 @interface MarkdownPreviewHTMLView : NSView

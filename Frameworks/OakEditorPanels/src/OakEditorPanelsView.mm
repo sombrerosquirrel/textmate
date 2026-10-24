@@ -25,6 +25,7 @@ static BOOL IsHorizontal (OakEditorPanelEdge edge)
 
 @interface OakEditorPanelsView ()
 - (void)panelLayoutDidChange:(OakEditorPanel*)panel;
+- (void)panelSuspensionDidChange:(OakEditorPanel*)panel;
 @end
 
 @interface OakEditorPanel ()
@@ -77,6 +78,14 @@ static BOOL IsHorizontal (OakEditorPanelEdge edge)
 		return;
 	_edge = edge;
 	[_container panelLayoutDidChange:self];
+}
+
+- (void)setSuspended:(BOOL)flag
+{
+	if(_suspended == flag)
+		return;
+	_suspended = flag;
+	[_container panelSuspensionDidChange:self];
 }
 
 - (void)setWidth:(CGFloat)width
@@ -179,8 +188,11 @@ static BOOL IsHorizontal (OakEditorPanelEdge edge)
 	panel.view.translatesAutoresizingMaskIntoConstraints    = NO;
 	panel.view.clipsToBounds = YES; // views don’t clip by default; a panel must never draw over the editor
 	panel.divider.translatesAutoresizingMaskIntoConstraints = NO;
-	[self addSubview:panel.divider];
-	[self addSubview:panel.view];
+	if(!panel.suspended)
+	{
+		[self addSubview:panel.divider];
+		[self addSubview:panel.view];
+	}
 	[self panelLayoutDidChange:panel];
 }
 
@@ -195,6 +207,30 @@ static BOOL IsHorizontal (OakEditorPanelEdge edge)
 	[panel.view removeFromSuperview];
 	[panel.divider removeFromSuperview];
 	[self panelLayoutDidChange:panel];
+}
+
+- (void)panelSuspensionDidChange:(OakEditorPanel*)panel
+{
+	if(panel.suspended)
+	{
+		panel.sizeConstraint = nil;
+		[panel.view removeFromSuperview];
+		[panel.divider removeFromSuperview];
+	}
+	else
+	{
+		[self addSubview:panel.divider];
+		[self addSubview:panel.view];
+	}
+	[self panelLayoutDidChange:panel];
+}
+
+// The panels in the layout
+- (NSArray<OakEditorPanel*>*)shownPanels
+{
+	return [_panels filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(OakEditorPanel* panel, NSDictionary*){
+		return !panel.suspended;
+	}]];
 }
 
 - (void)setMinimumEditorSize:(NSSize)size
@@ -212,7 +248,7 @@ static BOOL IsHorizontal (OakEditorPanelEdge edge)
 - (NSArray<OakEditorPanel*>*)panelsOnEdge:(OakEditorPanelEdge)edge
 {
 	return [_panels filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(OakEditorPanel* panel, NSDictionary*){
-		return panel.edge == edge;
+		return panel.edge == edge && !panel.suspended;
 	}]];
 }
 
@@ -287,7 +323,7 @@ static BOOL IsHorizontal (OakEditorPanelEdge edge)
 	minEditorHeight.priority = NSLayoutPriorityDragThatCannotResizeWindow + 1;
 	[_layoutConstraints addObjectsFromArray:@[ minEditorWidth, minEditorHeight ]];
 
-	for(OakEditorPanel* panel in _panels)
+	for(OakEditorPanel* panel in [self shownPanels])
 	{
 		NSView* view    = panel.view;
 		NSView* divider = panel.divider;
@@ -333,7 +369,7 @@ static BOOL IsHorizontal (OakEditorPanelEdge edge)
 
 - (OakEditorPanel*)panelWithDividerAtPoint:(NSPoint)aPoint
 {
-	for(OakEditorPanel* panel in _panels.reverseObjectEnumerator)
+	for(OakEditorPanel* panel in [self shownPanels].reverseObjectEnumerator)
 	{
 		if(NSMouseInRect(aPoint, panel.dividerResizeRect, self.isFlipped))
 			return panel;
@@ -343,7 +379,7 @@ static BOOL IsHorizontal (OakEditorPanelEdge edge)
 
 - (void)resetCursorRects
 {
-	for(OakEditorPanel* panel in _panels)
+	for(OakEditorPanel* panel in [self shownPanels])
 		[self addCursorRect:panel.dividerResizeRect cursor:(IsHorizontal(panel.edge) ? NSCursor.resizeLeftRightCursor : NSCursor.resizeUpDownCursor)];
 }
 

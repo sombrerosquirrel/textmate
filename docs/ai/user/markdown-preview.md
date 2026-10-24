@@ -6,12 +6,12 @@ tags: [textmate, user-guide, markdown, preview]
 
 # Markdown Preview — User Guide
 
-TextMate shows a live preview of the Markdown document you're editing, docked beside the editor in the project window. It updates as you type, without saving, and scrolls with the editor.
+TextMate shows a live preview of the Markdown document you're editing, docked beside the editor in the project window. It updates as you type, without saving, and the two scroll together.
 
 ## Showing the preview
 
 - **View ▸ Show Markdown Preview** (⌃⇧⌘M) shows or hides it.
-- It follows the selected tab. For a document that isn't Markdown, it says so and waits.
+- It follows the selected tab, and is only there for Markdown documents: switch to a document that isn't Markdown and the preview closes; switch back and it reopens in the same place, at the same size. **Show Markdown Preview** is unavailable while a non-Markdown document is selected; **Hide Markdown Preview** turns it off for good.
 - A document counts as Markdown if its grammar is Markdown (scope `text.html.markdown…`) or, before a grammar is picked, if its extension is `md`, `markdown`, `mdown`, `mkd` or `mkdn`.
 - Drag the divider to resize it. The size is remembered (separately for side and top/bottom positions).
 
@@ -90,13 +90,13 @@ The line at the top of the editor is kept at the top of the preview. Headings, p
 
 Something much taller in the preview than in the editor, such as an image or a paragraph on one long line, is spread over a little more scrolling, so the preview doesn't rush past it; near it the preview's top can be a few lines off, and lines up again after. Jumps in the editor, such as Page Down or ⌘↓, glide in the preview. When images finish loading, the preview adjusts without you having to scroll.
 
-The preview doesn't scroll the editor (one-way only).
+Scrolling the preview scrolls the editor the same way: the line at the top of the preview goes to the top of the editor, so you can read in the preview and then scroll the editor without either jumping. Only the view scrolls; the caret stays where it was.
 
 ## Links
 
 - **Web and mail links** open in your browser or mail app.
 - **Links to files**, including relative ones like `[guide](docs/guide.md)`, open in TextMate in the same project window. Links to folders open in Finder. A missing file beeps.
-- **In-page links** (footnotes and their ↩) scroll the preview, not the editor. The next time you scroll the editor, the preview follows it again.
+- **In-page links** (footnotes and their ↩) scroll the preview, and the editor follows, as when you scroll the preview yourself.
 
 ## Light and dark
 
@@ -126,5 +126,4 @@ All in the TextMate-dev / TextMate user defaults (`defaults write com.macromates
 ## Not yet
 
 - The preview's visibility isn't restored when a project reopens.
-- Scrolling the preview doesn't scroll the editor.
 - Find (⌘F) in the GitHub renderer.

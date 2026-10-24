@@ -13,6 +13,10 @@
 @optional
 - (void)markdownPreviewPerformNoticeAction:(MarkdownPreviewViewController*)preview;
 - (void)markdownPreviewDidUpdateAnchors:(MarkdownPreviewViewController*)preview; // re-sync the scroll position
+// Scrolled by the user (or a link within the document), not by the methods
+// below: `y` is the position at the top, as in `anchors`; `fraction` is 0 at
+// the top, 1 at the bottom, for when there are no anchors.
+- (void)markdownPreview:(MarkdownPreviewViewController*)preview didScrollToPosition:(CGFloat)y fraction:(CGFloat)fraction;
 @end
 
 @interface MarkdownPreviewViewController : NSViewController

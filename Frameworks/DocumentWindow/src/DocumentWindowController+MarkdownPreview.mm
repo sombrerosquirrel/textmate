@@ -74,6 +74,7 @@ static OakEditorPanelEdge MarkdownPreviewEdge ()
 	__weak DocumentWindowController* _controller;
 	OakDocument* _document;
 	NSView* _editorClipView;
+	BOOL _scrollingEditor; // following the preview, so don’t scroll it back
 	NSUInteger _renderGeneration;
 
 	// GitHub renderer
@@ -154,7 +155,24 @@ static OakEditorPanelEdge MarkdownPreviewEdge ()
 	}
 
 	if(_active)
+	{
+		[self updateSuspension];
 		[self render];
+	}
+}
+
+// Only shown for Markdown documents. For others the panel is suspended, so it
+// comes back in the same place and size when a Markdown document is selected.
+- (void)updateSuspension
+{
+	BOOL suspend = !_document || !IsMarkdownDocument(_document);
+	if(_editorPanel.suspended == suspend)
+		return;
+
+	NSWindow* window = _controller.window;
+	if(suspend && [window.firstResponder isKindOfClass:[NSView class]] && [(NSView*)window.firstResponder isDescendantOf:_preview.view])
+		[window makeFirstResponder:_controller.textView];
+	_editorPanel.suspended = suspend;
 }
 
 - (void)observeValueForKeyPath:(NSString*)keyPath ofObject:(id)object change:(NSDictionary*)change context:(void*)context
@@ -162,7 +180,10 @@ static OakEditorPanelEdge MarkdownPreviewEdge ()
 	if(context == kSelectedDocumentContext)
 		self.document = _controller.selectedDocument;
 	else if(context == kFileTypeContext)
+	{
+		[self updateSuspension];
 		[self render];
+	}
 	else if(context == kRendererContext)
 		[self rendererDidChange:[keyPath isEqualToString:kUserDefaultsMarkdownPreviewRendererKey]];
 	else
@@ -388,7 +409,8 @@ static OakEditorPanelEdge MarkdownPreviewEdge ()
 // = Scrolling =
 // =============
 
-// The editor’s first visible line goes to the top of the preview. Both
+// The editor’s first visible line goes to the top of the preview, and when
+// the user scrolls the preview, the editor follows through the same map. Both
 // renderers know where their blocks’ source lines start (anchors); between
 // them, the preview moves in proportion to the editor’s pixels, averaged
 // over part of the editor’s height so lines that are much taller in the
@@ -399,6 +421,9 @@ static CGFloat const kScrollSmoothingRadius = 0.25; // of the editor’s visible
 
 - (void)editorDidScroll:(NSNotification*)aNotification
 {
+	if(_scrollingEditor || _editorPanel.suspended)
+		return;
+
 	OakTextView* textView = _controller.textView;
 	NSScrollView* scrollView = textView.enclosingScrollView;
 	CGFloat top = NSMinY(scrollView.contentView.bounds);
@@ -414,6 +439,37 @@ static CGFloat const kScrollSmoothingRadius = 0.25; // of the editor’s visible
 	CGFloat hi = [textView convertPoint:NSMakePoint(0, scrollable) fromView:scrollView.documentView].y;
 	CGFloat radius = kScrollSmoothingRadius * NSHeight(scrollView.contentView.bounds);
 	[_preview scrollToPosition:MarkdownPreviewSmoothMap([self scrollMapPointsFrom:y - radius to:y + radius anchors:anchors], y, radius, lo, hi) animated:animated];
+}
+
+// The inverse of the above: the editor y that maps to the preview’s `y`
+- (void)markdownPreview:(MarkdownPreviewViewController*)preview didScrollToPosition:(CGFloat)previewY fraction:(CGFloat)fraction
+{
+	OakTextView* textView = _controller.textView;
+	NSScrollView* scrollView = textView.enclosingScrollView;
+	NSView* documentView = scrollView.documentView;
+	CGFloat scrollable = MAX(0, NSHeight(documentView.frame) - NSHeight(scrollView.contentView.bounds));
+
+	CGFloat top; // in the document view
+	NSArray<NSValue*>* anchors = _preview.anchors;
+	if(anchors.count < 2)
+	{
+		top = MIN(MAX(fraction, 0), 1) * scrollable;
+	}
+	else
+	{
+		CGFloat lo = [textView convertPoint:NSMakePoint(0, 0) fromView:documentView].y;
+		CGFloat hi = [textView convertPoint:NSMakePoint(0, scrollable) fromView:documentView].y;
+		CGFloat radius = kScrollSmoothingRadius * NSHeight(scrollView.contentView.bounds);
+		auto map = [&](CGFloat y) { return MarkdownPreviewSmoothMap([self scrollMapPointsFrom:y - radius to:y + radius anchors:anchors], y, radius, lo, hi); };
+		CGFloat y = MarkdownPreviewInverseMap(map, previewY, lo, hi);
+		top = MIN(MAX([documentView convertPoint:NSMakePoint(0, y) fromView:textView].y, 0), scrollable);
+	}
+
+	CGFloat const scale = scrollView.window.backingScaleFactor ?: 2;
+	_scrollingEditor = YES;
+	[scrollView.contentView scrollToPoint:NSMakePoint(NSMinX(scrollView.contentView.bounds), round(top * scale) / scale)];
+	[scrollView reflectScrolledClipView:scrollView.contentView];
+	_scrollingEditor = NO;
 }
 
 // The editor’s y where a 1-based source line starts; past the last line, the end of the text
@@ -562,7 +618,10 @@ static CGFloat const kScrollSmoothingRadius = 0.25; // of the editor’s visible
 {
 	if(menuItem.action == @selector(toggleMarkdownPreview:))
 	{
-		menuItem.title = self.markdownPreviewVisible ? @"Hide Markdown Preview" : @"Show Markdown Preview";
+		BOOL visible = self.markdownPreviewVisible; // also while suspended for a non-Markdown document
+		menuItem.title = visible ? @"Hide Markdown Preview" : @"Show Markdown Preview";
+		if(!visible && !(self.selectedDocument && IsMarkdownDocument(self.selectedDocument)))
+			return NO;
 	}
 	else if(menuItem.action == @selector(takeMarkdownPreviewPlacementFrom:))
 	{
