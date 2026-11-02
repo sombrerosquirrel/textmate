@@ -1,14 +1,14 @@
 ---
 title: Markdown Preview Pane
-status: in progress
+status: complete
 started: 2026-10-14
-updated: 2026-10-15
+updated: 2026-11-02
 tags: [textmate, implementation, markdown, preview]
 ---
 
 # Markdown Preview Pane
 
-**Status:** 🔄 In progress. P1 and P3 confirmed; P2 done; P4 done, scrolling confirmed smooth (2026-10-15); P5 done (2026-10-15), awaiting user check.
+**Status:** ✅ Complete. P1–P5 done and confirmed by the user (P5 on 2026-11-02).
 **Branch:** `feature/markdown-preview` (from `feature/agent`)
 **Plan:** [markdown-preview-plan.md](../plans/markdown-preview-plan.md)
 **User guide:** [markdown-preview.md](../user/markdown-preview.md)
@@ -26,10 +26,10 @@ A native Markdown preview docked beside the editor on any edge, with a built-in 
 | Phase | Status |
 |---|---|
 | P1. Shared editor panels container | ✅ Done, confirmed by the user (2026-10-15) |
-| P2. Shared Markdown renderer | ✅ Done (2026-10-15), awaiting user check |
+| P2. Shared Markdown renderer | ✅ Done (2026-10-15), confirmed by the user (2026-11-02) |
 | P3. Preview pane, built-in renderer | ✅ Done, confirmed by the user (2026-10-15: "Works well") |
 | P4. Optional GitHub renderer | ✅ Done (2026-10-15); scrolling confirmed by the user ("Much smoother now") |
-| P5. Docs, tests, polish | ✅ Done (2026-10-15), awaiting user check |
+| P5. Docs, tests, polish | ✅ Done (2026-10-15), confirmed by the user (2026-11-02) |
 
 ## P1 — Shared editor panels container
 
