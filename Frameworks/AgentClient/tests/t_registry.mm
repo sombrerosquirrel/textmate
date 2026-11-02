@@ -1,10 +1,14 @@
 #import <AgentClient/AgentRegistry.h>
 #import <AgentClient/AgentKeychain.h>
+#import <mutex>
 
-// Each test gets empty user defaults of its own.
+// Each test gets empty user defaults of its own. AgentRegistry.userDefaults is
+// global and tests run in parallel, so they take turns.
+static std::mutex RegistryTestLock;
+
 struct test_defaults_t
 {
-	test_defaults_t ()
+	test_defaults_t () : lock(RegistryTestLock)
 	{
 		suiteName = [NSString stringWithFormat:@"com.macromates.TextMate.AgentClient.test.%@", NSUUID.UUID.UUIDString];
 		defaults  = [[NSUserDefaults alloc] initWithSuiteName:suiteName];
@@ -17,6 +21,7 @@ struct test_defaults_t
 		[defaults removePersistentDomainForName:suiteName];
 	}
 
+	std::lock_guard<std::mutex> lock;
 	NSString* suiteName;
 	NSUserDefaults* defaults;
 };
