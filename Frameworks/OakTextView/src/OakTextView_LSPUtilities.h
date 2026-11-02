@@ -58,6 +58,7 @@ struct refresh_helper_t
 				NSSize newSize = NSMakeSize(std::max(NSWidth(r), documentView->width()), std::max(NSHeight(r), documentView->height() + extraH));
 				if(!NSEqualSizes([_self frame].size, newSize))
 					[_self setFrameSize:newSize];
+				[_self updateNaturalHeight];
 
 				NSView* gutterView = find_gutter_view([[_self enclosingScrollView] superview]);
 				for(auto const& rect : damagedRects)

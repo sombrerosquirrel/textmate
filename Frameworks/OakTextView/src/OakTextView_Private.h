@@ -233,6 +233,7 @@ struct document_view_t : ng::buffer_api_t
 	std::vector<CGRect> rects_for_ranges (ng::ranges_t const& ranges, kRectsIncludeMode mode = kRectsIncludeAll) const { return _layout->rects_for_ranges(ranges, mode); }
 	CGFloat width () const { return _layout->width(); }
 	CGFloat height () const { return _layout->height(); }
+	CGFloat natural_height () const { return _layout->natural_height(); }
 	void begin_refresh_cycle (ng::ranges_t const& selection, ng::ranges_t const& highlightRanges = ng::ranges_t()) { _layout->begin_refresh_cycle(selection, highlightRanges); }
 	std::vector<CGRect> end_refresh_cycle (ng::ranges_t const& selection, CGRect visibleRect, ng::ranges_t const& highlightRanges = ng::ranges_t()) { return _layout->end_refresh_cycle(selection, visibleRect, highlightRanges); }
 	void did_update_scopes (size_t from, size_t to) { _layout->did_update_scopes(from, to); }
@@ -397,6 +398,8 @@ struct diagnostic_banner_t
 - (void)updateSelection;
 - (void)updateSymbol;
 - (void)updateMarkedRanges;
+- (void)reflectDocumentSize;
+- (void)updateNaturalHeight;
 - (void)redisplayFrom:(size_t)from to:(size_t)to;
 - (NSImage*)imageForRanges:(ng::ranges_t const&)ranges imageRect:(NSRect*)outRect;
 - (void)showToolTip:(NSString*)text;

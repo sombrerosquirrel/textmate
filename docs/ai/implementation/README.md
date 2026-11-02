@@ -26,6 +26,7 @@ User guides are in [`../user/`](../user/): [markdown-preview.md](../user/markdow
 | M4. Preferences, Keychain, project overrides, chat history, MCP | [06-m4-configuration.md](06-m4-configuration.md) | ✅ Complete (2026-10-19) |
 | M5. Polish, inline chat, docs, `pr/agent` port | [07-m5-polish.md](07-m5-polish.md) | 🔄 Steps 1–6 implemented (2026-10-19), awaiting user check; step 7: preview scroll smoothness done (2026-10-20), panel UX waiting for the user's notes; `pr/agent` port deferred |
 | Markdown preview pane (P1–P5) | [04-markdown-preview.md](04-markdown-preview.md) | 🔄 In progress: P1–P5 done (2026-10-15); P5 awaiting user check |
+| UX pass: agent panel and Markdown preview | [08-ux-pass.md](08-ux-pass.md) | 🔄 Preview scrolling and panels done (2026-10-20–22); chat folding, editor code blocks, file links, permission cards done (2026-10-24); awaiting user check |
 
 ## Current state (2026-10-20)
 
@@ -43,4 +44,4 @@ Work not yet assigned to a phase document. Items move into a phase document when
 - [x] **M5 — Polish:** moved to [07-m5-polish.md](07-m5-polish.md) (2026-10-19).
 - [ ] Fix the commit grouping on `feature/agent`: 7723847e deletes the M1 debug window files while AppController still references them until d6d22909, so 7723847e alone doesn't build. Needs a force-push; awaiting the user's decision.
 - [ ] Optional clean-up: delete upstream's leftover branches on the fork (`10_7`, `gh-pages`, `no-copy-of-scopes`) and local `backup/pre-trailer-removal/*` branches and `refs/original`.
-- [ ] **Agent panel UX pass** (asked for specifics 2026-10-20; the preview's scroll smoothness part is done, M5 step 7a) (user, 2026-10-15: "ux of the panel needs some work but we'll tackle that at the end"). Scheduled after the Markdown preview and M3–M4; collect specifics from the user then. Include the Markdown preview's scroll smoothness (user: "make a note to revisit this later after completion and when doing UX"); ideas in [04-markdown-preview.md](04-markdown-preview.md#future-work).
+- [ ] **Agent panel UX pass** (in progress, see [08-ux-pass.md](08-ux-pass.md); asked for specifics 2026-10-20; the preview's scroll smoothness part is done, M5 step 7a) (user, 2026-10-15: "ux of the panel needs some work but we'll tackle that at the end"). Scheduled after the Markdown preview and M3–M4; collect specifics from the user then. Include the Markdown preview's scroll smoothness (user: "make a note to revisit this later after completion and when doing UX"); ideas in [04-markdown-preview.md](04-markdown-preview.md#future-work).

@@ -12,6 +12,8 @@
 // Foundation’s parser only labels block structure (NSPresentationIntent); this
 // turns those labels into separators, indentation, fonts and text blocks.
 
+@class OakMarkdownCodeBlock;
+
 @interface OakMarkdownStyle : NSObject
 @property (nonatomic) NSFont* font;
 @property (nonatomic) NSFont* codeFont;
@@ -30,6 +32,11 @@
 @property (nonatomic) NSColor* codeBlockTextColor;
 @property (nonatomic, copy) NSAttributedString*(^codeHighlighter)(NSString* code, NSString* language);
 
+// Replaces each rendered code block (`rendered`, without a final newline)
+// with the result, e.g. a summary line and an attachment; nil keeps it. The
+// result’s paragraphs are indented like the block (e.g. in a list).
+@property (nonatomic, copy) NSAttributedString*(^codeBlockReplacement)(OakMarkdownCodeBlock* codeBlock, NSUInteger index, NSAttributedString* rendered);
+
 // nil: every <details> is shown open. Otherwise each starts as written (closed
 // unless it has `open`), the other way round if its index (0 for the first in
 // the document) is in the set, and its summary links to OakMarkdownDetailsURL().
@@ -39,7 +46,8 @@
 
 @interface OakMarkdownCodeBlock : NSObject
 @property (nonatomic, readonly) NSString* code;
-@property (nonatomic, readonly) NSString* language; // nil if the fence has no language
+@property (nonatomic, readonly) NSString* language; // the info string’s first word (before a space, “:” or “{”), nil if there is none
+@property (nonatomic, readonly) NSString* info;     // the fence’s whole info string, e.g. “swift Sources/App.swift”, nil if there is none
 @end
 
 // Marks every character of a rendered code block; value is the block’s index (NSNumber).

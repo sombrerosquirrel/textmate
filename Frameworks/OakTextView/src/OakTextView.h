@@ -56,6 +56,15 @@ enum OTVFontSmoothing : NSUInteger
 // focus, so the user can see where the caret is.
 @property (nonatomic) BOOL                                  showsCaretWhenInactive;
 
+// The user can move, select, copy, find and fold but not change the text:
+// typing, editing actions, bundle items, paste, drops, undo/redo and Replace
+// do nothing, and their menu items are disabled. No scroll past end.
+@property (nonatomic, getter = isReadOnly) BOOL             readOnly;
+
+// The height of the text and its margins, without the viewport or scroll past
+// end, e.g. to fit a container to it. KVO-observable.
+@property (nonatomic, readonly) CGFloat                     naturalHeight;
+
 - (GVLineRecord)lineRecordForPosition:(CGFloat)yPos;
 - (GVLineRecord)lineFragmentForLine:(NSUInteger)aLine column:(NSUInteger)aColumn;
 

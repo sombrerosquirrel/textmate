@@ -13,3 +13,5 @@ if(OakSwiftUI_LIB)
   target_include_directories(OakTextView PRIVATE "${OakSwiftUI_INCLUDE_DIR}")
   target_link_libraries(OakTextView PUBLIC ${OakSwiftUI_LIB})
 endif()
+
+textmate_add_tests(OakTextView)

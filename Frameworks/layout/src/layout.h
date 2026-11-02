@@ -74,6 +74,7 @@ namespace ng
 
 		CGFloat width () const;
 		CGFloat height () const;
+		CGFloat natural_height () const; // the text and margins, without the viewport or scroll past end
 
 		void begin_refresh_cycle (ng::ranges_t const& selection, ng::ranges_t const& highlightRanges = ng::ranges_t());
 		std::vector<CGRect> end_refresh_cycle (ng::ranges_t const& selection, CGRect visibleRect, ng::ranges_t const& highlightRanges = ng::ranges_t());

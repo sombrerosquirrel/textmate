@@ -120,6 +120,43 @@ void test_code_block_highlighter ()
 	OAK_ASSERT(![[str attribute:NSForegroundColorAttributeName atIndex:[str.string rangeOfString:@"After"].location effectiveRange:nullptr] isEqual:NSColor.whiteColor]);
 }
 
+void test_code_block_info_string ()
+{
+	NSArray<OakMarkdownCodeBlock*>* codeBlocks;
+	Render(@"```swift Sources/App.swift\nlet x = 1\n```\n\n```objc:Frameworks/A.mm\nint x;\n```\n\n```python title=\"a/b.py\"\nx = 1\n```\n\n```\nplain\n```", &codeBlocks);
+	OAK_ASSERT_EQ(codeBlocks.count, 4);
+	OAK_ASSERT_EQ(S(codeBlocks[0].language), "swift");
+	OAK_ASSERT_EQ(S(codeBlocks[0].info), "swift Sources/App.swift");
+	OAK_ASSERT_EQ(S(codeBlocks[1].language), "objc");
+	OAK_ASSERT_EQ(S(codeBlocks[1].info), "objc:Frameworks/A.mm");
+	OAK_ASSERT_EQ(S(codeBlocks[2].language), "python");
+	OAK_ASSERT(codeBlocks[3].language == nil && codeBlocks[3].info == nil);
+}
+
+void test_code_block_replacement ()
+{
+	__block std::vector<std::string> seen;
+	OakMarkdownStyle* style = [OakMarkdownStyle defaultStyle];
+	style.codeBlockReplacement = ^NSAttributedString*(OakMarkdownCodeBlock* codeBlock, NSUInteger index, NSAttributedString* rendered){
+		seen.push_back(S(rendered.string));
+		if(index == 1)
+			return nil;
+		return [[NSAttributedString alloc] initWithString:[NSString stringWithFormat:@"[%@ %lu]", codeBlock.language, index]];
+	};
+
+	NSArray<OakMarkdownCodeBlock*>* codeBlocks;
+	NSAttributedString* str = [OakMarkdownRenderer attributedStringFromMarkdown:@"Text\n\n```sh\nls\npwd\n```\n\n```py\nprint(1)\n```\n\n- item\n\n  ```js\n  x()\n  ```\n\nEnd" style:style codeBlocks:&codeBlocks codeBlockFooter:nil];
+	OAK_ASSERT_EQ(String(str), "Text\n[sh 0]\nprint(1)\n•\titem\n[js 2]\nEnd");
+	OAK_ASSERT_EQ(codeBlocks.count, 3);
+	OAK_ASSERT_EQ(S(codeBlocks[0].code), "ls\npwd");
+	OAK_ASSERT_EQ(seen.size(), 3);
+	OAK_ASSERT_EQ(seen[0], "ls\npwd");
+
+	// Indented like the block in the list; text after it isn’t in a code block
+	OAK_ASSERT_LT(ParagraphStyleAt(str, @"[sh 0]").headIndent, ParagraphStyleAt(str, @"[js 2]").headIndent);
+	OAK_ASSERT_EQ(ParagraphStyleAt(str, @"End").textBlocks.count, 0);
+}
+
 void test_code_block_text_color ()
 {
 	OakMarkdownStyle* style = [OakMarkdownStyle defaultStyle];

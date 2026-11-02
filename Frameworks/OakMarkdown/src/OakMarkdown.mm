@@ -51,6 +51,7 @@ static NSColor* CodeBackgroundColor ()
 @interface OakMarkdownCodeBlock ()
 @property (nonatomic, readwrite) NSString* code;
 @property (nonatomic, readwrite) NSString* language;
+@property (nonatomic, readwrite) NSString* info;
 @end
 
 @implementation OakMarkdownCodeBlock
@@ -346,6 +347,8 @@ namespace
 					text = [text substringToIndex:text.length - 1];
 				if(!currentCode.length)
 					currentCodeStart = output.length;
+				if(currentCodeBlockStart == NSNotFound)
+					currentCodeBlockStart = output.length;
 				[currentCode appendString:text];
 			}
 
@@ -455,7 +458,11 @@ namespace
 			{
 				currentCodeIdentity = block.codeBlock.identity;
 				currentCode         = [NSMutableString string];
-				currentLanguage     = block.codeBlock.languageHint.length ? block.codeBlock.languageHint : nil;
+				currentInfo         = [block.codeBlock.languageHint stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
+				currentInfo         = currentInfo.length ? currentInfo : nil;
+				currentLanguage     = [currentInfo componentsSeparatedByCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@" \t:{"]].firstObject;
+				currentLanguage     = currentLanguage.length ? currentLanguage : nil;
+				currentCodeBlockStart = NSNotFound;
 
 				codeTextBlock = [[NSTextBlock alloc] init];
 				codeTextBlock.backgroundColor = style.codeBlockBackgroundColor ?: style.codeBackgroundColor;
@@ -547,8 +554,10 @@ namespace
 			OakMarkdownCodeBlock* codeBlock = [[OakMarkdownCodeBlock alloc] init];
 			codeBlock.code     = currentCode;
 			codeBlock.language = currentLanguage;
+			codeBlock.info     = currentInfo;
 			[codeBlocks addObject:codeBlock];
 			highlight_code(currentCode, currentLanguage, currentCodeStart);
+			replace_code_block(codeBlock);
 
 			if(footer)
 			{
@@ -567,7 +576,35 @@ namespace
 
 			currentCode         = nil;
 			currentLanguage     = nil;
+			currentInfo         = nil;
 			currentCodeIdentity = NSNotFound;
+		}
+
+		// The caller’s replacement for the code block just finished, indented
+		// like the block
+		void replace_code_block (OakMarkdownCodeBlock* codeBlock)
+		{
+			if(!style.codeBlockReplacement || currentCodeBlockStart == NSNotFound || currentCodeBlockStart > output.length)
+				return;
+
+			NSRange range = NSMakeRange(currentCodeBlockStart, output.length - currentCodeBlockStart);
+			NSAttributedString* replacement = style.codeBlockReplacement(codeBlock, codeBlocks.count - 1, [output attributedSubstringFromRange:range]);
+			if(!replacement)
+				return;
+
+			NSMutableAttributedString* str = [replacement mutableCopy];
+			CGFloat const indent = [codeTextBlock widthForLayer:NSTextBlockMargin edge:NSMinXEdge];
+			__block NSParagraphStyle* lastParagraph = nil;
+			[str enumerateAttribute:NSParagraphStyleAttributeName inRange:NSMakeRange(0, str.length) options:0 usingBlock:^(NSParagraphStyle* paragraph, NSRange paragraphRange, BOOL*){
+				NSMutableParagraphStyle* indented = [paragraph ?: NSParagraphStyle.defaultParagraphStyle mutableCopy];
+				indented.firstLineHeadIndent += indent;
+				indented.headIndent          += indent;
+				[str addAttribute:NSParagraphStyleAttributeName value:indented range:paragraphRange];
+				lastParagraph = indented;
+			}];
+			[output replaceCharactersInRange:range withAttributedString:str];
+			if(lastParagraph)
+				paragraphStyle = lastParagraph;
 		}
 
 		// Copies the highlighter’s colours and bold or italic onto the code
@@ -1087,6 +1124,8 @@ namespace
 		NSMutableString* currentCode;
 		NSUInteger currentCodeStart = 0; // where currentCode starts in output
 		NSString* currentLanguage;
+		NSString* currentInfo;
+		NSUInteger currentCodeBlockStart = NSNotFound; // where the rendered block starts in output
 		NSTextBlock* codeTextBlock;
 
 		NSMutableDictionary<NSNumber*, NSTextTable*>* tables;

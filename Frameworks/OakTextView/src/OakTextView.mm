@@ -316,6 +316,17 @@ static void* kSystemAppearanceContext = &kSystemAppearanceContext;
 }
 @end
 
+// Actions that don’t change the text: moving, selecting, finding, copying
+// and marks. Read-only views only perform these.
+static bool IsReadOnlyAction (ng::action_t action)
+{
+	if(action < ng::kReplace)
+		return true;
+	if(ng::kCopy <= action && action <= ng::kPrependSelectionToYankPboard)
+		return true;
+	return action == ng::kSetMark || action == ng::kSelectToMark || action == ng::kSwapWithMark || action == ng::kNop;
+}
+
 @implementation OakTextView
 // =================================
 // = OakTextView Delegate Wrappers =
@@ -752,6 +763,18 @@ static size_t const kSCMDiffGutterMaxBytes = 2 * 1024 * 1024;
 		NSSize newSize = NSMakeSize(std::max(NSWidth(r), documentView->width()), std::max(NSHeight(r), documentView->height()));
 		if(!NSEqualSizes([self frame].size, newSize))
 			[self setFrameSize:newSize];
+		[self updateNaturalHeight];
+	}
+}
+
+- (void)updateNaturalHeight
+{
+	CGFloat naturalHeight = documentView ? documentView->natural_height() : 0;
+	if(_naturalHeight != naturalHeight)
+	{
+		[self willChangeValueForKey:@"naturalHeight"];
+		_naturalHeight = naturalHeight;
+		[self didChangeValueForKey:@"naturalHeight"];
 	}
 }
 
@@ -1052,7 +1075,7 @@ doScroll:
 
 - (void)setMarkedText:(id)aString selectedRange:(NSRange)aRange replacementRange:(NSRange)replacementRange
 {
-	if(!documentView)
+	if(!documentView || _readOnly)
 		return;
 
 	AUTO_REFRESH;
@@ -1705,6 +1728,9 @@ doScroll:
 
 - (void)performBundleItem:(bundles::item_ptr)item
 {
+	if(_readOnly)
+		return;
+
 	crash_reporter_info_t info("%s %s", sel_getName(_cmd), item->name_with_bundle().c_str());
 	switch(item->kind())
 	{
@@ -1856,6 +1882,9 @@ static void update_menu_key_equivalents (NSMenu* menu, std::multimap<std::string
 
 - (BOOL)readSelectionFromPasteboard:(NSPasteboard*)pboard
 {
+	if(_readOnly)
+		return NO;
+
 	if(NSString* str = [pboard stringForType:[pboard availableTypeFromArray:@[ NSPasteboardTypeString ]]])
 	{
 		AUTO_REFRESH;
@@ -1918,7 +1947,7 @@ static void update_menu_key_equivalents (NSMenu* menu, std::multimap<std::string
 
 	std::string const eventString = to_s(anEvent);
 
-	std::vector<bundles::item_ptr> const& items = bundles::query(bundles::kFieldKeyEquivalent, eventString, [self scopeContext]);
+	std::vector<bundles::item_ptr> const& items = _readOnly ? std::vector<bundles::item_ptr>() : bundles::query(bundles::kFieldKeyEquivalent, eventString, [self scopeContext]);
 	if(!items.empty())
 	{
 		if(bundles::item_ptr item = [self showMenuForBundleItems:items])
@@ -2159,6 +2188,9 @@ static void update_menu_key_equivalents (NSMenu* menu, std::multimap<std::string
 
 - (void)insertText:(id)aString replacementRange:(NSRange)aRange
 {
+	if(_readOnly)
+		return;
+
 	AUTO_REFRESH;
 	if(!_markedRanges.empty())
 	{
@@ -2390,6 +2422,8 @@ static void update_menu_key_equivalents (NSMenu* menu, std::multimap<std::string
 
 - (void)changeSpelling:(id)sender
 {
+	if(_readOnly)
+		return;
 	if([sender respondsToSelector:@selector(selectedCell)])
 	{
 		AUTO_REFRESH;
@@ -2403,6 +2437,10 @@ static void update_menu_key_equivalents (NSMenu* menu, std::multimap<std::string
 
 - (void)performFindOperation:(id <OakFindServerProtocol>)aFindServer
 {
+	static find_operation_t const replaceActions[] = { kFindOperationReplace, kFindOperationReplaceAndFind, kFindOperationReplaceAll, kFindOperationReplaceAllInSelection };
+	if(_readOnly && oak::contains(std::begin(replaceActions), std::end(replaceActions), aFindServer.findOperation))
+		return NSBeep();
+
 	[NSNotificationCenter.defaultCenter postNotificationName:@"OakTextViewWillPerformFindOperation" object:self];
 
 	if(![aFindServer isKindOfClass:[OakTextViewFindServer class]])
@@ -2861,6 +2899,8 @@ static NSTouchBarItemIdentifier kOTVTouchBarItemIdentifierAddRemoveBookmark  = @
 
 - (void)insertSnippetWithOptions:(NSDictionary*)someOptions // For Dialog popup
 {
+	if(_readOnly)
+		return;
 	AUTO_REFRESH;
 	[self recordSelector:_cmd withArgument:someOptions];
 	documentView->snippet_dispatch(plist::convert((__bridge CFDictionaryRef)someOptions), [self variables]);
@@ -2869,7 +2909,7 @@ static NSTouchBarItemIdentifier kOTVTouchBarItemIdentifierAddRemoveBookmark  = @
 - (void)undo:(id)anArgument // MACRO?
 {
 	AUTO_REFRESH;
-	if(!documentView->can_undo())
+	if(_readOnly || !documentView->can_undo())
 		return;
 	documentView->undo();
 }
@@ -2877,7 +2917,7 @@ static NSTouchBarItemIdentifier kOTVTouchBarItemIdentifierAddRemoveBookmark  = @
 - (void)redo:(id)anArgument // MACRO?
 {
 	AUTO_REFRESH;
-	if(!documentView->can_redo())
+	if(_readOnly || !documentView->can_redo())
 		return;
 	documentView->redo();
 }
@@ -2901,6 +2941,9 @@ static NSTouchBarItemIdentifier kOTVTouchBarItemIdentifierAddRemoveBookmark  = @
 
 - (void)insertTab:(id)sender
 {
+	if(_readOnly)
+		return;
+
 	// Priority: snippet navigation > tab triggers > ghost text > indent
 	if([self hasGhostText] && !documentView->disallow_tab_expansion())
 	{
@@ -2934,6 +2977,19 @@ static char const* kOakMenuItemTitle = "OakMenuItemTitle";
 		[aMenuItem setDynamicTitle:@"Cut"];
 	else if([aMenuItem action] == @selector(copy:))
 		[aMenuItem setDynamicTitle:@"Copy"];
+
+	if(_readOnly)
+	{
+		static auto const ChangesText = new std::set<SEL>{
+			@selector(undo:), @selector(redo:), @selector(cut:), @selector(paste:), @selector(pasteNext:), @selector(pastePrevious:), @selector(pasteWithoutReindent:), @selector(delete:), @selector(yank:),
+			@selector(replace:), @selector(replaceAndFind:), @selector(replaceAll:), @selector(replaceAllInSelection:),
+			@selector(playScratchMacro:), @selector(toggleMacroRecording:), @selector(changeSpelling:), @selector(performBundleItemWithUUIDStringFrom:),
+			@selector(lspFormatDocument:), @selector(lspFormatOnly:), @selector(lspRename:), @selector(lspCodeActions:), @selector(lspComplete:), @selector(lspCopilotComplete:),
+		};
+		SEL action = aMenuItem.action;
+		if(ChangesText->find(action) != ChangesText->end() || !IsReadOnlyAction(ng::to_action(sel_getName(action))))
+			return NO;
+	}
 
 	static auto const RequiresSelection = new std::set<SEL>{ @selector(cut:), @selector(copy:), @selector(delete:), @selector(copySelectionToFindPboard:) };
 	if(RequiresSelection->find([aMenuItem action]) != RequiresSelection->end())
@@ -3534,6 +3590,8 @@ static char const* kOakMenuItemTitle = "OakMenuItemTitle";
 - (IBAction)playScratchMacro:(id)anArgument
 {
 	AUTO_REFRESH;
+	if(_readOnly)
+		return;
 	if(NSArray* scratchMacro = [NSUserDefaults.standardUserDefaults arrayForKey:@"OakMacroManagerScratchMacro"])
 			documentView->macro_dispatch(plist::convert((__bridge CFDictionaryRef)@{ @"commands": scratchMacro }), [self variables]);
 	else	NSBeep();
@@ -3698,7 +3756,7 @@ static char const* kOakMenuItemTitle = "OakMenuItemTitle";
 
 - (NSDragOperation)dragOperationForInfo:(id <NSDraggingInfo>)info
 {
-	if(macroRecordingArray || [self isHiddenOrHasHiddenAncestor])
+	if(macroRecordingArray || _readOnly || [self isHiddenOrHasHiddenAncestor])
 		return NSDragOperationNone;
 
 	NSDragOperation mask = [info draggingSourceOperationMask];
@@ -3952,7 +4010,7 @@ static char const* kOakMenuItemTitle = "OakMenuItemTitle";
 {
 	self.antiAlias     = ![NSUserDefaults.standardUserDefaults boolForKey:kUserDefaultsDisableAntiAliasKey];
 	self.fontSmoothing = (OTVFontSmoothing)[NSUserDefaults.standardUserDefaults integerForKey:kUserDefaultsFontSmoothingKey];
-	self.scrollPastEnd = [NSUserDefaults.standardUserDefaults boolForKey:kUserDefaultsScrollPastEndKey];
+	self.scrollPastEnd = !_readOnly && [NSUserDefaults.standardUserDefaults boolForKey:kUserDefaultsScrollPastEndKey];
 	self.themeUUID     = self.effectiveThemeUUID;
 
 	BOOL showDiagnostics = [NSUserDefaults.standardUserDefaults boolForKey:kUserDefaultsLSPShowInlineDiagnosticsKey];
@@ -4390,6 +4448,13 @@ static scope::context_t add_modifiers_to_scope (scope::context_t scope, NSUInteg
 	self.blinkCaretTimer = drawsCaret ? [NSTimer scheduledTimerWithTimeInterval:[NSEvent caretBlinkInterval] target:self selector:@selector(toggleCaretVisibility:) userInfo:nil repeats:YES] : nil;
 }
 
+- (void)setReadOnly:(BOOL)flag
+{
+	_readOnly = flag;
+	if(flag)
+		self.scrollPastEnd = NO;
+}
+
 - (void)setShowsCaretWhenInactive:(BOOL)flag
 {
 	if(_showsCaretWhenInactive == flag)
@@ -4437,6 +4502,9 @@ static scope::context_t add_modifiers_to_scope (scope::context_t scope, NSUInteg
 
 - (void)handleAction:(ng::action_t)anAction forSelector:(SEL)aSelector
 {
+	if(_readOnly && !IsReadOnlyAction(anAction))
+		return;
+
 	AUTO_REFRESH;
 	[self recordSelector:aSelector withArgument:nil];
 	try {

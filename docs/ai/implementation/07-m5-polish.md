@@ -7,7 +7,7 @@ tags: [textmate, implementation, acp, agent]
 
 # M5 — Polish: Theme, Errors, Log, Shortcuts, Inline Chat, Docs
 
-**Status:** 🔄 Steps 1–6 implemented (2026-10-19), awaiting user check; step 7: scroll smoothness done (2026-10-20), awaiting user check, panel UX waiting for the user's notes; step 8 deferred by the user ([To check](#to-check-user))
+**Status:** 🔄 Steps 1–6 implemented (2026-10-19), awaiting user check; step 7: preview scrolling and panels (7a–7c, 2026-10-20–22) and chat folding with editor code blocks (7d, 2026-10-24) done, awaiting user check; more panel UX waiting for the user's notes; step 8 deferred by the user ([To check](#to-check-user))
 **Branch:** `feature/agent-polish` (from `feature/agent-config`)
 **Design:** [agent-harness-design.md §5.1, §5.6, §5.7, §6, §6a](../plans/agent-harness-design.md)
 
@@ -24,7 +24,7 @@ Ready for daily use (design §6, M5): code looks like it does in the editor, fai
 | 4. Keyboard shortcuts | Permission cards: ↩ allows once, ⎋ rejects (when the prompt is empty). View ▸ New Agent Chat (⌃⇧⌘N). Checked against menus and every bundle's `keyEquivalent`. | `AgentPromptView`, `AgentPanelViewController`, `AppController` |
 | 5. Inline chat | Text ▸ Ask Agent at Caret (⌃⌥⌘I; ⌘I is Italic in Markdown/HTML): a small prompt field under the caret. The request goes to the window's agent chat with the selection (or current line) attached and the instruction to edit there; the field shows progress and Stop, then the files changed with Keep / Undo and a link to the reply in the panel. The panel doesn't need to be open. | `AgentUI/AgentInlinePrompt`, `OakTextView` (caret rect), `DocumentWindowController+Agent` |
 | 6. Documentation | User guide for the agent panel: setup, agents and API keys, `.tm_properties`, MCP, chat history, permissions and changed files, inline chat, shortcuts, troubleshooting with the log. | `docs/ai/user/agent-panel.md` |
-| 7. UX pass | The panel UX items the user deferred in M2 (to collect from the user) and the Markdown preview's scroll smoothness. | — |
+| 7. UX pass | The panel UX items the user deferred in M2 (to collect from the user) and the Markdown preview's scroll smoothness. Collected by feature in the [UX pass doc](08-ux-pass.md). | — |
 | 8. `pr/agent` | Port onto upstream `master` (needs a decision: upstream builds with rave, not CMake, and targets macOS 10.12). Deferred by the user (2026-10-20: "can wait for now, there's still more work to do first"). | — |
 
 Steps 1–6 are independent of the user's UX notes; 7 and 8 need the user first.
@@ -98,6 +98,59 @@ The user: the preview should only show while a Markdown document is selected; sw
 
 Tests: `suspended_panel_keeps_place_and_size` (OakEditorPanels 12). `ctest` 28/28.
 
+
+### Step 7d — Folding in the chat; code blocks as editor views (2026-10-24)
+
+The user (panel UX): code blocks and other message blocks can't be folded. Add `OakTextView` code blocks and folding; code blocks start folded under a line saying what they are and where they sit.
+
+Decisions (user, 2026-10-24):
+- The line over a code block: language, line count, and the file and lines it belongs to, e.g. `▸ Objective-C++ · 18 lines · AgentTranscriptView.mm:336–353`. The file comes from the fence (` ```swift Sources/File.swift`, `lang:path`, `title="path"`), a file named just before the block, or the files the turn's tool calls touched and the open documents; the lines by finding the code in that file. Without a match: the first line of code instead of the place.
+- Every message block folds (your messages, replies, thinking, tool calls, plans). The current exchange stays open; earlier ones fold to one line when you send a new message. Code blocks always start folded.
+- Code blocks are **read-only**. To change code, open the file (the place on the line is a link, like the changed-files links).
+
+| Part | How |
+|---|---|
+| Read-only `OakTextView` | `readOnly`: typing, IME, editing actions, bundle items, paste, drops, undo/redo, Replace and snippets do nothing, and their menu items are disabled; moving, selecting, copying, find and folding still work. `naturalHeight`: the text's height without the viewport or scroll past end (`layout_t::natural_height`), KVO-observable, so a container can fit it. |
+| `OakCodeView` (OakTextView) | A read-only `OakTextView` in a scroll view for a code snippet: grammar by file type, the window's theme, the font set for the grammar (not the current document's, which may be proportional, e.g. Markdown), no soft wrap (long lines scroll sideways), vertical wheel passed on to the enclosing scroll view, no gutter, no LSP or Copilot (it isn't opened as an editor document). |
+| `OakMarkdown` | `OakMarkdownCodeBlock.info` (the whole fence info string); `language` is its first word. `OakMarkdownStyle.codeBlockReplacement` replaces a rendered code block (given the rendered text) with what the caller returns, e.g. the summary line and an attachment. |
+| `AgentCodeLocation` (AgentUI) | Candidate paths from a fence's info string and the text before the block; finds a code block's lines in a file's text (lines compared without surrounding white space, in order, allowing elided lines such as `…`; after one, a line indented as in the code wins, so a closing `}` lands on the right brace). |
+| Transcript | Each code block is a line: `▸`/`▾`, language (the grammar's name), line count, place (link to open the file at the line), and Copy while folded. Unfolded, an attachment holds an `OakCodeView` (from the panel's delegate) sized to its natural height; the views sit over the attachments after layout and are kept while the reply streams, with Copy / Insert at Cursor / Apply in Editor below. Message items get `▾`/`▸` and a one-line summary when folded (`AgentTranscriptItem.folded`). |
+| Panel | Folds the earlier items when you send a message, and all but the last exchange when a chat is loaded. Provides the code views, grammar names for languages, and the text of files (open document or disk) for the places. |
+
+AgentUI keeps no dependency on OakTextView: the window category makes the `OakCodeView`s.
+
+Checked in the running app with a probe that adds a sample exchange to the panel and snapshots it: folded and unfolded blocks, the editor view at its natural height (9 lines, 169 pt) with the theme's highlighting, the place `AgentTranscript.mm:193–210`, and the one-line summaries after folding everything. Found there and fixed: the view took the current document's font (proportional for Markdown); no space under the actions line.
+
+Tests: `t_code_view` (OakTextView, new suite: fitting height, partial replacement, read-only), `t_markdown` info string and replacement (OakMarkdown 30), `t_code_location` and `t_transcript_view` (AgentUI 30). `ctest` 29/29.
+
+Found by the user with the test prompt (Claude in Manual mode, three new files), and fixed:
+
+| Report | Cause | Fix |
+|---|---|---|
+| The files were empty although the chat showed their text | The writes were waiting for approval; the chat shows the proposed content. The `↳ geometry.py` link opened a new, empty document at the path (an older behaviour, M3). | Links to files that don't exist yet say "not created yet" and show the proposed content (the tool call's diff) instead of opening an empty document; the same when one is clicked before the transcript catches up. Code block places only use files on disk. |
+| No permission card to allow | The card was there, but its options came after a 12-line diff preview, it was added above a later tool row, and the panel only follows new output when scrolled to the bottom: the options were out of view. | The options come right after the title, before the details, and a new open card scrolls its question and options into view. |
+| The disclosure arrows were hard to hit; output kept coming after a card | The arrows were in the text's size. Updates after a permission request (e.g. a parallel tool call) were added below the card. | The arrows are 5 pt larger (every ▸ / ▾: messages, code blocks, Thinking). While a card waits, the panel holds what the agent sends, and another card, and shows them in order once it's answered (or cancelled), so the open card is always last. |
+| The same diff twice, with the card between | The tool row and the card both showed the tool call's details; another tool call had arrived between them. | While a card is open, its tool call's row shows only the title and "waiting for approval"; once answered, the card drops the details and the row shows them. Test: `tool_call_details_shown_once` (AgentUI 37). |
+| The answer appeared later, below another write | Cards were items at the end of the chat; the agent had already announced its next write. | The question and options sit in the tool call's row after its diff; answered, the answer shows on the row's line. A request without a tool row is still a card. Tests: `permission_question_in_its_tool_row`, `permission_without_tool_row_is_a_card`. |
+| The next write showed below an open card | The agent announced the next tool call before it asked about the current one, so the panel's hold (which only holds updates that arrive while a card is open) didn't catch it. | The transcript view stops at the first open question's row and takes out what follows until it's answered. Test: `permission_question_in_its_tool_row` (AgentUI 40). |
+| The end of the chat hidden under the prompt | The working line and the changed-files list made the chat area shorter without scrolling, so the last lines were under them and the chat no longer counted as at the end. | Following the end depends only on the user's scrolling; when the area gets shorter at the end, it stays at the end. Test: `stays_at_end_when_shorter` (AgentUI 39). |
+| A file link sent the chat to the end | Opening a file switches documents, which sets the editor's theme again, even the same one; the panel redrew the whole chat, which emptied it (so it counted as at the end) and recreated its code views. | The window tells the panel only about a different theme, and a redraw keeps the text at the top where it was unless the chat follows the end. Test: `reload_keeps_scroll_position` (AgentUI 40). |
+
+Tests: `links_to_files_not_created_yet`, `permission_card_options_first_and_in_view` (AgentUI 32). `ctest` 29/29.
+
+### Step 7e — Smooth scrolling and the working line (2026-10-24)
+
+The user: new text should scroll the chat up smoothly; a slowly blinking dot while the agent works, with elapsed time, tokens and other useful status. By feature in the UX doc, §10–§11.
+
+| Part | How |
+|---|---|
+| Smooth scrolling | `AgentTranscriptView` glides the clip view's bounds origin on a display link (one motion that new text retargets, easing in over 0.12 s, at most 2400 pt/s unless that would take over 0.4 s; a lone move that fits in the panel just shows, moves within 0.4 s of each other glide as one; a prompt, from anywhere in the chat, goes to the end and leaves the end of the text halfway up the panel with room below, so a short reply prints without the text moving; 2026-11-01, was a 0.25 s ease-out restarted on every update, which rushed through bursts of text; scrolling during the glide stops it; a rebuild at the end, as when sending a prompt folds the earlier exchanges, goes straight to the end rather than gliding down from the top) to show the end, or a new permission card (whole if it fits, else its options). A scroll to the end still under way counts as being at the end. No animation outside a window or with Reduce motion. |
+| Working line | `AgentActivityView` (AgentUI): dot (layer opacity animation, 1.2 s, autoreversing; orange and still while waiting), activity, elapsed time (1 s timer), tool calls, tokens. The panel shows it in place of hard-coded `working` changes (`setAgentWorking:`), and updates it on every update, card and usage report; tokens are `usage_update.used` minus its value when the message was sent. |
+
+Tests: `new_text_scrolls_up_only_at_the_end`, `t_activity_view` (AgentUI 35). `ctest` 29/29.
+
+Then (user): code blocks start open, and an icon in the header shows or folds every code block, now and in later replies, with a tooltip saying which. `AgentTranscriptView.foldsCodeBlocks` (blocks clicked open or folded are the exceptions, cleared when it's set); the panel keeps it in `agentPanelFoldsCodeBlocks` (default NO). Test: `toggle_shows_or_folds_all_code_blocks` (AgentUI 36). `ctest` 29/29. Since 2026-10-31 the icon folds and opens everything with an arrow, not only code blocks; a row with an open question stays open until it's answered. Prompts no longer have an arrow or fold.
+
 ## Commits
 4752a0a7 agent log · 3c5b671c error states · 5e3198e7 theme highlighting · 98808424 permission keys, New Agent Chat · 3a2f3d1b inline chat
 
@@ -113,8 +166,19 @@ Tests: `suspended_panel_keeps_place_and_size` (OakEditorPanels 12). `ctest` 28/2
 9. Markdown preview scrolling (both renderers, a document with images and long paragraphs): scroll slowly and quickly. No rush through images or long paragraphs; the top line drifts a little near them and lines up again after. Page Down / ⌘↓ / ⌘↑ in the editor: the preview glides there. Open a document whose images load after it's shown: the preview stays lined up without scrolling.
 10. Scroll the **preview** (both renderers; wheel, scroller, and Page Down with the preview focused): the editor follows, and the caret doesn't move. Then scroll the editor: the preview carries on from where it is, no jump. Click a footnote: the editor follows the preview. Type near the end of the document: the editor doesn't move by itself.
 11. With the preview shown and resized, switch to a non-Markdown tab: the preview closes and the editor takes the space. Switch back: it reopens on the same edge at the same size (also with the agent panel open on the same edge). View ▸ Show Markdown Preview is disabled on the non-Markdown tab; Hide works there and stays hidden when you return.
+12. ✅ Ask for code from a file in the project (e.g. “show me the method that folds transcript items”): each code block is one line with its language, length and place (`File.mm:12–30`); click the place to open the file there. Click the line: an editor view with the code in your theme and font; long lines scroll sideways, the wheel scrolls the chat. Select, copy and find in it work; typing, paste and Undo do nothing. Click again to fold it.
+13. ✅ With the header icon on closed, send a second message: the first exchange's replies and tool rows fold to one line (▸); your prompt stays whole, with no arrow. With the icon on open, nothing folds when you send. Click ▸ to open one again. Tool calls and the plan fold too. History ▸ load an earlier chat: only its last exchange is open.
+14. ✅ Switch themes with a code block unfolded: it follows.
+15. ✅ Claude in Manual mode, ask it to create a new file: the card's Yes / No are visible straight away (scroll up first to try); `↳ name` says "not created yet" and shows the proposed content; after Yes, it opens the file.
+16. ✅ Ask Claude (Manual mode) to create two files: the second card and any tool rows appear only after you answer the first; each write's question sits under its diff in the tool row, and after you answer, the row's line says ✓ Yes; nothing ends up hidden under the working line or the changed files; the arrows are easy to click.
+17. ✅ At the end of the chat, send a message that gets a long reply: the text slides up smoothly as it arrives. Scroll up while it streams: it stays put. With Reduce motion on, it moves without animating.
+18. ✅ Right after you send, a line says “Waiting for <agent>” with a blinking marker and its time, until the agent's first update. The line being worked on (a running tool row, the Thinking line or the streaming reply): its marker blinks, faster than the working line's dot, and it shows that line's own time and tokens; both go when it's done. A row waiting on a question keeps blinking. The line above the message field is always there, so nothing prints over it. After a turn it says Done (or Stopped, or Failed) with the time, tool calls and tokens, and a new chat empties it. While the agent works, it has a slowly blinking dot, the activity (Thinking, a tool's title, Writing the reply), elapsed time, tool calls and "+N tokens"; at a permission card the dot is orange and still and the line says "Waiting for your approval". It disappears when the reply finishes or you stop it.
+19. ✅ The header icon beside Previous Chats (tooltip says what it does) folds everything with an arrow: replies, tool rows, the plan, thoughts and code blocks, including ones opened by hand; click again to open them all. A row with an open question stays open with its diff until you answer. Prompts have no arrow and don't fold. What comes next follows the icon: on closed, tool rows arrive folded, and replies stream open and fold once two newer replies have come (unless you've opened one by hand). A chat loaded from Previous Chats doesn't follow the icon. The choice survives a relaunch.
+20. ✅ Scroll up to a code block and click a link to a file: the file opens and the chat doesn't move or redraw.
+21. ✅ Ask for an edit that adds or removes indented code: the diff's green and red are solid rectangles from the + or − to the panel edge, with no steps where the code indents.
 
 ## Future work
 - Inline Undo restores a file to before the agent's first change in the chat, not just this request's change, when the file was already in the changed-files list.
 - Inline chat shows the reply as plain text; Markdown and a diff preview in the popover would help.
 - The log isn't saved; an option to write it to a file for long sessions.
+- Code views in the chat: Find in the transcript doesn't search them, and a selection across one copies without its code; no gutter, so folding inside a block is by keyboard (F1) only.

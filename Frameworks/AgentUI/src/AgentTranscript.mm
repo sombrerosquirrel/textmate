@@ -90,12 +90,31 @@ static NSString* TextOfContentBlock (NSDictionary* content)
 	return [_items copy];
 }
 
+static NSUInteger const kNewerRepliesBeforeFolding = 2;
+
+static void SetItemFolded (AgentTranscriptItem* item, BOOL flag)
+{
+	switch(item.kind)
+	{
+		case AgentTranscriptItemKindAgent:
+		case AgentTranscriptItemKindToolCall:
+		case AgentTranscriptItemKindPlan:    item.folded   = flag;  break;
+		case AgentTranscriptItemKindThought: item.expanded = !flag; break;
+		default:                                                    break;
+	}
+	item.foldsWhenPassed = NO;
+}
+
 - (AgentTranscriptItem*)addItemOfKind:(AgentTranscriptItemKind)kind text:(NSString*)text
 {
 	AgentTranscriptItem* item = [[AgentTranscriptItem alloc] init];
 	item.kind        = kind;
 	item.identifier  = [NSString stringWithFormat:@"%lu", ++_nextIdentifier];
 	item.mutableText = [NSMutableString stringWithString:text ?: @""];
+	if(_foldsNewItems && kind == AgentTranscriptItemKindAgent)
+		item.foldsWhenPassed = YES; // read as it streams
+	else if(_foldsNewItems)
+		SetItemFolded(item, YES);
 	[_items addObject:item];
 	return item;
 }
@@ -107,6 +126,8 @@ static NSString* TextOfContentBlock (NSDictionary* content)
 	return item;
 }
 
+- (AgentTranscriptItem*)addWaitingLine:(NSString*)text { return [self addItemOfKind:AgentTranscriptItemKindWaiting text:text]; }
+- (void)endWaitingLine:(AgentTranscriptItem*)item      { item.mutableText = [NSMutableString string]; }
 - (AgentTranscriptItem*)addNotice:(NSString*)text { return [self addItemOfKind:AgentTranscriptItemKindNotice text:text]; }
 - (AgentTranscriptItem*)addError:(NSString*)text  { return [self addItemOfKind:AgentTranscriptItemKindError text:text]; }
 
@@ -188,6 +209,50 @@ static NSString* TextOfContentBlock (NSDictionary* content)
 		terminal.exitCode = [exit[@"exit_code"] isKindOfClass:[NSNumber class]] ? exit[@"exit_code"] : nil;
 		terminal.signal   = [exit[@"signal"] isKindOfClass:[NSString class]] ? exit[@"signal"] : nil;
 	}
+}
+
+- (void)foldItemsBeforeItem:(AgentTranscriptItem*)item
+{
+	for(AgentTranscriptItem* it in _items)
+	{
+		if(it == item)
+			break;
+		SetItemFolded(it, YES);
+	}
+}
+
+- (NSArray<AgentTranscriptItem*>*)foldPassedReplies
+{
+	NSMutableArray<AgentTranscriptItem*>* res = [NSMutableArray array];
+	NSUInteger newerReplies = 0;
+	for(AgentTranscriptItem* it in _items.reverseObjectEnumerator)
+	{
+		if(it.kind != AgentTranscriptItemKindAgent)
+			continue;
+		if(it.foldsWhenPassed && newerReplies >= kNewerRepliesBeforeFolding)
+		{
+			SetItemFolded(it, YES);
+			[res addObject:it];
+		}
+		++newerReplies;
+	}
+	return res;
+}
+
+- (void)setAllItemsFolded:(BOOL)flag
+{
+	for(AgentTranscriptItem* it in _items)
+		SetItemFolded(it, flag);
+}
+
+- (AgentTranscriptItem*)lastUserItem
+{
+	for(AgentTranscriptItem* item in _items.reverseObjectEnumerator)
+	{
+		if(item.kind == AgentTranscriptItemKindUser)
+			return item;
+	}
+	return nil;
 }
 
 - (void)removeAllItems

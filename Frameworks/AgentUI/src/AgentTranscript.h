@@ -11,6 +11,7 @@ typedef NS_ENUM(NSInteger, AgentTranscriptItemKind) {
 	AgentTranscriptItemKindNotice,
 	AgentTranscriptItemKindError,
 	AgentTranscriptItemKindPermission,
+	AgentTranscriptItemKindWaiting,     // says what’s awaited until something else shows; empty after that
 };
 
 @interface AgentTranscriptItem : NSObject
@@ -21,6 +22,8 @@ typedef NS_ENUM(NSInteger, AgentTranscriptItemKind) {
 @property (nonatomic, readonly) NSDictionary* toolCall;    // tool call items: merged tool_call / tool_call_update fields
 @property (nonatomic, readonly) NSArray<NSDictionary*>* planEntries;  // plan items: { content, priority, status }
 @property (nonatomic) BOOL expanded;                       // thought items: show the thinking text; tool calls: the whole diff or output
+@property (nonatomic) BOOL folded;                         // agent, tool call and plan items: shown as one line
+@property (nonatomic) BOOL foldsWhenPassed;                // agent items: fold once newer replies have passed them
 
 // Permission items: the session/request_permission params ({ toolCall, options }),
 // and the user’s answer once given (selectedOptionId nil means cancelled).
@@ -47,10 +50,13 @@ typedef NS_ENUM(NSInteger, AgentTranscriptItemKind) {
 
 @interface AgentTranscript : NSObject
 @property (nonatomic, readonly) NSArray<AgentTranscriptItem*>* items;
+@property (nonatomic) BOOL foldsNewItems; // items to come start folded, but replies only once newer ones pass them
 
 - (AgentTranscriptItem*)addUserMessage:(NSString*)text attachmentNames:(NSArray<NSString*>*)attachmentNames;
 - (AgentTranscriptItem*)addNotice:(NSString*)text;
 - (AgentTranscriptItem*)addError:(NSString*)text;
+- (AgentTranscriptItem*)addWaitingLine:(NSString*)text;
+- (void)endWaitingLine:(AgentTranscriptItem*)item;
 - (AgentTranscriptItem*)addNotice:(NSString*)text actions:(NSArray<NSDictionary<NSString*, NSString*>*>*)actions;
 - (AgentTranscriptItem*)addError:(NSString*)text actions:(NSArray<NSDictionary<NSString*, NSString*>*>*)actions;
 - (AgentTranscriptItem*)addPermissionRequest:(NSDictionary*)params;
@@ -64,6 +70,18 @@ typedef NS_ENUM(NSInteger, AgentTranscriptItemKind) {
 - (AgentTranscriptItem*)applyUpdate:(NSDictionary*)update;
 
 - (AgentTranscriptTerminal*)terminalWithIdentifier:(NSString*)terminalId;
+
+// Folds the agent, tool call and plan items before `item` (all of them
+// if nil) and closes their thinking, e.g. when a new message is sent.
+- (void)foldItemsBeforeItem:(AgentTranscriptItem*)item;
+- (AgentTranscriptItem*)toolCallItemWithIdentifier:(NSString*)toolCallId;
+// Folds the replies with foldsWhenPassed that newer replies have passed and
+// returns them
+- (NSArray<AgentTranscriptItem*>*)foldPassedReplies;
+// Folds or opens every item with a ▾ / ▸
+- (void)setAllItemsFolded:(BOOL)flag;
+// The item of the last user message, nil if there is none.
+@property (nonatomic, readonly) AgentTranscriptItem* lastUserItem;
 
 - (void)removeAllItems;
 @end

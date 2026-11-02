@@ -377,6 +377,7 @@ namespace ng
 
 	CGFloat layout_t::width () const  { return _margin.left + content_width() + _margin.right; }
 	CGFloat layout_t::height () const { return _margin.top + content_height() + _margin.bottom + (_scroll_past_end ? std::min(_rows.aggregated()._height, _viewport_size.height) - default_line_height() * 1.5 : 0); }
+	CGFloat layout_t::natural_height () const { return _margin.top + ceil(_rows.aggregated()._height) + _margin.bottom; }
 
 	// ===================
 	// = Updating Layout =

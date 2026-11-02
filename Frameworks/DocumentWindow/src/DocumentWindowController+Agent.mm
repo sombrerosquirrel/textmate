@@ -1,10 +1,12 @@
 #import "DocumentWindowController+Agent.h"
 #import "DocumentWindowController+EditorPanels.h"
 #import <AgentUI/AgentPanelViewController.h>
+#import <AgentUI/AgentTranscriptView.h>
 #import <AgentClient/AgentFileSystem.h>
 #import <FileBrowser/FileBrowserViewController.h>
 #import <OakEditorPanels/OakEditorPanelsView.h>
 #import <OakTextView/OakDocumentView.h>
+#import <OakTextView/OakCodeView.h>
 #import <document/OakDocument.h>
 #import <document/OakDocumentController.h>
 #import <settings/settings.h>
@@ -39,6 +41,7 @@ NSString* const kUserDefaultsAgentPanelPlacementKey = @"agentPanelPlacement";
 static void* kAgentPanelKey              = &kAgentPanelKey;
 static void* kAgentEditorPanelKey        = &kAgentEditorPanelKey;
 static void* kAgentPanelFocusObserverKey = &kAgentPanelFocusObserverKey;
+static void* kAgentPanelThemeUUIDKey     = &kAgentPanelThemeUUIDKey;
 
 static OakEditorPanelEdge AgentPanelEdge ()
 {
@@ -162,6 +165,12 @@ static NSString* GrammarScopeForLanguage (NSString* language)
 	return res.empty() ? nil : to_ns(res);
 }
 
+@interface OakCodeView (AgentCodeBlockView) <AgentCodeBlockView>
+@end
+
+@implementation OakCodeView (AgentCodeBlockView)
+@end
+
 static BOOL IsSameFile (NSString* lhs, NSString* rhs)
 {
 	return [lhs isEqualToString:rhs] || [lhs.stringByResolvingSymlinksInPath isEqualToString:rhs.stringByResolvingSymlinksInPath];
@@ -262,8 +271,14 @@ static void* kFirstResponderContext = &kFirstResponderContext;
 	[self.agentPanel shutdown];
 }
 
+// Switching documents sets the theme again, mostly to the same one; the panel
+// only redraws its transcript for a different one
 - (void)agentPanelThemeDidChange
 {
+	NSString* themeUUID = self.textView.themeUUID;
+	if([themeUUID isEqualToString:objc_getAssociatedObject(self, kAgentPanelThemeUUIDKey)])
+		return;
+	objc_setAssociatedObject(self, kAgentPanelThemeUUIDKey, themeUUID, OBJC_ASSOCIATION_COPY_NONATOMIC);
 	[self.agentPanel themeDidChange];
 }
 
@@ -388,6 +403,31 @@ static void* kFirstResponderContext = &kFirstResponderContext;
 {
 	NSString* grammarScope = GrammarScopeForLanguage(language);
 	return grammarScope ? [self.textView syntaxHighlight:code withGrammar:grammarScope] : nil;
+}
+
+- (NSView<AgentCodeBlockView>*)agentPanel:(AgentPanelViewController*)agentPanel viewForCode:(NSString*)code language:(NSString*)language
+{
+	OakCodeView* view = [[OakCodeView alloc] initWithCode:code fileType:language ? GrammarScopeForLanguage(language) : nil];
+	view.textView.themeUUID = self.textView.themeUUID; // the font is the one set for the grammar
+	return view;
+}
+
+- (NSString*)agentPanel:(AgentPanelViewController*)agentPanel displayNameForLanguage:(NSString*)language
+{
+	NSString* grammarScope = GrammarScopeForLanguage(language);
+	std::vector<bundles::item_ptr> const items = grammarScope ? bundles::query(bundles::kFieldGrammarScope, to_s(grammarScope), scope::wildcard, bundles::kItemTypeGrammar) : std::vector<bundles::item_ptr>();
+	return items.empty() ? nil : to_ns(items.front()->name());
+}
+
+- (NSArray<NSString*>*)openFilePathsForAgentPanel:(AgentPanelViewController*)agentPanel
+{
+	NSMutableArray<NSString*>* res = [NSMutableArray array];
+	for(OakDocument* document in self.documents)
+	{
+		if(document.path)
+			[res addObject:document.path];
+	}
+	return res;
 }
 
 - (void)agentPanelShowChat:(AgentPanelViewController*)agentPanel

@@ -1,6 +1,6 @@
 ---
 title: Agent Panel — User Guide
-updated: 2026-10-19
+updated: 2026-10-24
 tags: [textmate, user-guide, agent, acp]
 ---
 
@@ -54,17 +54,29 @@ From the editor:
 
 ## Replies
 
-Replies are formatted Markdown. Code blocks are highlighted with the grammar for their language and your editor theme. Under each code block:
+Replies are formatted Markdown. Each code block has a line over it: its language, how many lines it has, and where it sits, e.g. `▸ Objective-C · 18 lines · Parser.mm:120–137`. Click the place to open the file at those lines. The place is found when the reply names the file (in the code fence, or just before the block), or when the code is in a file the agent touched or one you have open; otherwise the line shows the block's first line of code.
 
-- **Copy**
+Below the line, the code shows in a small read-only editor with your theme, the font for its language, and the editor's selection, copying, find and keyboard folding. Long lines scroll sideways. To change the code, open the file from its place. Click the line to fold the block to just that line, and again to show it.
+
+The icon at the top of the panel, beside Previous Chats, folds or opens everything with an arrow at once: replies, tool calls, the plan, thoughts and code blocks. When it's on closed, tool calls arrive folded, and replies stream open and fold once two newer replies have come; chats you load from Previous Chats don't follow it, and a tool call waiting on your answer stays open; its tooltip says which it does. TextMate remembers the choice.
+
+Below a block that's showing:
+
+- **Copy** (also on the folded line)
 - **Insert at Cursor** inserts it in the editor.
 - **Apply in Editor** replaces the selection, or adds to the end, as one undoable change.
 
+Replies and tool calls fold: click ▾ to fold one to a line and ▸ to open it again. Your own prompts stay whole. With the header icon on closed, the earlier exchanges fold when you send a message, so the current one is easy to follow. Loading an earlier chat leaves only its last exchange open.
+
 **Thinking** rows can be expanded. Tool rows show what the agent did, with diffs for edits and output for commands.
+
+New text slides into view at the bottom while you're at the end of the chat; scroll up to read and it stays where you are.
+
+While the agent works, a line under the chat shows a slowly blinking dot, what it's doing (thinking, writing the reply, or the tool it's running), the time since you sent the message, the tool calls so far and the tokens this exchange used (when the agent reports them). While a permission card waits for you, the dot turns orange and stops blinking.
 
 ## Approvals and changes
 
-When the agent asks for permission, a card shows what it wants to do (the command, or the diff of an edit) and its choices. With the message field empty, ↩ chooses the option marked ↩ (allow once) and ⎋ the one marked ⎋ (reject).
+When the agent asks for permission, the question and its choices appear in the tool call's row, right after what it's about (the command, or the diff of an edit). Once you answer, the question goes and your answer shows on the row's line, e.g. `✓ Write geometry.py  ·  ✓ Yes`. With the message field empty, ↩ chooses the option marked ↩ (allow once) and ⎋ the one marked ⎋ (reject). While a card is open, nothing else is added after it: what the agent does next, and any further card, shows once you've answered.
 
 Files the agent changes are listed above the message field. For each file you can open it, see the diff, **Keep** the change or **Undo** it, or use **Keep All** / **Undo All**. Undo restores the file as it was before the agent changed it; if you've edited the file since, TextMate asks first.
 

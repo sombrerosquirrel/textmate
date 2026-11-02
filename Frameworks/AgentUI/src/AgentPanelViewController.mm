@@ -1,4 +1,5 @@
 #import "AgentPanelViewController.h"
+#import "AgentActivityView.h"
 #import "AgentPromptView.h"
 #import "AgentTranscriptView.h"
 #import "AgentChangesView.h"
@@ -12,6 +13,7 @@
 
 NSString* const kUserDefaultsAgentPanelAgentKey           = @"agentPanelAgent";
 NSString* const kUserDefaultsAgentPanelUsesCurrentFileKey = @"agentPanelUsesCurrentFile";
+NSString* const kUserDefaultsAgentPanelFoldsCodeBlocksKey = @"agentPanelFoldsCodeBlocks";
 
 static NSString* FormatTokenCount (double count)
 {
@@ -93,6 +95,7 @@ static NSView* Separator ()
 	AgentFileSystem* _fileSystem;              // one per chat, so its changes outlive an agent restart
 	AgentTerminalManager* _terminals;          // one per chat, so output stays visible after a restart
 	NSMutableDictionary<NSString*, void(^)(NSDictionary*)>* _permissionReplies; // transcript item identifier → reply
+	NSMutableArray<void(^)()>* _heldUpdates; // what the agent sent while a permission card waits
 	NSMutableSet<NSString*>* _finishedToolCallIds; // edit tool calls whose files have been compared
 
 	AgentTranscript* _transcript;
@@ -122,6 +125,11 @@ static NSView* Separator ()
 	AgentPromptView* _promptView;
 	NSStackView* _optionsView;
 	NSTextField* _statusField;
+	NSButton* _codeBlocksButton;
+	AgentActivityView* _activityView;
+	AgentTranscriptItem* _waitingLine; // shown until the agent’s first update
+	double _usedTokens;      // from the last usage update
+	double _turnStartTokens; // _usedTokens when the message was sent
 }
 @end
 
@@ -131,6 +139,7 @@ static NSView* Separator ()
 	[NSUserDefaults.standardUserDefaults registerDefaults:@{
 		kUserDefaultsAgentPanelAgentKey:           @"copilot",
 		kUserDefaultsAgentPanelUsesCurrentFileKey: @YES,
+		kUserDefaultsAgentPanelFoldsCodeBlocksKey: @NO,
 	}];
 }
 
@@ -140,6 +149,7 @@ static NSView* Separator ()
 	{
 		_transcript = [[AgentTranscript alloc] init];
 		_permissionReplies = [NSMutableDictionary dictionary];
+		_heldUpdates       = [NSMutableArray array];
 		_finishedToolCallIds = [NSMutableSet set];
 		[NSNotificationCenter.defaultCenter addObserver:self selector:@selector(agentRegistryDidChange:) name:AgentRegistryDidChangeNotification object:nil];
 	}
@@ -239,6 +249,24 @@ static NSView* Separator ()
 	}
 }
 
+// Opens or folds everything with a ▾ / ▸, also what comes later
+- (IBAction)toggleFolding:(id)sender
+{
+	BOOL folds = !_transcriptView.foldsCodeBlocks;
+	[NSUserDefaults.standardUserDefaults setBool:folds forKey:kUserDefaultsAgentPanelFoldsCodeBlocksKey];
+	[_transcriptView setAllFolded:folds];
+	_transcript.foldsNewItems = folds;
+	[self updateFoldingButton];
+}
+
+- (void)updateFoldingButton
+{
+	BOOL folds = _transcriptView.foldsCodeBlocks;
+	NSString* name = folds ? @"rectangle.compress.vertical" : @"rectangle.expand.vertical";
+	_codeBlocksButton.image   = [NSImage imageWithSystemSymbolName:name accessibilityDescription:(folds ? @"Unfold All" : @"Fold All")];
+	_codeBlocksButton.toolTip = folds ? @"Everything is folded. Click to unfold all replies, tool calls and code blocks, now and in later replies." : @"Click to fold all replies, tool calls and code blocks, now and in later replies.";
+}
+
 - (void)loadView
 {
 	_agentPopUp = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
@@ -258,12 +286,18 @@ static NSView* Separator ()
 	newChatButton.bordered = NO;
 	newChatButton.toolTip  = @"New Chat";
 
-	NSStackView* header = [NSStackView stackViewWithViews:@[ _agentPopUp, [NSView new], _historyButton, newChatButton ]];
+	_codeBlocksButton = [NSButton buttonWithImage:[NSImage imageWithSystemSymbolName:@"curlybraces" accessibilityDescription:nil] target:self action:@selector(toggleFolding:)];
+	_codeBlocksButton.bordered = NO;
+
+	NSStackView* header = [NSStackView stackViewWithViews:@[ _agentPopUp, [NSView new], _codeBlocksButton, _historyButton, newChatButton ]];
 	header.orientation = NSUserInterfaceLayoutOrientationHorizontal;
 	header.edgeInsets  = NSEdgeInsetsMake(6, 8, 6, 8);
 
 	NSScrollView* transcriptScrollView = [AgentTranscriptView scrollableTranscriptView];
 	_transcriptView = transcriptScrollView.documentView;
+	_transcriptView.foldsCodeBlocks = [NSUserDefaults.standardUserDefaults boolForKey:kUserDefaultsAgentPanelFoldsCodeBlocksKey];
+	[self updateFoldingButton];
+	_transcript.foldsNewItems      = _transcriptView.foldsCodeBlocks;
 	_transcriptView.transcript     = _transcript;
 	_transcriptView.actionDelegate = self;
 
@@ -278,6 +312,8 @@ static NSView* Separator ()
 	_optionsView.orientation = NSUserInterfaceLayoutOrientationHorizontal;
 	_optionsView.spacing     = 4;
 
+	_activityView = [[AgentActivityView alloc] initWithFrame:NSZeroRect];
+
 	_statusField = [NSTextField labelWithString:@""];
 	_statusField.font          = [NSFont systemFontOfSize:NSFont.smallSystemFontSize];
 	_statusField.textColor     = NSColor.secondaryLabelColor;
@@ -288,7 +324,7 @@ static NSView* Separator ()
 	footer.orientation = NSUserInterfaceLayoutOrientationHorizontal;
 	footer.edgeInsets  = NSEdgeInsetsMake(0, 8, 6, 8);
 
-	NSStackView* stack = [NSStackView stackViewWithViews:@[ header, Separator(), transcriptScrollView, Separator(), _changesView, _promptView, footer ]];
+	NSStackView* stack = [NSStackView stackViewWithViews:@[ header, Separator(), transcriptScrollView, _activityView, Separator(), _changesView, _promptView, footer ]];
 	stack.orientation = NSUserInterfaceLayoutOrientationVertical;
 	stack.spacing     = 0;
 	// NSStackView hugs its content at a priority above the window’s “stay put”
@@ -483,6 +519,7 @@ static NSView* Separator ()
 	AgentSession* session = _session;
 	_session   = nil;
 	_usageText = nil;
+	_usedTokens = _turnStartTokens = 0;
 	session.delegate = nil;
 	_reportedSignedOut = NO;
 	if(session.connection.running)
@@ -514,12 +551,14 @@ static NSView* Separator ()
 	[_finishedToolCallIds removeAllObjects];
 	_transcriptView.terminalManager = nil;
 	_changesView.changes = @[ ];
+	_waitingLine = nil;
 	[_transcript removeAllItems];
 	[_transcriptView reloadData];
 	_pendingText        = nil;
 	_pendingAttachments = nil;
 	_pendingCurrentFile = nil;
-	_promptView.working = NO;
+	[self setAgentWorking:NO];
+	[_activityView clear];
 }
 
 - (IBAction)newChat:(id)sender
@@ -619,13 +658,16 @@ static NSString* RelativeDate (NSString* isoDate)
 	NSString* projectPath = session.workingDirectory;
 	session.fileSystem = [self fileSystemForProjectPath:projectPath];
 	session.terminals  = [self terminalsForProjectPath:projectPath environment:session.connection.environment];
+	_transcript.foldsNewItems = NO; // a loaded chat doesn’t follow the header icon
 	[session loadSession:sessionId completion:^(NSError* error){
 		if(session != _session)
 			return;
+		_transcript.foldsNewItems = _transcriptView.foldsCodeBlocks;
 		if(error)
 			[self showError:[NSString stringWithFormat:@"Couldn’t load the chat: %@", error.localizedDescription]];
 		else
 			_lastSessionId = sessionId;
+		[_transcript foldItemsBeforeItem:_transcript.lastUserItem]; // the last exchange stays open
 		[_transcriptView reloadData];
 		[self rebuildOptions];
 		[self updateStatus];
@@ -871,7 +913,7 @@ static NSString* RelativeDate (NSString* isoDate)
 		_pendingText        = _retryText;
 		_pendingAttachments = _retryAttachments;
 		_pendingCurrentFile = _retryCurrentFile;
-		_promptView.working = YES;
+		[self setAgentWorking:YES];
 	}
 	if(_session.state == AgentSessionStateReady && (_pendingText || _pendingAttachments))
 			[self sendPendingPrompt];
@@ -923,12 +965,22 @@ static NSString* RelativeDate (NSString* isoDate)
 - (void)submitText:(NSString*)text attachments:(NSArray<AgentAttachment*>*)attachments currentFile:(BOOL)withCurrentFile
 {
 	[_promptView rememberPrompt:text];
+
+	// With the header icon on closed, earlier exchanges fold to a line each
+	if(_transcript.items.count && _transcriptView.foldsCodeBlocks)
+	{
+		[_transcript foldItemsBeforeItem:nil];
+		[_transcriptView reloadData];
+	}
 	[self showItem:[_transcript addUserMessage:text attachmentNames:[attachments valueForKey:@"name"]]];
+	_waitingLine = [_transcript addWaitingLine:[NSString stringWithFormat:@"Waiting for %@", _agent.name]];
+	[self showItem:_waitingLine];
+	[_transcriptView makeRoomForReply];
 
 	_pendingText        = text;
 	_pendingAttachments = attachments;
 	_pendingCurrentFile = withCurrentFile && [_delegate respondsToSelector:@selector(currentFileAttachmentForAgentPanel:)] ? [_delegate currentFileAttachmentForAgentPanel:self] : nil;
-	_promptView.working = YES;
+	[self setAgentWorking:YES];
 
 	if(_restartOnRetry) // e.g. signed in since the agent started
 	{
@@ -959,7 +1011,9 @@ static NSString* RelativeDate (NSString* isoDate)
 	[session sendPrompt:prompt completion:^(NSString* stopReason, NSError* error){
 		if(session != _session)
 			return;
-		_promptView.working = NO;
+		[self setAgentWorking:NO];
+		if(error || [stopReason isEqualToString:@"cancelled"])
+			_activityView.outcome = error ? @"Failed" : @"Stopped";
 		[self cancelPendingPermissionRequests];
 		if(inlinePrompt)
 			[self finishInlinePrompt:inlinePrompt stopReason:stopReason error:error];
@@ -992,7 +1046,8 @@ static NSString* RelativeDate (NSString* isoDate)
 	_pendingText        = nil;
 	_pendingAttachments = nil;
 	_pendingCurrentFile = nil;
-	_promptView.working = NO;
+	[self setAgentWorking:NO];
+	_activityView.outcome = @"Failed";
 }
 
 - (void)promptViewDidRequestStop:(AgentPromptView*)promptView
@@ -1002,7 +1057,8 @@ static NSString* RelativeDate (NSString* isoDate)
 		_pendingText        = nil;
 		_pendingAttachments = nil;
 		_pendingCurrentFile = nil;
-		_promptView.working = NO;
+		[self setAgentWorking:NO];
+		_activityView.outcome = @"Stopped";
 		[self showNotice:@"Stopped."];
 	}
 	[self cancelPendingPermissionRequests];
@@ -1194,6 +1250,94 @@ static NSString* RelativeDate (NSString* isoDate)
 	_statusField.stringValue = status;
 	_statusField.toolTip     = _session.workingDirectory;
 	[self updateHistoryButton];
+	[self updateActivity];
+}
+
+- (void)setAgentWorking:(BOOL)flag
+{
+	_promptView.working = flag;
+	if(flag && !_activityView.active)
+		_turnStartTokens = _usedTokens;
+	_activityView.active = flag;
+	if(!flag)
+	{
+		[self endWaitingLine];
+		[_transcriptView setWorkingItem:nil tokens:0];
+	}
+	[self updateActivity];
+}
+
+- (void)endWaitingLine
+{
+	if(!_waitingLine)
+		return;
+	[_transcript endWaitingLine:_waitingLine];
+	[self showItem:_waitingLine];
+	_waitingLine = nil;
+}
+
+// What the current turn is doing, from its last item
+- (void)updateActivity
+{
+	if(!_activityView.active)
+		return;
+
+	// Anything from the agent says more than the waiting line
+	if(_transcript.items.lastObject != _waitingLine)
+		[self endWaitingLine];
+
+	NSString* activity;
+	AgentTranscriptItem* workingItem = nil;
+	NSUInteger toolCalls = 0;
+	for(AgentTranscriptItem* item in _transcript.items.reverseObjectEnumerator)
+	{
+		if(item.kind == AgentTranscriptItemKindUser)
+			break;
+		if(item.kind == AgentTranscriptItemKindToolCall)
+			++toolCalls;
+
+		if(activity)
+			continue;
+		switch(item.kind)
+		{
+			case AgentTranscriptItemKindToolCall:
+			{
+				NSString* status = item.toolCall[@"status"];
+				NSString* title  = [item.toolCall[@"title"] isKindOfClass:[NSString class]] ? item.toolCall[@"title"] : nil;
+				BOOL finished = [status isEqualToString:@"completed"] || [status isEqualToString:@"failed"];
+				activity = finished ? @"Working" : (title.length ? title : @"Running a tool");
+				workingItem = finished ? nil : item;
+			}
+			break;
+			case AgentTranscriptItemKindThought: activity = @"Thinking";          workingItem = item; break;
+			case AgentTranscriptItemKindAgent:   activity = @"Writing the reply"; workingItem = item; break;
+			case AgentTranscriptItemKindPlan:    activity = @"Planning";          break;
+			case AgentTranscriptItemKindWaiting:
+				if(item.text.length)
+				{
+					activity = @"Working";
+					workingItem = item;
+				}
+			break;
+			default:                                                              break;
+		}
+	}
+	if(_creatingSession || _session.state == AgentSessionStateStarting || !_session)
+		activity = [NSString stringWithFormat:@"Starting %@", _agent.name];
+
+	_activityView.activity  = activity;
+	_activityView.toolCalls = toolCalls;
+	_activityView.tokens    = MAX(0, _usedTokens - _turnStartTokens);
+	_activityView.waiting   = _transcript.pendingPermissionItems.count != 0;
+
+	// A question holds up what comes after it, so its row is the one being worked on
+	if(AgentTranscriptItem* question = _transcript.pendingPermissionItems.firstObject)
+	{
+		NSDictionary* toolCall = question.permissionRequest[@"toolCall"];
+		id toolCallId = [toolCall isKindOfClass:[NSDictionary class]] ? toolCall[@"toolCallId"] : nil;
+		workingItem = (toolCallId ? [_transcript toolCallItemWithIdentifier:toolCallId] : nil) ?: workingItem;
+	}
+	[_transcriptView setWorkingItem:workingItem tokens:_usedTokens];
 }
 
 // =========================
@@ -1208,7 +1352,7 @@ static NSString* RelativeDate (NSString* isoDate)
 	{
 		[AgentLog.sharedLog addEvent:[NSString stringWithFormat:@"Exited with status %d", session.connection.terminationStatus] source:_logSource];
 		[self cancelPendingPermissionRequests];
-		_promptView.working = NO;
+		[self setAgentWorking:NO];
 		[self showError:[self message:[NSString stringWithFormat:@"%@ stopped running. Restart it, or send a message, to continue the chat.", _agent.name] withOutputOfSession:session] actions:@[ Action(@"restart", @"Restart"), Action(@"log", @"Show Log") ]];
 		[self rebuildOptions];
 	}
@@ -1229,6 +1373,7 @@ static NSString* RelativeDate (NSString* isoDate)
 	if([update[@"sessionUpdate"] isEqualToString:@"usage_update"])
 	{
 		double used = [update[@"used"] doubleValue], size = [update[@"size"] doubleValue];
+		_usedTokens = used;
 		_usageText = size > 0 ? [NSString stringWithFormat:@"%@ / %@ tokens", FormatTokenCount(used), FormatTokenCount(size)] : nil;
 		if(NSDictionary* cost = update[@"cost"])
 			_usageText = [NSString stringWithFormat:@"%@ · %.2f %@", _usageText ?: @"", [cost[@"amount"] doubleValue], cost[@"currency"] ?: @""];
@@ -1236,9 +1381,18 @@ static NSString* RelativeDate (NSString* isoDate)
 		return;
 	}
 
+	// The card stays last until it’s answered; what follows shows after that
+	if(_transcript.pendingPermissionItems.count && session.state != AgentSessionStateLoading)
+	{
+		__weak AgentPanelViewController* weakSelf = self;
+		[_heldUpdates addObject:^{ [weakSelf agentSession:session didReceiveUpdate:update]; }];
+		return;
+	}
+
 	if(AgentTranscriptItem* item = [_transcript applyUpdate:update])
 	{
 		[self showItem:item];
+		[self updateActivity];
 		if(item.kind == AgentTranscriptItemKindToolCall)
 			[self updateInlinePrompt];
 		// A loaded chat’s edits were made before, not now
@@ -1293,6 +1447,18 @@ static NSString* RelativeDate (NSString* isoDate)
 	if(session != _session)
 		return reply(@{ @"outcome": @"cancelled" });
 
+	// One card at a time
+	if(_transcript.pendingPermissionItems.count)
+	{
+		__weak AgentPanelViewController* weakSelf = self;
+		[_heldUpdates addObject:^{
+			if(AgentPanelViewController* strongSelf = weakSelf)
+					[strongSelf agentSession:session requestPermission:params reply:reply];
+			else	reply(@{ @"outcome": @"cancelled" });
+		}];
+		return;
+	}
+
 	AgentTranscriptItem* item = [_transcript addPermissionRequest:params];
 	_permissionReplies[item.identifier] = reply;
 	[self showItem:item];
@@ -1316,11 +1482,23 @@ static NSString* RelativeDate (NSString* isoDate)
 
 	if(reply)
 		reply(optionId ? @{ @"outcome": @"selected", @"optionId": optionId } : @{ @"outcome": @"cancelled" });
+	[self showHeldUpdates];
+}
+
+// In the order they came, until one of them is another card
+- (void)showHeldUpdates
+{
+	while(_heldUpdates.count && !_transcript.pendingPermissionItems.count)
+	{
+		void(^update)() = _heldUpdates.firstObject;
+		[_heldUpdates removeObjectAtIndex:0];
+		update();
+	}
 }
 
 - (void)cancelPendingPermissionRequests
 {
-	for(AgentTranscriptItem* item in _transcript.pendingPermissionItems)
+	while(AgentTranscriptItem* item = _transcript.pendingPermissionItems.firstObject)
 		[self resolvePermissionItem:item selectedOptionId:nil];
 }
 
@@ -1413,6 +1591,62 @@ static NSString* RelativeDate (NSString* isoDate)
 {
 	if(_permissionReplies[item.identifier])
 		[self resolvePermissionItem:item selectedOptionId:optionId];
+}
+
+- (NSView<AgentCodeBlockView>*)transcriptView:(AgentTranscriptView*)transcriptView viewForCode:(NSString*)code language:(NSString*)language
+{
+	return [_delegate respondsToSelector:@selector(agentPanel:viewForCode:language:)] ? [_delegate agentPanel:self viewForCode:code language:language] : nil;
+}
+
+- (NSString*)transcriptView:(AgentTranscriptView*)transcriptView displayNameForLanguage:(NSString*)language
+{
+	return [_delegate respondsToSelector:@selector(agentPanel:displayNameForLanguage:)] ? [_delegate agentPanel:self displayNameForLanguage:language] : nil;
+}
+
+- (NSArray<NSString*>*)openFilePathsForTranscriptView:(AgentTranscriptView*)transcriptView
+{
+	return [_delegate respondsToSelector:@selector(openFilePathsForAgentPanel:)] ? [_delegate openFilePathsForAgentPanel:self] : @[ ];
+}
+
+- (id<AgentDocumentProvider>)documentProvider
+{
+	return [_delegate respondsToSelector:@selector(documentProviderForAgentPanel:)] ? [_delegate documentProviderForAgentPanel:self] : nil;
+}
+
+// A path as a reply writes it: absolute, relative to the project, or just
+// the name of an open document; nil unless the file exists
+- (NSString*)transcriptView:(AgentTranscriptView*)transcriptView absolutePathForPath:(NSString*)path
+{
+	NSString* absolute = path.stringByExpandingTildeInPath;
+	if(![absolute hasPrefix:@"/"])
+		absolute = [[_delegate projectPathForAgentPanel:self] stringByAppendingPathComponent:absolute];
+	absolute = absolute.stringByStandardizingPath;
+
+	// Only files on disk: an open document for a path the agent hasn’t written yet is empty
+	BOOL isDirectory = NO;
+	if([NSFileManager.defaultManager fileExistsAtPath:absolute isDirectory:&isDirectory] && !isDirectory)
+		return absolute;
+
+	if(![path containsString:@"/"])
+	{
+		for(NSString* openPath in [self openFilePathsForTranscriptView:transcriptView])
+		{
+			if([openPath.lastPathComponent isEqualToString:path] && [NSFileManager.defaultManager fileExistsAtPath:openPath])
+				return openPath;
+		}
+	}
+	return nil;
+}
+
+- (NSString*)transcriptView:(AgentTranscriptView*)transcriptView textOfFileAtPath:(NSString*)path
+{
+	if(NSString* text = [self.documentProvider textOfOpenDocumentAtPath:path])
+		return text;
+
+	NSDictionary* attributes = [NSFileManager.defaultManager attributesOfItemAtPath:path error:nil];
+	if(!attributes || attributes.fileSize > 2 * 1024 * 1024)
+		return nil;
+	return [NSString stringWithContentsOfFile:path usedEncoding:nil error:nil];
 }
 
 - (void)transcriptView:(AgentTranscriptView*)transcriptView openFile:(NSString*)path line:(NSUInteger)line

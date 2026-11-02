@@ -6,6 +6,7 @@
 // effort, …) below the prompt, as in VS Code’s chat view.
 
 @class AgentPanelViewController;
+@protocol AgentCodeBlockView;
 
 @protocol AgentPanelDelegate <NSObject>
 - (NSString*)projectPathForAgentPanel:(AgentPanelViewController*)agentPanel;
@@ -33,12 +34,20 @@
 // fence’s `language` (nil if there is none, or no grammar for it).
 - (NSDictionary<NSString*, NSColor*>*)codeColorsForAgentPanel:(AgentPanelViewController*)agentPanel;
 - (NSAttributedString*)agentPanel:(AgentPanelViewController*)agentPanel highlightCode:(NSString*)code language:(NSString*)language;
+// Unfolded code blocks: a read-only editor view of `code` with the grammar
+// for the fence’s `language` and the window’s theme and font. The name of
+// that grammar (“Objective-C++” for “objc”), nil if there is none.
+- (NSView<AgentCodeBlockView>*)agentPanel:(AgentPanelViewController*)agentPanel viewForCode:(NSString*)code language:(NSString*)language;
+- (NSString*)agentPanel:(AgentPanelViewController*)agentPanel displayNameForLanguage:(NSString*)language;
+// Paths of the window’s open documents (saved ones), to find where code blocks sit.
+- (NSArray<NSString*>*)openFilePathsForAgentPanel:(AgentPanelViewController*)agentPanel;
 // Open documents, for the agent’s file access (unsaved edits, undoable writes).
 - (id<AgentDocumentProvider>)documentProviderForAgentPanel:(AgentPanelViewController*)agentPanel;
 @end
 
 extern NSString* const kUserDefaultsAgentPanelAgentKey;           // identifier of the last used agent
 extern NSString* const kUserDefaultsAgentPanelUsesCurrentFileKey; // requests go into the open file (default YES)
+extern NSString* const kUserDefaultsAgentPanelFoldsCodeBlocksKey; // code blocks start folded to their line (default NO)
 
 @interface AgentPanelViewController : NSViewController
 @property (nonatomic, weak) id<AgentPanelDelegate> delegate;
