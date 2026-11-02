@@ -351,6 +351,11 @@ static NSString* DiskTextOfFile (NSString* path)
 
 - (BOOL)undoChange:(AgentFileChange*)change force:(BOOL)force error:(NSError**)error
 {
+	return [self revertChange:change toText:change.originalText force:force error:error];
+}
+
+- (BOOL)revertChange:(AgentFileChange*)change toText:(NSString*)text force:(BOOL)force error:(NSError**)error
+{
 	if(!force && [self hasFileChangedSinceChange:change])
 	{
 		if(error)
@@ -358,19 +363,19 @@ static NSString* DiskTextOfFile (NSString* path)
 		return NO;
 	}
 
-	if(change.originalText && change.external)
+	if(text && change.external)
 	{
 		NSError* fsError;
-		if(![[change.originalText dataUsingEncoding:NSUTF8StringEncoding] writeToFile:change.path options:0 error:&fsError])
+		if(![[text dataUsingEncoding:NSUTF8StringEncoding] writeToFile:change.path options:0 error:&fsError])
 		{
 			if(error)
 				*error = FileSystemError(AgentFileSystemErrorWriteFailed, @"Unable to write %@: %@", change.path, fsError.localizedDescription);
 			return NO;
 		}
 	}
-	else if(change.originalText)
+	else if(text)
 	{
-		if(![self storeText:change.originalText atPath:change.path error:error])
+		if(![self storeText:text atPath:change.path error:error])
 			return NO;
 	}
 	else if([NSFileManager.defaultManager fileExistsAtPath:change.path])
@@ -384,7 +389,9 @@ static NSString* DiskTextOfFile (NSString* path)
 		}
 	}
 
-	[_changes removeObject:change];
+	if(text == change.originalText || [text isEqualToString:change.originalText])
+			[_changes removeObject:change];
+	else	change.currentText = text;
 	[self changesDidChange];
 	return YES;
 }

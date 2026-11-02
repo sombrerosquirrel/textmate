@@ -86,4 +86,8 @@ typedef NS_ERROR_ENUM(AgentFileSystemErrorDomain, AgentFileSystemErrorCode) {
 // with AgentFileSystemErrorChangedSince if the file changed after the
 // agent’s write, unless `force` is YES.
 - (BOOL)undoChange:(AgentFileChange*)change force:(BOOL)force error:(NSError**)error;
+// Restores `text`, the file as it was after some of the agent’s edits (nil: it
+// didn’t exist), e.g. undoing only an inline request. The change stays for
+// review unless that is the original text. Fails as -undoChange:force:error:.
+- (BOOL)revertChange:(AgentFileChange*)change toText:(NSString*)text force:(BOOL)force error:(NSError**)error;
 @end

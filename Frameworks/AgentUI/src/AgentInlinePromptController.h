@@ -1,7 +1,7 @@
 // Inline chat: a small prompt shown in a popover at the editor’s caret. The
 // agent panel sends the request in its chat and reports back here: progress,
 // permission requests (the panel may be hidden), and the outcome with the
-// files that changed.
+// files that changed. Both show the changes’ diffs.
 
 @class AgentInlinePromptController;
 
@@ -23,8 +23,10 @@
 @property (nonatomic, readonly, getter = isShown) BOOL shown;
 
 - (void)showWorking:(NSString*)status;                 // e.g. the running tool call’s title
-- (void)showPermissionRequest:(NSString*)title;
-// `changedFiles` (display names) can be undone; `reply` is the agent’s answer.
-- (void)showFinishedWithChangedFiles:(NSArray<NSString*>*)changedFiles reply:(NSString*)reply;
+// A file’s change, as in an ACP diff: “path” (here a display name), “oldText”
+// (absent for a new file) and “newText” (absent for a deleted one)
+- (void)showPermissionRequest:(NSString*)title changes:(NSArray<NSDictionary*>*)changes;
+// `changes` can be undone; `reply` is the agent’s answer.
+- (void)showFinishedWithChanges:(NSArray<NSDictionary*>*)changes reply:(NSString*)reply;
 - (void)showFailure:(NSString*)message;
 @end

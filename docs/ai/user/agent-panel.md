@@ -49,7 +49,7 @@ The switch beside **+** decides whether the agent works in the open file. While 
 From the editor:
 
 - **Text ▸ Ask Agent About Selection** attaches the selection, or the cursor position, and moves to the panel.
-- **Text ▸ Ask Agent at Caret…** (⌃⌥⌘I) is inline chat. A small field opens at the caret, and your request goes to the window's chat about the selection or the caret's line. The field shows what the agent is doing and asks for any approvals it needs, then lists the files that changed with **Keep**, **Undo** and **Show in Chat**. The panel doesn't need to be open.
+- **Text ▸ Ask Agent at Caret…** (⌃⌥⌘I) is inline chat. A small field opens at the caret, and your request goes to the window's chat about the selection or the caret's line. The field shows what the agent is doing and asks for any approvals it needs, with the diff of a proposed edit, then shows what changed in each file with **Keep**, **Undo** and **Show in Chat**. **Undo** there takes back only that request's edits; earlier ones stay in the changed-files list. The panel doesn't need to be open.
 - In the file browser, right-click files ▸ **Add to Agent Chat**.
 
 ## Replies

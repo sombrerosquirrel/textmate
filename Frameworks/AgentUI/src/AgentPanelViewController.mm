@@ -741,8 +741,17 @@ static NSString* RelativeDate (NSString* isoDate)
 	{
 		NSDictionary* toolCall = [item.permissionRequest[@"toolCall"] isKindOfClass:[NSDictionary class]] ? item.permissionRequest[@"toolCall"] : nil;
 		NSString* title = [toolCall[@"title"] isKindOfClass:[NSString class]] ? toolCall[@"title"] : @"Use a tool";
+		NSMutableArray<NSDictionary*>* changes = [NSMutableArray array];
+		for(NSDictionary* content in [toolCall[@"content"] isKindOfClass:[NSArray class]] ? toolCall[@"content"] : @[ ])
+		{
+			if(![content isKindOfClass:[NSDictionary class]] || ![content[@"type"] isEqualToString:@"diff"] || ![content[@"path"] isKindOfClass:[NSString class]])
+				continue;
+			NSMutableDictionary* change = [content mutableCopy];
+			change[@"path"] = [self displayNameForPath:content[@"path"]];
+			[changes addObject:change];
+		}
 		_inlineStatus = nil;
-		return [_activeInline showPermissionRequest:title];
+		return [_activeInline showPermissionRequest:title changes:changes];
 	}
 
 	AgentTranscriptItem* last = _transcript.items.lastObject;
@@ -786,10 +795,17 @@ static NSString* RelativeDate (NSString* isoDate)
 		}
 	}
 
-	NSMutableArray* names = [NSMutableArray array];
+	// What this request changed: from the text before it, not the file’s original
+	NSMutableArray<NSDictionary*>* diffs = [NSMutableArray array];
 	for(AgentFileChange* change in changes)
-		[names addObject:[self displayNameForPath:change.path]];
-	[inlinePrompt showFinishedWithChangedFiles:names reply:reply];
+	{
+		id before = _inlineSnapshot[change.path] ?: change.originalText;
+		NSMutableDictionary* diff = [NSMutableDictionary dictionaryWithObject:[self displayNameForPath:change.path] forKey:@"path"];
+		diff[@"oldText"] = [before isKindOfClass:[NSString class]] ? before : nil;
+		diff[@"newText"] = change.currentText;
+		[diffs addObject:diff];
+	}
+	[inlinePrompt showFinishedWithChanges:diffs reply:reply];
 }
 
 - (void)inlinePromptStop:(AgentInlinePromptController*)inlinePrompt
@@ -809,10 +825,12 @@ static NSString* RelativeDate (NSString* isoDate)
 	_inlineChanges = nil;
 }
 
+// Only this request’s edits: a file the agent had changed before goes back to
+// how it was when the request was sent
 - (void)inlinePromptUndoChanges:(AgentInlinePromptController*)inlinePrompt
 {
 	if(_inlineChanges.count)
-		[self changesView:_changesView undoChanges:_inlineChanges];
+		[self confirmUndoChanges:_inlineChanges toTexts:_inlineSnapshot];
 	_inlineChanges = nil;
 }
 
@@ -1710,6 +1728,12 @@ static NSString* RelativeDate (NSString* isoDate)
 
 - (void)changesView:(AgentChangesView*)changesView undoChanges:(NSArray<AgentFileChange*>*)changes
 {
+	[self confirmUndoChanges:changes toTexts:nil];
+}
+
+// `texts`: by path, the text to restore (NSNull: none); the original for others
+- (void)confirmUndoChanges:(NSArray<AgentFileChange*>*)changes toTexts:(NSDictionary<NSString*, id>*)texts
+{
 	NSMutableArray<NSString*>* editedSince = [NSMutableArray array];
 	for(AgentFileChange* change in changes)
 	{
@@ -1718,25 +1742,27 @@ static NSString* RelativeDate (NSString* isoDate)
 	}
 
 	if(!editedSince.count)
-		return [self undoChanges:changes];
+		return [self undoChanges:changes toTexts:texts];
 
 	NSAlert* alert = [[NSAlert alloc] init];
 	alert.messageText     = editedSince.count == 1 ? [NSString stringWithFormat:@"“%@” has changed since the agent edited it.", editedSince.firstObject] : @"Some files have changed since the agent edited them.";
-	alert.informativeText = [NSString stringWithFormat:@"Undo restores the file as it was before the agent changed it, so later edits are lost too.%@", editedSince.count > 1 ? [@"\n\n" stringByAppendingString:[editedSince componentsJoinedByString:@"\n"]] : @""];
+	alert.informativeText = [NSString stringWithFormat:@"Undo restores the file as it was before %@, so later edits are lost too.%@", texts ? @"your request" : @"the agent changed it", editedSince.count > 1 ? [@"\n\n" stringByAppendingString:[editedSince componentsJoinedByString:@"\n"]] : @""];
 	[alert addButtonWithTitle:@"Undo Anyway"];
 	[alert addButtonWithTitle:@"Cancel"];
 	[alert beginSheetModalForWindow:(self.view.window ?: NSApp.mainWindow) completionHandler:^(NSModalResponse response){
 		if(response == NSAlertFirstButtonReturn)
-			[self undoChanges:changes];
+			[self undoChanges:changes toTexts:texts];
 	}];
 }
 
-- (void)undoChanges:(NSArray<AgentFileChange*>*)changes
+- (void)undoChanges:(NSArray<AgentFileChange*>*)changes toTexts:(NSDictionary<NSString*, id>*)texts
 {
 	for(AgentFileChange* change in changes)
 	{
 		NSError* error;
-		if(![_fileSystem undoChange:change force:YES error:&error])
+		id text = texts[change.path];
+		BOOL undone = text ? [_fileSystem revertChange:change toText:(text == NSNull.null ? nil : text) force:YES error:&error] : [_fileSystem undoChange:change force:YES error:&error];
+		if(!undone)
 			[self showError:error.localizedDescription];
 	}
 }

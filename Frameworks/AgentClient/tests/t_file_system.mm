@@ -181,6 +181,50 @@ void test_undo_after_user_edit ()
 	OAK_ASSERT([t.provider.documents[t.path(@"a.txt")] isEqualToString:@"a1"]);
 }
 
+void test_revert_to_earlier_text ()
+{
+	test_fs_t t;
+	WriteFile(t.path(@"a.txt"), @"a1");
+	WriteFile(t.path(@"ext.txt"), @"e1");
+
+	// Back to the text between two edits: the change stays, from the first original
+	OAK_ASSERT([t.fileSystem writeText:@"a2" toFileAtPath:t.path(@"a.txt") error:nullptr]);
+	OAK_ASSERT([t.fileSystem writeText:@"a3" toFileAtPath:t.path(@"a.txt") error:nullptr]);
+	AgentFileChange* change = t.fileSystem.changes.firstObject;
+	OAK_ASSERT([t.fileSystem revertChange:change toText:@"a2" force:NO error:nullptr]);
+	OAK_ASSERT([ReadFile(t.path(@"a.txt")) isEqualToString:@"a2"]);
+	OAK_ASSERT_EQ(t.fileSystem.changes.count, 1);
+	OAK_ASSERT([change.originalText isEqualToString:@"a1"] && [change.currentText isEqualToString:@"a2"]);
+
+	// Edited since: refused unless forced
+	WriteFile(t.path(@"a.txt"), @"a2 and the user’s edit");
+	NSError* error;
+	OAK_ASSERT(![t.fileSystem revertChange:change toText:@"a1" force:NO error:&error]);
+	OAK_ASSERT_EQ((NSInteger)error.code, (NSInteger)AgentFileSystemErrorChangedSince);
+
+	// Back to the original: nothing left to review
+	OAK_ASSERT([t.fileSystem revertChange:change toText:@"a1" force:YES error:nullptr]);
+	OAK_ASSERT([ReadFile(t.path(@"a.txt")) isEqualToString:@"a1"]);
+	OAK_ASSERT_EQ(t.fileSystem.changes.count, 0);
+
+	// An agent’s own edits: the disk is written; a file created by the second goes to the Trash
+	[t.fileSystem willChangeFileAtPath:t.path(@"ext.txt")];
+	WriteFile(t.path(@"ext.txt"), @"e2");
+	[t.fileSystem didChangeFileAtPath:t.path(@"ext.txt")];
+	[t.fileSystem willChangeFileAtPath:t.path(@"ext.txt")];
+	WriteFile(t.path(@"ext.txt"), @"e3");
+	[t.fileSystem didChangeFileAtPath:t.path(@"ext.txt")];
+	OAK_ASSERT([t.fileSystem revertChange:t.fileSystem.changes.firstObject toText:@"e2" force:NO error:nullptr]);
+	OAK_ASSERT([ReadFile(t.path(@"ext.txt")) isEqualToString:@"e2"]);
+	OAK_ASSERT([t.fileSystem.changes.firstObject.currentText isEqualToString:@"e2"]);
+
+	OAK_ASSERT([t.fileSystem writeText:@"n1" toFileAtPath:t.path(@"n.txt") error:nullptr]);
+	AgentFileChange* created = t.fileSystem.changes.lastObject;
+	OAK_ASSERT([t.fileSystem revertChange:created toText:nil force:NO error:nullptr]);
+	OAK_ASSERT(![NSFileManager.defaultManager fileExistsAtPath:t.path(@"n.txt")]);
+	OAK_ASSERT_EQ(t.fileSystem.changes.count, 1);
+}
+
 // =================================
 // = Requests from the fake agent =
 // =================================

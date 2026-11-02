@@ -185,7 +185,7 @@ Switching GitHub → built-in (user): the page lost its place. Measured in the a
 2. ✅ A reply with code (e.g. “show me a Python and a shell example”): code blocks in the editor theme's colours and highlighted; change the theme (View ▸ Theme) and they follow.
 3. ✅ Claude in Manual mode, ask for an edit: with the message field empty, ↩ allows, ⎋ rejects; the card marks the options ↩ and ⎋.
 4. ✅ ⌃⇧⌘N starts a new chat (also with the panel hidden).
-5. Inline chat: select some code, ⌃⌥⌘I, ask e.g. “add a doc comment”. The popover shows progress (and Allow / Reject in Manual mode), then the changed file with Keep / Undo; Undo restores it; Show in Chat opens the panel with the exchange. Try with the panel hidden.
+5. ✅ Inline chat: select some code, ⌃⌥⌘I, ask e.g. “add a doc comment”. The popover shows progress (and Allow / Reject in Manual mode), then the changed file with Keep / Undo; Undo restores it; Show in Chat opens the panel with the exchange. Try with the panel hidden.
 6. Error states without signing out: Preferences ▸ Agents, add an agent with command `env HOME=/tmp copilot --acp`, start a chat with it: “needs you to sign in” with Sign In (opens Terminal with `copilot login` — close it without signing in), Try Again, Agent Settings…. An agent with command `no-such-agent`: “Unable to find…” with Try Again and Agent Settings…. Remove the test agents afterwards.
 7. Kill the agent (`pkill -f claude-agent-acp`): “stopped running” with Restart and Show Log; Restart continues the chat.
 8. Read the [user guide](../user/agent-panel.md).
@@ -202,9 +202,10 @@ Switching GitHub → built-in (user): the page lost its place. Measured in the a
 19. ✅ The header icon beside Previous Chats (tooltip says what it does) folds everything with an arrow: replies, tool rows, the plan, thoughts and code blocks, including ones opened by hand; click again to open them all. A row with an open question stays open with its diff until you answer. Prompts have no arrow and don't fold. What comes next follows the icon: on closed, tool rows arrive folded, and replies stream open and fold once two newer replies have come (unless you've opened one by hand). A chat loaded from Previous Chats doesn't follow the icon. The choice survives a relaunch.
 20. ✅ Scroll up to a code block and click a link to a file: the file opens and the chat doesn't move or redraw.
 21. ✅ Ask for an edit that adds or removes indented code: the diff's green and red are solid rectangles from the + or − to the panel edge, with no steps where the code indents.
+22. Inline chat diffs: in Manual mode, ⌃⌥⌘I and ask for an edit; the permission question shows the proposed diff (file name, +/− counts, the lines in green and red). Allow; the finished popover shows each changed file's diff for this request, then the reply. A long change (e.g. “add a doc comment to every method”) scrolls inside the popover instead of growing past about 280 points.
+23. Inline Undo undoes only that request: ask in the panel for an edit to a file, leave it unreviewed, then ⌃⌥⌘I and ask for another edit to the same file. Undo in the popover keeps the first edit, and the file stays in the changed-files list with it. Undo in the list then restores the file from before both.
 
 ## Future work
-- Inline Undo restores a file to before the agent's first change in the chat, not just this request's change, when the file was already in the changed-files list.
-- Inline chat shows the reply as plain text; Markdown and a diff preview in the popover would help.
+- Inline chat shows the reply as plain text; Markdown would help.
 - The log isn't saved; an option to write it to a file for long sessions.
 - Code views in the chat: Find in the transcript doesn't search them, and a selection across one copies without its code; no gutter, so folding inside a block is by keyboard (F1) only.

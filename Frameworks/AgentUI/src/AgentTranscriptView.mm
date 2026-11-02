@@ -1,6 +1,7 @@
 #import "AgentTranscriptView.h"
 #import "AgentCodeLocation.h"
 #import "AgentActivityView.h"
+#import "AgentDiffText.h"
 #import <OakMarkdown/OakMarkdown.h>
 #import <AgentClient/AgentDiff.h>
 #import <OakAppKit/NSColor Additions.h>
@@ -117,22 +118,6 @@ static NSUInteger LineCount (NSString* code)
 
 // Holds the place of a code block view, as wide as the line and as tall as
 // the view’s code; the view is placed over it
-// A run of added or removed diff lines. NSTextBlock paints its background under
-// its margin as well; this one starts at the text.
-@interface AgentDiffTextBlock : NSTextBlock
-@end
-
-@implementation AgentDiffTextBlock
-- (void)drawBackgroundWithFrame:(NSRect)frame inView:(NSView*)view characterRange:(NSRange)charRange layoutManager:(NSLayoutManager*)layoutManager
-{
-	CGFloat margin = [self widthForLayer:NSTextBlockMargin edge:NSMinXEdge];
-	frame.origin.x   += margin;
-	frame.size.width -= margin;
-	[self.backgroundColor set];
-	NSRectFillUsingOperation(frame, NSCompositingOperationSourceOver);
-}
-@end
-
 @interface AgentCodeBlockAttachmentCell : NSTextAttachmentCell
 @property (nonatomic) CGFloat height;
 @end
@@ -1349,53 +1334,7 @@ static NSUInteger IndexOfDiffForPath (NSDictionary* toolCall, NSString* path)
 	[res appendAttributedString:[self text:@"   " font:SmallFont() color:NSColor.secondaryLabelColor]];
 	[res appendAttributedString:[self link:@"Diff" url:[self actionURL:@"diff" item:item parameters:parameters]]];
 
-	NSMutableParagraphStyle* paragraph = [[NSMutableParagraphStyle alloc] init];
-	paragraph.firstLineHeadIndent = paragraph.headIndent = 20;
-
-	NSUInteger shown = 0, total = 0;
-	for(AgentDiffHunk* hunk in diff.hunks)
-		total += hunk.lines.count;
-
-	// A run of added or removed lines is one rectangle, from the + or − to the
-	// edge, however its lines are indented
-	NSParagraphStyle* blockParagraph = nil;
-	AgentDiffLineKind blockKind = AgentDiffLineKindContext;
-
-	for(AgentDiffHunk* hunk in diff.hunks)
-	{
-		if(!item.expanded && shown >= kDiffPreviewLines)
-			break;
-		if(hunk != diff.hunks.firstObject)
-			[res appendAttributedString:[[NSAttributedString alloc] initWithString:@"\n⋯" attributes:@{ NSFontAttributeName: SmallMonospaceFont(), NSForegroundColorAttributeName: NSColor.tertiaryLabelColor, NSParagraphStyleAttributeName: paragraph }]];
-
-		for(AgentDiffLine* line in hunk.lines)
-		{
-			if(!item.expanded && shown >= kDiffPreviewLines)
-				break;
-			++shown;
-
-			NSString* prefix = line.kind == AgentDiffLineKindAdded ? @"+ " : (line.kind == AgentDiffLineKindRemoved ? @"− " : @"  ");
-			NSColor* background = line.kind == AgentDiffLineKindAdded ? [NSColor.systemGreenColor colorWithAlphaComponent:0.15] : (line.kind == AgentDiffLineKindRemoved ? [NSColor.systemRedColor colorWithAlphaComponent:0.15] : nil);
-			if(background && line.kind != blockKind)
-			{
-				NSTextBlock* block = [[AgentDiffTextBlock alloc] init];
-				block.backgroundColor = background;
-				[block setValue:100 type:NSTextBlockPercentageValueType forDimension:NSTextBlockWidth];
-				[block setWidth:paragraph.headIndent type:NSTextBlockAbsoluteValueType forLayer:NSTextBlockMargin edge:NSMinXEdge];
-				NSMutableParagraphStyle* style = [[NSMutableParagraphStyle alloc] init];
-				style.textBlocks = @[ block ];
-				blockParagraph = style;
-			}
-			blockKind = line.kind;
-
-			NSDictionary* attributes = @{
-				NSFontAttributeName:            SmallMonospaceFont(),
-				NSForegroundColorAttributeName: line.kind == AgentDiffLineKindContext ? NSColor.secondaryLabelColor : NSColor.labelColor,
-				NSParagraphStyleAttributeName:  background ? blockParagraph : paragraph,
-			};
-			[res appendAttributedString:[[NSAttributedString alloc] initWithString:[NSString stringWithFormat:@"\n%@%@", prefix, line.text] attributes:attributes]];
-		}
-	}
+	NSUInteger const total = AgentAppendDiffLines(res, diff, SmallMonospaceFont(), 20, item.expanded ? 0 : kDiffPreviewLines);
 
 	if(total > kDiffPreviewLines)
 	{
