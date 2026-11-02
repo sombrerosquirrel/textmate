@@ -1,6 +1,6 @@
 ---
 title: TextMate AI — Implementation Status
-updated: 2026-10-19
+updated: 2026-11-02
 tags: [textmate, implementation, status]
 ---
 
@@ -24,16 +24,16 @@ User guides are in [`../user/`](../user/): [markdown-preview.md](../user/markdow
 | M2. Chat panel | [03-m2-chat-panel.md](03-m2-chat-panel.md) | ✅ Complete (2026-10-16) |
 | M3. Tools: files, permissions, diff review, terminal | [05-m3-tools.md](05-m3-tools.md) | ✅ Complete (2026-10-18) |
 | M4. Preferences, Keychain, project overrides, chat history, MCP | [06-m4-configuration.md](06-m4-configuration.md) | ✅ Complete (2026-10-19) |
-| M5. Polish, inline chat, docs, `pr/agent` port | [07-m5-polish.md](07-m5-polish.md) | 🔄 Steps 1–6 implemented (2026-10-19), awaiting user check; step 7: preview scroll smoothness done (2026-10-20), panel UX waiting for the user's notes; `pr/agent` port deferred |
+| M5. Polish, inline chat, docs, `pr/agent` port | [07-m5-polish.md](07-m5-polish.md) | ✅ Steps 1–7 complete, all 23 checks confirmed by the user (2026-11-02); step 8, the `pr/agent` port, deferred |
 | Markdown preview pane (P1–P5) | [04-markdown-preview.md](04-markdown-preview.md) | 🔄 In progress: P1–P5 done (2026-10-15); P5 awaiting user check |
-| UX pass: agent panel and Markdown preview | [08-ux-pass.md](08-ux-pass.md) | 🔄 Preview scrolling and panels done (2026-10-20–22); chat folding, editor code blocks, file links, permission cards done (2026-10-24); awaiting user check |
+| UX pass: agent panel and Markdown preview | [08-ux-pass.md](08-ux-pass.md) | 🔄 Preview scrolling and panels, chat folding, editor code blocks, file links, permission cards, smooth scrolling and the working line done and confirmed by the user (M5 checks 9–21, 2026-11-02); the user's further panel notes and the [open items](08-ux-pass.md#13-open-items) remain |
 
-## Current state (2026-10-20)
+## Current state (2026-11-02)
 
-- **Branches:** `main` = `pr-1467` + all `fix/*` branches. `feature/agent` = `main` + agent harness (M1, M2). `feature/markdown-preview` = `feature/agent` + Markdown preview work. `feature/agent-tools` = `feature/markdown-preview` + M3. All pushed to `origin` (`sombrerosquirrel/textmate`). `feature/agent-config` = `feature/agent-tools` + M4, `feature/agent-polish` = `feature/agent-config` + M5 (both local only).
+- **Branches:** `main` = `pr-1467` + all `fix/*` branches. `feature/agent` = `main` + agent harness (M1, M2). `feature/markdown-preview` = `feature/agent` + Markdown preview work. `feature/agent-tools` = `feature/markdown-preview` + M3. All pushed to `origin` (`sombrerosquirrel/textmate`). `feature/agent-config` = `feature/agent-tools` + M4 (local only). `feature/agent-polish` = `feature/agent-config` + M5 and the UX pass, on `origin` (local commits since 2026-11-02 not pushed yet).
 - **Build:** `make debug` builds cleanly with Xcode 27 / Swift 6.4 on macOS 27. No new warnings. Known remaining warnings are listed in [01-build-and-bug-fixes.md](01-build-and-bug-fixes.md#future-work).
-- **Tests:** `ctest` passes 23/23 on `main`, 25/25 on `feature/agent` (adds AgentClient and AgentUI suites), 28/28 on `feature/markdown-preview` (adds OakEditorPanels, OakMarkdown and MarkdownPreview; AgentUI's Markdown tests moved to OakMarkdown) and on `feature/agent-tools` (AgentClient grows to 50 tests) and `feature/agent-config` (AgentClient 66).
-- **Next:** user checks P5 (user guide, tests); then the Markdown preview is complete. M2 is complete (its UX pass is deferred to the end). M3 is complete on `feature/agent-tools`, pushed 2026-10-18 (tested against the [checklist](05-m3-tools.md#to-check-user)). M4 is complete on `feature/agent-config` (local only). M5 steps 1–6 (log, error states, theme, shortcuts, inline chat, user guide) are on `feature/agent-polish`, and step 7's Markdown preview scroll smoothness, wait for the user's check ([checklist](07-m5-polish.md#to-check-user)). Checkpoints with the user after each milestone.
+- **Tests:** `ctest` passes 23/23 on `main`, 25/25 on `feature/agent` (adds AgentClient and AgentUI suites), 28/28 on `feature/markdown-preview` (adds OakEditorPanels, OakMarkdown and MarkdownPreview; AgentUI's Markdown tests moved to OakMarkdown) and on `feature/agent-tools` (AgentClient grows to 50 tests) and `feature/agent-config` (AgentClient 66); 29/29 on `feature/agent-polish`.
+- **Next:** user checks P5 (user guide, tests); then the Markdown preview is complete. M2 is complete (its UX pass is deferred to the end). M3 is complete on `feature/agent-tools`, pushed 2026-10-18 (tested against the [checklist](05-m3-tools.md#to-check-user)). M4 is complete on `feature/agent-config` (local only). M5 is complete on `feature/agent-polish`: log, error states, theme, shortcuts, inline chat with diffs, user guide, and the UX pass work (step 7), all checked by the user ([checklist](07-m5-polish.md#to-check-user)). Next: the user's further panel UX notes, then the deferred `pr/agent` port. Checkpoints with the user after each milestone.
 
 ## Future work
 

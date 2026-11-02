@@ -1,13 +1,13 @@
  ---
 title: M5 — Polish: Theme, Errors, Log, Shortcuts, Inline Chat, Docs
-status: in progress
+status: complete
 started: 2026-10-19
 tags: [textmate, implementation, acp, agent]
 ---
 
 # M5 — Polish: Theme, Errors, Log, Shortcuts, Inline Chat, Docs
 
-**Status:** 🔄 Steps 1–6 implemented (2026-10-19), awaiting user check; step 7: preview scrolling and panels (7a–7c, 2026-10-20–22) and chat folding with editor code blocks (7d, 2026-10-24) done, awaiting user check; more panel UX waiting for the user's notes; step 8 deferred by the user ([To check](#to-check-user))
+**Status:** ✅ Steps 1–7 complete; all 23 checks confirmed by the user (2026-11-02). Step 8, the `pr/agent` port, deferred by the user ([To check](#to-check-user))
 **Branch:** `feature/agent-polish` (from `feature/agent-config`)
 **Design:** [agent-harness-design.md §5.1, §5.6, §5.7, §6, §6a](../plans/agent-harness-design.md)
 
