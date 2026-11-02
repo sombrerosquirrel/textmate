@@ -128,6 +128,7 @@ static NSView* Separator ()
 	NSButton* _codeBlocksButton;
 	AgentActivityView* _activityView;
 	AgentTranscriptItem* _waitingLine; // shown until the agent’s first update
+	AgentTranscriptItem* _startingLine; // Restart or Try Again with no message to send, until started
 	double _usedTokens;      // from the last usage update
 	double _turnStartTokens; // _usedTokens when the message was sent
 }
@@ -435,6 +436,7 @@ static NSView* Separator ()
 		if(error)
 		{
 			[AgentLog.sharedLog addEvent:[@"Not started: " stringByAppendingString:error.localizedDescription] source:_logSource];
+			[self endStartingLineWithError:error];
 			[self failPendingPrompt];
 			[self showError:error.localizedDescription actions:@[ Action(@"retry", @"Try Again"), Action(@"settings", @"Agent Settings…") ]];
 			[self updateStatus];
@@ -460,6 +462,9 @@ static NSView* Separator ()
 			[AgentLog.sharedLog addEvent:(error ? [@"Not started: " stringByAppendingString:error.localizedDescription] : [NSString stringWithFormat:@"Started %@ %@, session %@", session.agentInfo[@"name"] ?: agent.name, session.agentInfo[@"version"] ?: @"", session.sessionId]) source:_logSource];
 			if(_restoringChat && session.loadError)
 				[self showNotice:[NSString stringWithFormat:@"%@ couldn’t continue the earlier chat, so it doesn’t know what was said above.", agent.name]];
+			else if(_startingLine && !error)
+				[self showNotice:_restoringChat ? [NSString stringWithFormat:@"%@ is running again and continues the chat.", agent.name] : [NSString stringWithFormat:@"%@ is ready.", agent.name]];
+			[self endStartingLineWithError:error];
 			_restoringChat = NO;
 			_lastSessionId = session.sessionId;
 			if(session.skippedMCPServers.count)
@@ -551,7 +556,8 @@ static NSView* Separator ()
 	[_finishedToolCallIds removeAllObjects];
 	_transcriptView.terminalManager = nil;
 	_changesView.changes = @[ ];
-	_waitingLine = nil;
+	_waitingLine  = nil;
+	_startingLine = nil;
 	[_transcript removeAllItems];
 	[_transcriptView reloadData];
 	_pendingText        = nil;
@@ -936,7 +942,31 @@ static NSString* RelativeDate (NSString* isoDate)
 	if(_session.state == AgentSessionStateReady && (_pendingText || _pendingAttachments))
 			[self sendPendingPrompt];
 	else	[self startSessionIfNeeded];
+	if(_creatingSession && !_pendingText && !_pendingAttachments && !_startingLine)
+		[self showStartingLine];
 	[self updateStatus];
+}
+
+// With no message to send, nothing else would show that the agent is starting
+// and when it’s done: a line in the chat and the activity line say so
+- (void)showStartingLine
+{
+	_startingLine = [_transcript addWaitingLine:[NSString stringWithFormat:@"Starting %@", _agent.name]];
+	[self showItem:_startingLine];
+	_activityView.active = YES;
+	[self updateActivity];
+}
+
+- (void)endStartingLineWithError:(NSError*)error
+{
+	if(!_startingLine)
+		return;
+	[_transcript endWaitingLine:_startingLine];
+	[self showItem:_startingLine];
+	_startingLine = nil;
+	_activityView.outcome = error ? @"Not started" : @"Started";
+	_activityView.active  = NO;
+	[_transcriptView setWorkingItem:nil tokens:0];
 }
 
 - (void)signIn
@@ -1340,7 +1370,7 @@ static NSString* RelativeDate (NSString* isoDate)
 			default:                                                              break;
 		}
 	}
-	if(_creatingSession || _session.state == AgentSessionStateStarting || !_session)
+	if(_creatingSession || _session.state == AgentSessionStateStarting || !_session || (_restoringChat && _session.state == AgentSessionStateLoading))
 		activity = [NSString stringWithFormat:@"Starting %@", _agent.name];
 
 	_activityView.activity  = activity;
