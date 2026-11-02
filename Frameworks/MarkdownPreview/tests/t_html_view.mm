@@ -103,14 +103,7 @@ static NSArray<NSValue*>* WaitForAnchors (MarkdownPreviewHTMLView* view, NSUInte
 	return anchors;
 }
 
-static void ScrollTo (MarkdownPreviewHTMLView* view, CGFloat y)
-{
-	dispatch_sync(dispatch_get_main_queue(), ^{
-		[view scrollToPosition:y animated:NO];
-	});
-}
-
-void test_reports_anchors_and_scrolls ()
+void test_reports_anchors_and_sizes_to_the_page ()
 {
 	NSMutableString* html = [NSMutableString string];
 	for(NSUInteger i = 0; i < 100; ++i)
@@ -128,17 +121,14 @@ void test_reports_anchors_and_scrolls ()
 	CGFloat paragraph50 = [Evaluate(view, @"tmTop(document.querySelectorAll('#content p')[50])") doubleValue];
 	OAK_ASSERT(fabs(anchors[50].pointValue.y - paragraph50) < 0.01);
 
-	// Paragraph 50 at the top
-	ScrollTo(view, paragraph50);
-	OAK_ASSERT(WaitFor(view, @"Math.abs(document.querySelectorAll('#content p')[50].getBoundingClientRect().top) < 0.01"));
-
-	// Positions between whole pixels: the page scrolls by whole pixels, and the content moves by the rest
-	ScrollTo(view, paragraph50 + 10.3);
-	OAK_ASSERT(WaitFor(view, [NSString stringWithFormat:@"Math.abs(window.scrollY + tmOffset - %f) < 0.01 && tmOffset < 1", paragraph50 + 10.3]));
-
-	// Past the end: the bottom
-	ScrollTo(view, 1e6);
-	OAK_ASSERT(WaitFor(view, @"Math.abs(window.scrollY + window.innerHeight - document.documentElement.scrollHeight) < 2"));
+	// As tall as the page, which doesn’t scroll itself
+	__block CGFloat height;
+	dispatch_sync(dispatch_get_main_queue(), ^{
+		height = NSHeight(view.scrollView.documentView.frame);
+	});
+	OAK_ASSERT(height > 300);
+	OAK_ASSERT(fabs(height - [Evaluate(view, @"tmHeight()") doubleValue]) < 1);
+	OAK_ASSERT(fabs(anchors.lastObject.pointValue.y - height) < 40);
 
 	// Without source positions: none
 	ShowHTML(view, @"<p>Plain</p>", nil, nil);
@@ -163,40 +153,91 @@ void test_reports_anchors_when_layout_changes ()
 	OAK_ASSERT(fabs(anchors[1].pointValue.y - (before + 190)) < 1);
 }
 
-void test_reports_user_scrolling ()
+void test_shorter_page_shrinks_the_web_view ()
 {
 	NSMutableString* html = [NSMutableString string];
 	for(NSUInteger i = 0; i < 100; ++i)
 		[html appendFormat:@"<p data-sourcepos=\"%1$lu:1-%1$lu:10\">Paragraph %1$lu</p>\n", 2*i + 1];
 
-	PreviewScrollRecorder* recorder = [[PreviewScrollRecorder alloc] init];
-	recorder.positions = [NSMutableArray array];
 	MarkdownPreviewHTMLView* view = MakeView();
-	dispatch_sync(dispatch_get_main_queue(), ^{
-		view.delegate = recorder;
-	});
 	ShowHTML(view, html, nil, nil);
 	OAK_ASSERT_EQ(WaitForAnchors(view, 101).count, 101);
 
-	auto positions = [&]() -> NSArray<NSNumber*>* {
-		__block NSArray<NSNumber*>* res;
+	// tmHeight must not take the height of the tall view itself
+	ShowHTML(view, @"<p data-sourcepos='1:1-1:5'>Short</p><p data-sourcepos='3:1-3:5'>Page</p>", nil, nil);
+	OAK_ASSERT_EQ(WaitForAnchors(view, 3).count, 3);
+	__block CGFloat height;
+	dispatch_sync(dispatch_get_main_queue(), ^{
+		height = NSHeight(view.scrollView.documentView.frame);
+	});
+	OAK_ASSERT_EQ(height, 300); // the height of the view
+}
+
+void test_links_within_the_page_scroll_the_scroll_view ()
+{
+	MarkdownPreviewHTMLView* view = MakeView();
+	ShowHTML(view, @"<p data-sourcepos='1:1-1:5'><a id='link' href='#target'>Link</a></p><div style='height: 2000px'></div><p id='target' data-sourcepos='3:1-3:5'>Target</p><div style='height: 2000px'></div>", nil, nil);
+	OAK_ASSERT_EQ(WaitForAnchors(view, 3).count, 3);
+
+	CGFloat target = [Evaluate(view, @"tmTop(document.getElementById('target'))") doubleValue];
+	Evaluate(view, @"document.getElementById('link').click()");
+
+	auto scrollY = [&]() -> CGFloat {
+		__block CGFloat res;
 		dispatch_sync(dispatch_get_main_queue(), ^{
-			res = [recorder.positions copy];
+			res = NSMinY(view.scrollView.contentView.bounds);
 		});
 		return res;
 	};
-
-	// Following the editor isn’t reported
-	ScrollTo(view, 300.5);
-	OAK_ASSERT(WaitFor(view, @"window.scrollY == 300"));
-	usleep(200000); // scroll events arrive with the next frame
-	OAK_ASSERT_EQ(positions().count, 0);
-
-	// Scrolling by anything else is, and drops the sub-pixel offset
-	Evaluate(view, @"window.scrollTo(0, 600)");
-	for(NSUInteger i = 0; i < 100 && positions().count == 0; ++i)
+	for(NSUInteger i = 0; i < 100 && scrollY() == 0; ++i)
 		usleep(50000);
-	OAK_ASSERT_EQ(positions().count, 1);
-	OAK_ASSERT_EQ(positions().lastObject.doubleValue, 600);
-	OAK_ASSERT([Evaluate(view, @"tmOffset") doubleValue] == 0);
+	OAK_ASSERT(fabs(scrollY() - (target - 8)) < 1);
+}
+
+void test_web_view_follows_the_width ()
+{
+	MarkdownPreviewHTMLView* view = MakeView();
+	dispatch_sync(dispatch_get_main_queue(), ^{
+		[view setFrameSize:NSMakeSize(600, 300)];
+		OAK_ASSERT_EQ(NSWidth(view.scrollView.documentView.frame), NSWidth(view.scrollView.contentView.bounds));
+	});
+}
+
+void test_scrolling_keys_scroll_the_scroll_view ()
+{
+	MarkdownPreviewHTMLView* view = MakeView();
+	ShowHTML(view, @"<p data-sourcepos='1:1-1:5'><input id='field'></p><div style='height: 5000px'></div><p data-sourcepos='3:1-3:5'>End</p>", nil, nil);
+	OAK_ASSERT_EQ(WaitForAnchors(view, 3).count, 3);
+
+	auto scrollY = [&]() -> CGFloat {
+		__block CGFloat res;
+		dispatch_sync(dispatch_get_main_queue(), ^{
+			res = NSMinY(view.scrollView.contentView.bounds);
+		});
+		return res;
+	};
+	auto press = [&](NSString* target, NSString* options, CGFloat expected){
+		Evaluate(view, [NSString stringWithFormat:@"%@.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, %@ })); true", target, options]);
+		for(NSUInteger i = 0; i < 100 && fabs(scrollY() - expected) >= 1; ++i)
+			usleep(10000);
+		OAK_ASSERT(fabs(scrollY() - expected) < 1);
+	};
+
+	CGFloat const page = 300 - view.scrollView.verticalPageScroll;
+	press(@"document.body", @"key: 'PageDown'", page);
+	press(@"document.body", @"key: ' '", 2*page);
+	press(@"document.body", @"key: 'PageUp'", page);
+	press(@"document.body", @"key: ' ', shiftKey: true", 0);
+	press(@"document.body", @"key: 'ArrowDown'", 40);
+	press(@"document.body", @"key: 'ArrowUp'", 0);
+	CGFloat bottom = NSHeight(view.scrollView.documentView.frame) - 300;
+	press(@"document.body", @"key: 'End'", bottom);
+	press(@"document.body", @"key: 'Home'", 0);
+	press(@"document.body", @"key: 'ArrowDown', metaKey: true", bottom);
+	press(@"document.body", @"key: 'ArrowUp', metaKey: true", 0);
+
+	// In a text field they’re the field’s
+	press(@"document.getElementById('field')", @"key: 'PageDown'", 0);
+	usleep(100000);
+	OAK_ASSERT_EQ(scrollY(), 0);
 }

@@ -1,9 +1,9 @@
 #import "MarkdownPreviewHTMLView.h"
 #import <WebKit/WebKit.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
-#import "MarkdownPreviewScrollMap.h"
 
 static NSString* const kScheme = @"x-txmt-preview";
+static CGFloat const kLineScroll = 40; // as WebKit’s arrow keys
 
 // Styles after GitHub’s, for light and dark appearance
 static NSString* const kStyleSheet = @R"CSS(
@@ -11,7 +11,7 @@ static NSString* const kStyleSheet = @R"CSS(
 @media (prefers-color-scheme: dark) {
 	:root { --fg: #f0f6fc; --muted: #9198a1; --border: #3d444d; --border-muted: #3d444db3; --link: #4493f8; --code-bg: #656c7633; --pre-bg: #151b23; --row-alt: #151b23; --bg: #0d1117; --mark: #bb800926; }
 }
-html { background: var(--bg); }
+html { background: var(--bg); overflow: hidden; }
 body { margin: 0; padding: 16px 20px; color: var(--fg); background: var(--bg); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif; word-wrap: break-word; }
 .markdown-body > *:first-child { margin-top: 0 !important; }
 .markdown-body > *:last-child { margin-bottom: 0 !important; }
@@ -45,7 +45,6 @@ table th, table td { padding: 6px 13px; border: 1px solid var(--border); }
 table tr { border-top: 1px solid var(--border-muted); }
 table tr:nth-child(2n) { background-color: var(--row-alt); }
 img { max-width: 100%; box-sizing: content-box; }
-#content { will-change: transform; } /* moved by fractions of a pixel while scrolling */
 mark { background-color: var(--mark); color: inherit; }
 del { color: var(--muted); }
 .footnotes { font-size: 12px; color: var(--muted); border-top: 1px solid var(--border); }
@@ -57,69 +56,15 @@ static NSString* const kScript = @R"JS(
 function tmSetContent (html) {
 	document.getElementById("content").innerHTML = html;
 	tmAnchors = null;
-	tmOwnScrollY = window.scrollY; // shorter content may have moved it
 }
 
-function tmMaxY () {
-	return Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
-}
-
-// Page scrolling is in whole pixels; the rest is a transform on the content
-let tmOffset = 0;
-
-// Where we last put the page; scroll events elsewhere are the user’s
-let tmOwnScrollY = 0;
-
-function tmSetY (y) {
-	y = Math.min(Math.max(0, y), tmMaxY());
-	window.scrollTo(0, Math.floor(y));
-	tmOwnScrollY = window.scrollY;
-	const offset = Math.min(Math.max(0, y - window.scrollY), 1);
-	if(offset != tmOffset) {
-		tmOffset = offset;
-		document.getElementById("content").style.transform = offset ? `translateY(${-offset}px)` : "";
-	}
-}
-
-// With an easing time, a jump of more than half the view moves there a
-// little each frame, as MarkdownPreviewEase does; smaller steps are followed
-// exactly. Hidden pages get no frames, so they jump.
-let tmTarget = 0, tmCurrent = 0, tmEasingTime = 0, tmFrame = 0, tmLastFrame = null;
-
-function tmScrollToY (y, easingTime) {
-	tmTarget = Math.min(Math.max(0, y), tmMaxY());
-	const jump = Math.abs(tmTarget - (window.scrollY + tmOffset)) > window.innerHeight / 2;
-	if(!easingTime || document.visibilityState != "visible" || (!tmFrame && !jump)) {
-		if(tmFrame)
-			cancelAnimationFrame(tmFrame);
-		tmFrame = 0;
-		return tmSetY(tmCurrent = tmTarget);
-	}
-
-	tmEasingTime = easingTime;
-	if(!tmFrame) {
-		tmCurrent   = window.scrollY + tmOffset;
-		tmLastFrame = null;
-		tmFrame     = requestAnimationFrame(tmScrollStep);
-	}
-}
-
-function tmScrollStep (now) {
-	const elapsed = tmLastFrame === null ? 1/60 : (now - tmLastFrame) / 1000;
-	tmLastFrame = now;
-	tmCurrent = tmTarget + (tmCurrent - tmTarget) * Math.exp(-Math.max(elapsed, 0) / tmEasingTime);
-	if(Math.abs(tmCurrent - tmTarget) < 0.1)
-		tmCurrent = tmTarget;
-	tmSetY(tmCurrent);
-	tmFrame = tmCurrent == tmTarget ? 0 : requestAnimationFrame(tmScrollStep);
-}
-
-function tmScrollToFraction (fraction, easingTime) {
-	tmScrollToY(fraction * tmMaxY(), easingTime);
+// The page doesn’t scroll: the web view is as tall as the page, in a scroll view
+function tmHeight () {
+	return Math.ceil(document.body.getBoundingClientRect().height);
 }
 
 function tmTop (el) {
-	return el.getBoundingClientRect().top + window.scrollY + tmOffset;
+	return el.getBoundingClientRect().top;
 }
 
 // Source line → page position, from where elements start. Cached until the
@@ -136,7 +81,7 @@ function tmComputeAnchors () {
 
 		const start = +m[1], top = tmTop(el), previous = anchors[anchors.length - 1];
 		lastLine = Math.max(lastLine, +m[2] + 1);
-		bottom   = Math.max(bottom, el.getBoundingClientRect().bottom + window.scrollY + tmOffset);
+		bottom   = Math.max(bottom, el.getBoundingClientRect().bottom);
 
 		if(start == previous.line)
 			continue; // nested elements starting on the same line, e.g. a list, its first item and paragraph
@@ -148,7 +93,7 @@ function tmComputeAnchors () {
 }
 
 function tmCurrentAnchors () {
-	const key = document.documentElement.scrollHeight + "×" + window.innerWidth;
+	const key = tmHeight() + "×" + window.innerWidth;
 	if(!tmAnchors || tmAnchorsKey != key) {
 		tmAnchors    = tmComputeAnchors();
 		tmAnchorsKey = key;
@@ -156,41 +101,40 @@ function tmCurrentAnchors () {
 	return tmAnchors;
 }
 
-// Sent to the app as [line, y] pairs, which the editor maps its position
-// through; empty without source positions
+// Sent to the app with the page’s height, as [line, y] pairs, which the editor
+// maps its position through; empty without source positions
 function tmPostAnchors () {
 	const anchors = document.querySelector("#content [data-sourcepos]") ? tmCurrentAnchors().map(anchor => [ anchor.line, anchor.y ]) : [];
-	window.webkit.messageHandlers.tmAnchors.postMessage(anchors);
+	window.webkit.messageHandlers.tmAnchors.postMessage({ height: tmHeight(), anchors: anchors });
 }
+
+// The page can’t scroll, so its scrolling keys go to the app, unless they
+// belong to something in the page, e.g. a text field or <details> summary
+function tmScrollCommand (event) {
+	if(event.altKey || event.ctrlKey)
+		return null;
+	if(event.metaKey)
+		return { ArrowUp: "top", ArrowDown: "bottom" }[event.key] ?? null;
+	if(event.key == " ")
+		return event.shiftKey ? "pageUp" : "pageDown";
+	return { ArrowUp: "lineUp", ArrowDown: "lineDown", PageUp: "pageUp", PageDown: "pageDown", Home: "top", End: "bottom" }[event.key] ?? null;
+}
+
+document.addEventListener("keydown", event => {
+	const command = tmScrollCommand(event);
+	if(!command || event.target.closest?.("input, textarea, select, button, summary, [contenteditable]"))
+		return;
+	event.preventDefault();
+	window.webkit.messageHandlers.tmScrollCommand.postMessage(command);
+});
 
 // Positions move when the layout does, e.g. as images load or the width changes
 document.addEventListener("DOMContentLoaded", () => {
 	new ResizeObserver(() => {
 		tmAnchors = null;
-		tmOwnScrollY = window.scrollY;
 		tmPostAnchors();
 	}).observe(document.getElementById("content"));
 });
-
-// Scrolled by the user (or an in-page link): stop easing, drop the sub-pixel
-// offset and tell the app, so the editor follows
-window.addEventListener("scroll", () => {
-	if(window.scrollY == tmOwnScrollY)
-		return;
-	tmOwnScrollY = window.scrollY;
-
-	if(tmFrame)
-		cancelAnimationFrame(tmFrame);
-	tmFrame = 0;
-	if(tmOffset) {
-		tmOffset = 0;
-		document.getElementById("content").style.transform = "";
-	}
-	tmCurrent = tmTarget = window.scrollY;
-
-	const maxY = tmMaxY();
-	window.webkit.messageHandlers.tmScroll.postMessage([ window.scrollY, maxY > 0 ? window.scrollY / maxY : 0 ]);
-}, { passive: true });
 )JS";
 
 static NSURL* PreviewURLForPath (NSString* path)
@@ -245,28 +189,54 @@ static NSString* PathForPreviewURL (NSURL* url)
 // = The view =
 // ============
 
+// Wheel scrolling goes to the scroll view, as in the built-in view; sideways
+// is left for wide code blocks and tables
+@interface MarkdownPreviewWebView : WKWebView
+@end
+
+@implementation MarkdownPreviewWebView
+// Given to the page, which knows if a field has focus
+- (BOOL)performKeyEquivalent:(NSEvent*)anEvent
+{
+	if(self.window.firstResponder == self && MarkdownPreviewIsScrollKeyEquivalent(anEvent))
+	{
+		[self keyDown:anEvent];
+		return YES;
+	}
+	return [super performKeyEquivalent:anEvent];
+}
+
+- (void)scrollWheel:(NSEvent*)anEvent
+{
+	if(fabs(anEvent.scrollingDeltaX) > fabs(anEvent.scrollingDeltaY))
+		return [super scrollWheel:anEvent];
+	[self.enclosingScrollView scrollWheel:anEvent];
+}
+@end
+
 // Passes the page’s messages on without the content controller retaining the view
 @interface MarkdownPreviewMessageHandler : NSObject <WKScriptMessageHandler>
 @property (nonatomic, weak) MarkdownPreviewHTMLView* view;
 @end
 
 @interface MarkdownPreviewHTMLView () <WKNavigationDelegate>
-- (void)didReceiveAnchors:(id)anchors;
-- (void)didReceiveScroll:(id)scroll;
+- (void)didReceiveLayout:(id)layout;
+- (void)didReceiveScrollCommand:(id)command;
 @end
 
 @implementation MarkdownPreviewMessageHandler
 - (void)userContentController:(WKUserContentController*)userContentController didReceiveScriptMessage:(WKScriptMessage*)message
 {
-	if([message.name isEqualToString:@"tmScroll"])
-		[_view didReceiveScroll:message.body];
-	else	[_view didReceiveAnchors:message.body];
+	if([message.name isEqualToString:@"tmScrollCommand"])
+		[_view didReceiveScrollCommand:message.body];
+	else	[_view didReceiveLayout:message.body];
 }
 @end
 
 @interface MarkdownPreviewHTMLView ()
 {
-	WKWebView* _webView;
+	NSScrollView* _scrollView;
+	MarkdownPreviewWebView* _webView;
 	MarkdownPreviewSchemeHandler* _schemeHandler;
 
 	NSURL* _documentURL;
@@ -291,12 +261,18 @@ static NSString* PathForPreviewURL (NSURL* url)
 		MarkdownPreviewMessageHandler* messageHandler = [[MarkdownPreviewMessageHandler alloc] init];
 		messageHandler.view = self;
 		[configuration.userContentController addScriptMessageHandler:messageHandler contentWorld:WKContentWorld.defaultClientWorld name:@"tmAnchors"];
-		[configuration.userContentController addScriptMessageHandler:messageHandler contentWorld:WKContentWorld.defaultClientWorld name:@"tmScroll"];
+		[configuration.userContentController addScriptMessageHandler:messageHandler contentWorld:WKContentWorld.defaultClientWorld name:@"tmScrollCommand"];
 
-		_webView = [[WKWebView alloc] initWithFrame:self.bounds configuration:configuration];
-		_webView.autoresizingMask   = NSViewWidthSizable|NSViewHeightSizable;
+		_scrollView = [[NSScrollView alloc] initWithFrame:self.bounds];
+		_scrollView.hasVerticalScroller = YES;
+		_scrollView.borderType          = NSNoBorder;
+		_scrollView.autoresizingMask    = NSViewWidthSizable|NSViewHeightSizable;
+		[self addSubview:_scrollView];
+
+		_webView = [[MarkdownPreviewWebView alloc] initWithFrame:_scrollView.contentView.bounds configuration:configuration];
+		_webView.autoresizingMask   = NSViewWidthSizable;
 		_webView.navigationDelegate = self;
-		[self addSubview:_webView];
+		_scrollView.documentView = _webView;
 	}
 	return self;
 }
@@ -322,9 +298,14 @@ static NSString* PathForPreviewURL (NSURL* url)
 	[_webView callAsyncJavaScript:@"tmSetContent(html); tmPostAnchors();" arguments:@{ @"html": _body ?: @"" } inFrame:nil inContentWorld:WKContentWorld.defaultClientWorld completionHandler:nil];
 }
 
-- (void)didReceiveAnchors:(id)anchors
+// { height, anchors } from the page, after content or layout changes
+- (void)didReceiveLayout:(id)layout
 {
+	if(![layout isKindOfClass:[NSDictionary class]])
+		return;
+
 	NSMutableArray* res = [NSMutableArray array];
+	id anchors = layout[@"anchors"];
 	if([anchors isKindOfClass:[NSArray class]])
 	{
 		for(NSArray* anchor in anchors)
@@ -334,30 +315,36 @@ static NSString* PathForPreviewURL (NSURL* url)
 		}
 	}
 	_anchors = res;
+
+	NSRect frame = _webView.frame;
+	frame.size.height = MAX([layout[@"height"] doubleValue], NSHeight(_scrollView.contentView.bounds));
+	if(NSHeight(frame) != NSHeight(_webView.frame))
+	{
+		_resizing = YES; // a shorter page may move the clip view
+		_webView.frame = frame;
+		_resizing = NO;
+	}
+
 	if([self.delegate respondsToSelector:@selector(HTMLViewDidUpdateAnchors:)])
 		[self.delegate HTMLViewDidUpdateAnchors:self];
 }
 
-// [y, fraction] from the page’s scroll listener
-- (void)didReceiveScroll:(id)scroll
+- (void)scrollToY:(CGFloat)y
 {
-	if(![scroll isKindOfClass:[NSArray class]] || [scroll count] != 2)
-		return;
-	if([self.delegate respondsToSelector:@selector(HTMLView:didScrollToPosition:fraction:)])
-		[self.delegate HTMLView:self didScrollToPosition:[scroll[0] doubleValue] fraction:[scroll[1] doubleValue]];
+	CGFloat maxY = MAX(0, NSHeight(_webView.frame) - NSHeight(_scrollView.contentView.bounds));
+	[_scrollView.contentView scrollToPoint:NSMakePoint(0, MIN(MAX(y, 0), maxY))];
+	[_scrollView reflectScrolledClipView:_scrollView.contentView];
 }
 
-// Every position is sent: each is cheap, and skipping some would make slow scrolling uneven
-- (void)scrollToPosition:(CGFloat)y animated:(BOOL)animated
+- (void)didReceiveScrollCommand:(id)command
 {
-	if(_loaded)
-		[_webView callAsyncJavaScript:@"tmScrollToY(y, easingTime)" arguments:@{ @"y": @(y), @"easingTime": @(animated ? kMarkdownPreviewEasingTime : 0) } inFrame:nil inContentWorld:WKContentWorld.defaultClientWorld completionHandler:nil];
-}
-
-- (void)scrollToFraction:(CGFloat)fraction animated:(BOOL)animated
-{
-	if(_loaded)
-		[_webView callAsyncJavaScript:@"tmScrollToFraction(fraction, easingTime)" arguments:@{ @"fraction": @(fraction), @"easingTime": @(animated ? kMarkdownPreviewEasingTime : 0) } inFrame:nil inContentWorld:WKContentWorld.defaultClientWorld completionHandler:nil];
+	CGFloat const y = NSMinY(_scrollView.contentView.bounds), page = NSHeight(_scrollView.contentView.bounds) - _scrollView.verticalPageScroll;
+	if([command isEqual:@"lineUp"])        [self scrollToY:y - kLineScroll];
+	else if([command isEqual:@"lineDown"]) [self scrollToY:y + kLineScroll];
+	else if([command isEqual:@"pageUp"])   [self scrollToY:y - page];
+	else if([command isEqual:@"pageDown"]) [self scrollToY:y + page];
+	else if([command isEqual:@"top"])      [self scrollToY:0];
+	else if([command isEqual:@"bottom"])   [self scrollToY:CGFLOAT_MAX];
 }
 
 - (void)evaluateJavaScript:(NSString*)script completionHandler:(void(^)(id result, NSError* error))completion
@@ -368,6 +355,17 @@ static NSString* PathForPreviewURL (NSURL* url)
 // ==============
 // = Navigation =
 // ==============
+
+- (void)scrollToFragment:(NSString*)fragment
+{
+	__weak MarkdownPreviewHTMLView* weakSelf = self;
+	[_webView callAsyncJavaScript:@"const el = document.getElementById(id) ?? document.getElementsByName(id)[0]; return el ? tmTop(el) : null;" arguments:@{ @"id": fragment } inFrame:nil inContentWorld:WKContentWorld.defaultClientWorld completionHandler:^(id top, NSError* error){
+		if(MarkdownPreviewHTMLView* strongSelf = weakSelf; [top isKindOfClass:[NSNumber class]])
+		{
+			[strongSelf scrollToY:[top doubleValue] - 8];
+		}
+	}];
+}
 
 - (void)webView:(WKWebView*)webView didFinishNavigation:(WKNavigation*)navigation
 {
@@ -382,11 +380,12 @@ static NSString* PathForPreviewURL (NSURL* url)
 
 	if(action.navigationType == WKNavigationTypeLinkActivated)
 	{
+		decisionHandler(WKNavigationActionPolicyCancel);
+
 		// Links within the page, e.g. to footnotes
 		if(url.fragment && [path isEqualToString:(_documentURL.path ?: @"/")])
-			return decisionHandler(WKNavigationActionPolicyAllow);
+			return [self scrollToFragment:url.fragment];
 
-		decisionHandler(WKNavigationActionPolicyCancel);
 		if(path)
 			[self.delegate HTMLView:self openURL:[NSURL fileURLWithPath:path]];
 		else if(url)

@@ -48,5 +48,7 @@
 @property (nonatomic, readonly) NSString* renderedText; // what’s shown, for tests
 @property (nonatomic, readonly) NSString* notice;       // for tests
 @property (nonatomic, readonly) BOOL showsHTML;         // for tests
+@property (nonatomic, readonly) BOOL hasFocus; // the preview’s content, not its header
+- (void)focus; // once there’s content, if the placeholder is showing
 @property (nonatomic) CGFloat scrollFraction;           // built-in view: 0 at the top, 1 at the bottom
 @end

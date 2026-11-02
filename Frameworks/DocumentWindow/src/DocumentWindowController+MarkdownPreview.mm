@@ -75,6 +75,7 @@ static OakEditorPanelEdge MarkdownPreviewEdge ()
 	OakDocument* _document;
 	NSView* _editorClipView;
 	BOOL _scrollingEditor; // following the preview, so don’t scroll it back
+	BOOL _focusWhenResumed; // the preview had focus when it was suspended
 	NSUInteger _renderGeneration;
 
 	// GitHub renderer
@@ -170,9 +171,19 @@ static OakEditorPanelEdge MarkdownPreviewEdge ()
 		return;
 
 	NSWindow* window = _controller.window;
-	if(suspend && [window.firstResponder isKindOfClass:[NSView class]] && [(NSView*)window.firstResponder isDescendantOf:_preview.view])
-		[window makeFirstResponder:_controller.textView];
+	if(suspend)
+	{
+		_focusWhenResumed = _preview.hasFocus;
+		if(_focusWhenResumed || ([window.firstResponder isKindOfClass:[NSView class]] && [(NSView*)window.firstResponder isDescendantOf:_preview.view]))
+			[window makeFirstResponder:_controller.textView];
+	}
 	_editorPanel.suspended = suspend;
+
+	// Unless the user has gone elsewhere in the meantime
+	if(!suspend && _focusWhenResumed && window.firstResponder == _controller.textView)
+		[_preview focus];
+	if(!suspend)
+		_focusWhenResumed = NO;
 }
 
 - (void)observeValueForKeyPath:(NSString*)keyPath ofObject:(id)object change:(NSDictionary*)change context:(void*)context
@@ -561,6 +572,11 @@ static CGFloat const kScrollSmoothingRadius = 0.25; // of the editor’s visible
 {
 	MarkdownPreviewCoordinator* coordinator = self.markdownPreviewCoordinator;
 	return coordinator && [self.editorPanelsView.panels containsObject:coordinator.editorPanel];
+}
+
+- (BOOL)markdownPreviewHasFocus
+{
+	return self.markdownPreviewCoordinator.preview.hasFocus;
 }
 
 - (void)setMarkdownPreviewVisible:(BOOL)flag

@@ -9,6 +9,49 @@
 static CGFloat const kTextInset = 16;
 static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSettingsTransformer";
 
+@interface MarkdownPreviewTextView : NSTextView
+@end
+
+@implementation MarkdownPreviewTextView
+// ⌘↑ and ⌘↓ come here, ahead of anything else that wants them
+- (BOOL)performKeyEquivalent:(NSEvent*)anEvent
+{
+	return (self.window.firstResponder == self && [self scrollForEvent:anEvent]) || [super performKeyEquivalent:anEvent];
+}
+
+// Space comes here; the text isn’t editable, so it would do nothing
+- (void)keyDown:(NSEvent*)anEvent
+{
+	if(![self scrollForEvent:anEvent])
+		[super keyDown:anEvent];
+}
+
+- (BOOL)scrollForEvent:(NSEvent*)anEvent
+{
+	if(!MarkdownPreviewIsScrollKeyEquivalent(anEvent))
+		return NO;
+
+	BOOL shift = (anEvent.modifierFlags & NSEventModifierFlagShift) != 0;
+	unichar key = [anEvent.charactersIgnoringModifiers characterAtIndex:0];
+	if(key != ' ' && shift)
+		return NO; // ⇧⌘↑ extends the selection
+
+	NSScrollView* scrollView = self.enclosingScrollView;
+	NSClipView* clipView = scrollView.contentView;
+	CGFloat const page = NSHeight(clipView.bounds) - scrollView.verticalPageScroll;
+	CGFloat const maxY = MAX(0, NSHeight(self.frame) - NSHeight(clipView.bounds));
+
+	CGFloat y;
+	if(key == ' ')
+		y = NSMinY(clipView.bounds) + (shift ? -page : page);
+	else	y = key == NSUpArrowFunctionKey ? 0 : maxY;
+
+	[clipView scrollToPoint:NSMakePoint(0, MIN(MAX(y, 0), maxY))];
+	[scrollView reflectScrolledClipView:clipView];
+	return YES;
+}
+@end
+
 @interface MarkdownPreviewViewController () <NSTextViewDelegate, MarkdownPreviewHTMLViewDelegate>
 {
 	NSView* _contentView; // below the header
@@ -35,6 +78,7 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 
 	BOOL _settingScroll;  // scrolls we make aren’t reported to the delegate
 	NSSize _clipSize;     // nor are those from resizing
+	BOOL _focusWhenShown; // asked for focus while there was no content
 }
 @end
 
@@ -118,7 +162,7 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 	textContainer.widthTracksTextView = YES;
 	[layoutManager addTextContainer:textContainer];
 
-	_textView = [[NSTextView alloc] initWithFrame:NSMakeRect(0, 0, _scrollView.contentSize.width, _scrollView.contentSize.height) textContainer:textContainer];
+	_textView = [[MarkdownPreviewTextView alloc] initWithFrame:NSMakeRect(0, 0, _scrollView.contentSize.width, _scrollView.contentSize.height) textContainer:textContainer];
 	_textView.minSize               = NSMakeSize(0, _scrollView.contentSize.height);
 	_textView.maxSize               = NSMakeSize(CGFLOAT_MAX, CGFLOAT_MAX);
 	_textView.verticallyResizable   = YES;
@@ -194,6 +238,23 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 	return _htmlView && !_htmlView.hidden;
 }
 
+- (BOOL)hasFocus
+{
+	id responder = self.view.window.firstResponder;
+	return [responder isKindOfClass:[NSView class]] && [responder isDescendantOf:_contentView];
+}
+
+// The content may not be there yet, e.g. coming back from a non-Markdown document
+- (void)focus
+{
+	if(!_placeholder.hidden)
+	{
+		_focusWhenShown = YES;
+		return;
+	}
+	[self.view.window makeFirstResponder:self.showsHTML ? _htmlView.scrollView.documentView : _textView];
+}
+
 // ==========
 // = Header =
 // ==========
@@ -231,6 +292,8 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 - (void)showHTML:(NSString*)html documentURL:(NSURL*)documentURL readAccessURL:(NSURL*)readAccessURL
 {
 	[self view];
+	BOOL hadFocus = self.hasFocus || _focusWhenShown; // hiding a view moves focus somewhere else
+	_focusWhenShown = NO;
 	_markdown = nil;
 	_baseURL  = nil;
 	_settingScroll = YES;
@@ -242,6 +305,8 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 		_htmlView = [[MarkdownPreviewHTMLView alloc] initWithFrame:_contentView.bounds];
 		_htmlView.autoresizingMask = NSViewWidthSizable|NSViewHeightSizable;
 		_htmlView.delegate = self;
+		_htmlView.scrollView.contentView.postsBoundsChangedNotifications = YES;
+		[NSNotificationCenter.defaultCenter addObserver:self selector:@selector(clipViewBoundsDidChange:) name:NSViewBoundsDidChangeNotification object:_htmlView.scrollView.contentView];
 		[_contentView addSubview:_htmlView positioned:NSWindowBelow relativeTo:_placeholder];
 	}
 
@@ -249,6 +314,8 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 	_scrollView.hidden  = YES;
 	_htmlView.hidden    = NO;
 	[_htmlView showHTML:html documentURL:documentURL readAccessURL:readAccessURL];
+	if(hadFocus)
+		[self focus];
 }
 
 - (void)showPlaceholder:(NSString*)message
@@ -273,9 +340,13 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 	if(!_markdown)
 		return;
 
+	BOOL hadFocus = self.hasFocus || _focusWhenShown; // hiding a view moves focus somewhere else
+	_focusWhenShown = NO;
 	_placeholder.hidden = YES;
 	_scrollView.hidden  = NO;
 	_htmlView.hidden    = YES;
+	if(hadFocus)
+		[self focus];
 
 	_renderedWidth = [self availableWidth];
 	_style.maximumImageWidth = _renderedWidth;
@@ -293,6 +364,10 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 	[_scrollView.contentView scrollToPoint:NSMakePoint(0, MIN(scrollOrigin.y, maxY))];
 	[_scrollView reflectScrolledClipView:_scrollView.contentView];
 	_settingScroll = NO;
+
+	// Last, so the editor’s position wins: coming from the GitHub view, what we kept is the empty text’s
+	if([self.delegate respondsToSelector:@selector(markdownPreviewDidUpdateAnchors:)])
+		[self.delegate markdownPreviewDidUpdateAnchors:self];
 }
 
 // Images are scaled to the width, so re-render when it changes
@@ -310,15 +385,22 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 // = Scrolling =
 // =============
 
+// The built-in view’s, or the GitHub view’s: both scroll the same way
+- (NSScrollView*)activeScrollView
+{
+	return self.showsHTML ? _htmlView.scrollView : _scrollView;
+}
+
 - (CGFloat)scrollableHeight
 {
-	return MAX(0, NSHeight(_textView.frame) - NSHeight(_scrollView.contentView.bounds));
+	NSScrollView* scrollView = self.activeScrollView;
+	return MAX(0, NSHeight(scrollView.documentView.frame) - NSHeight(scrollView.contentView.bounds));
 }
 
 - (CGFloat)scrollFraction
 {
 	CGFloat height = [self scrollableHeight];
-	return height > 0 ? MIN(MAX(NSMinY(_scrollView.contentView.bounds) / height, 0), 1) : 0;
+	return height > 0 ? MIN(MAX(NSMinY(self.activeScrollView.contentView.bounds) / height, 0), 1) : 0;
 }
 
 - (void)setScrollFraction:(CGFloat)fraction
@@ -352,9 +434,6 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 	CGFloat bottom = NSHeight(_textView.frame);
 	if(_anchors.size() > 1 && bottom > _anchors.back().second)
 		_anchors.emplace_back(lastLine + 1, bottom);
-
-	if([self.delegate respondsToSelector:@selector(markdownPreviewDidUpdateAnchors:)])
-		[self.delegate markdownPreviewDidUpdateAnchors:self];
 }
 
 - (NSArray<NSValue*>*)anchors
@@ -378,12 +457,10 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 
 - (void)scrollToPosition:(CGFloat)y animated:(BOOL)animated
 {
-	if(self.showsHTML)
-		return [_htmlView scrollToPosition:y animated:animated];
-
+	NSScrollView* scrollView = self.activeScrollView;
 	_targetY = MIN(MAX(y, 0), [self scrollableHeight]);
-	BOOL jump = fabs(_targetY - NSMinY(_scrollView.contentView.bounds)) > NSHeight(_scrollView.contentView.bounds) / 2;
-	if(!animated || !_scrollView.window || (!_displayLink && !jump))
+	BOOL jump = fabs(_targetY - NSMinY(scrollView.contentView.bounds)) > NSHeight(scrollView.contentView.bounds) / 2;
+	if(!animated || !scrollView.window || (!_displayLink && !jump))
 	{
 		[self stopScrollAnimation];
 		return [self setScrollY:_targetY];
@@ -391,17 +468,15 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 
 	if(!_displayLink)
 	{
-		_scrollY     = NSMinY(_scrollView.contentView.bounds);
+		_scrollY     = NSMinY(scrollView.contentView.bounds);
 		_lastFrame   = 0;
-		_displayLink = [_scrollView displayLinkWithTarget:self selector:@selector(scrollAnimationStep:)];
+		_displayLink = [scrollView displayLinkWithTarget:self selector:@selector(scrollAnimationStep:)];
 		[_displayLink addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
 	}
 }
 
 - (void)scrollToFraction:(CGFloat)fraction animated:(BOOL)animated
 {
-	if(self.showsHTML)
-		return [_htmlView scrollToFraction:fraction animated:animated];
 	[self scrollToPosition:MIN(MAX(fraction, 0), 1) * [self scrollableHeight] animated:animated];
 }
 
@@ -438,31 +513,30 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 // Fractional positions, aligned to the screen’s pixels, so slow scrolling doesn’t move in whole points
 - (void)setScrollY:(CGFloat)y
 {
-	CGFloat const scale = _scrollView.window.backingScaleFactor ?: 2;
+	NSScrollView* scrollView = self.activeScrollView;
+	CGFloat const scale = scrollView.window.backingScaleFactor ?: 2;
 	_settingScroll = YES;
-	[_scrollView.contentView scrollToPoint:NSMakePoint(0, round(y * scale) / scale)];
-	[_scrollView reflectScrolledClipView:_scrollView.contentView];
+	[scrollView.contentView scrollToPoint:NSMakePoint(0, round(y * scale) / scale)];
+	[scrollView reflectScrolledClipView:scrollView.contentView];
 	_settingScroll = NO;
 }
 
 // Scrolled by the user (wheel, scroller, keys, find, links): the editor follows
 - (void)clipViewBoundsDidChange:(NSNotification*)aNotification
 {
-	NSRect bounds = _scrollView.contentView.bounds;
+	NSScrollView* scrollView = self.activeScrollView;
+	if(aNotification.object != scrollView.contentView)
+		return;
+
+	NSRect bounds = scrollView.contentView.bounds;
 	BOOL resized = !NSEqualSizes(bounds.size, _clipSize);
 	_clipSize = bounds.size;
-	if(_settingScroll || resized || _scrollView.hidden)
+	if(_settingScroll || resized || scrollView.hidden || _htmlView.isResizing)
 		return;
 
 	[self stopScrollAnimation]; // the user takes over from an editor jump
 	if([self.delegate respondsToSelector:@selector(markdownPreview:didScrollToPosition:fraction:)])
 		[self.delegate markdownPreview:self didScrollToPosition:NSMinY(bounds) fraction:self.scrollFraction];
-}
-
-- (void)HTMLView:(MarkdownPreviewHTMLView*)view didScrollToPosition:(CGFloat)y fraction:(CGFloat)fraction
-{
-	if([self.delegate respondsToSelector:@selector(markdownPreview:didScrollToPosition:fraction:)])
-		[self.delegate markdownPreview:self didScrollToPosition:y fraction:fraction];
 }
 
 // =========

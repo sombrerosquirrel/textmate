@@ -1,4 +1,4 @@
----
+ ---
 title: M5 — Polish: Theme, Errors, Log, Shortcuts, Inline Chat, Docs
 status: in progress
 started: 2026-10-19
@@ -151,6 +151,32 @@ Tests: `new_text_scrolls_up_only_at_the_end`, `t_activity_view` (AgentUI 35). `c
 
 Then (user): code blocks start open, and an icon in the header shows or folds every code block, now and in later replies, with a tooltip saying which. `AgentTranscriptView.foldsCodeBlocks` (blocks clicked open or folded are the exceptions, cleared when it's set); the panel keeps it in `agentPanelFoldsCodeBlocks` (default NO). Test: `toggle_shows_or_folds_all_code_blocks` (AgentUI 36). `ctest` 29/29. Since 2026-10-31 the icon folds and opens everything with an arrow, not only code blocks; a row with an open question stays open until it's answered. Prompts no longer have an arrow or fold.
 
+### Step 7f — The GitHub preview scrolls like the built-in one (2026-11-01)
+
+The user: the built-in preview scrolls a lot smoother than the GitHub one. After two attempts at smoothing it, still judder as scrolling slows: "why can't it just use the same algorithm?"
+
+Both already used the same map; what differed was what it moved. The built-in view's scroll view moves in the app, in the same pass as the editor, so the two reach the screen together. A web view scrolls itself in its own process: each position crosses to it, is applied at the web process's next frame, and comes back to the app as a layer change. The result is frames behind the editor, unevenly, and with whole-pixel page scrolling plus a sub-pixel transform on top.
+
+**Now the web view doesn't scroll.** It is as tall as the page, the document view of an `NSScrollView`, and the view controller drives that scroll view with the code it uses for the built-in view (`activeScrollView`): `scrollToPosition:animated:`, easing, `setScrollY:` on device pixels, `clipViewBoundsDidChange:` for the user's scrolls. The page scrolling script, `tmScroll` and the HTML view's scroll methods are gone.
+
+| Moved from the page | Now |
+|---|---|
+| Height | The page reports it with its anchors (`{height, anchors}`), from `body`, not the document: the view is tall itself, so the document wouldn't shrink |
+| Wheel | `MarkdownPreviewWebView` hands it to the scroll view; mostly sideways stays in the page for wide code blocks and tables |
+| In-page links | Cancelled, and the scroll view moves to the target; the editor follows as with any scroll |
+| Scrolling keys | WebKit takes them first and the page can't scroll, so they did nothing (found by the user). The page's `keydown` listener sends Page Up/Down, Space, arrows, Home/End and ⌘↑/↓ to the app as `tmScrollCommand`, unless focus is in a form control, `summary` or editable element (raw HTML). Space and ⌘↑/↓ were still taken before `keyDown:` in the app (not in a bare window; which view took them wasn't traced), so `MarkdownPreviewWebView` claims them in `performKeyEquivalent:` while it has focus, confirmed by the user. `MarkdownPreviewTextView` does the same in the built-in view, scrolling its clip view by the same amounts; plain Space isn't offered as a key equivalent, so it also handles `keyDown:`, where the read-only text view would ignore it; both use `MarkdownPreviewIsScrollKeyEquivalent` |
+| Clamping when the page gets shorter | `isResizing`, so it doesn't count as the user scrolling |
+
+Checked in a harness before the change: a full-height `WKWebView` in a scroll view, 138,000 pt (216 screens), scrolled at 6,000 pt/s with the visible area covered by layers in every frame; WebKit paints more of the page than is on screen, about 50 MB more in the GPU process (83 MB against 31). Not checked: real wheel and trackpad input, and very long documents' memory in daily use.
+
+Rejected on the way, both keeping the web view scrolling itself: playing positions back on an even pace in the page (`requestAnimationFrame`), then in the app (display link). Both reduced uneven steps but still lagged the editor and couldn't put the two in one frame. **To measure a web view:** its layers are in the app process, so poll the scroll and content layers' positions every 1 ms and log changes; numbers from `window.scrollY` show what the page asked for, not what reached the screen. Commits land 12–13 ms after the display link's callback, so cut frames there.
+
+Tests: `github_view_scrolls_as_the_built_in_one` (`t_preview`); `links_within_the_page_scroll_the_scroll_view`, `shorter_page_shrinks_the_web_view`, `web_view_follows_the_width`, `scrolling_keys_scroll_the_scroll_view`, `scrolling_key_equivalents` (`t_preview`), `reports_anchors_and_sizes_to_the_page` (`t_html_view`). `ctest` 29/29.
+
+Focus (user): switching renderer with the preview focused left focus undetermined, because hiding the focused view hands it on. `render` and `showHTML:` keep it in the preview (`hasFocus`, `focus`). Tabs: `openAndSelectDocument:activate:` focuses the editor before the document changes, so tab switches (`selectTabDocument:`: tab bar, next/previous, Window menu) don't activate while the preview has focus; opening a file still goes to the editor. Going to a non-Markdown tab still moves focus to the editor, and coming back returns it to the preview if it's still in the editor, once there's content (`focus` waits for the placeholder to go). Test: `keeps_focus_when_switching_renderers`; the tab switches themselves have no test (no window controller tests).
+
+Switching GitHub → built-in (user): the page lost its place. Measured in the app with a probe flipping the renderer: the *editor* went to the top too (y 490 → 0). `render` re-synced to the editor in `updateAnchors`, whose `setScrollY:` cleared `_settingScroll`; `render` then restored the empty text's position, which counted as the user scrolling, and the editor followed. Now it restores first and tells the delegate last. Test: `switching_back_from_github_follows_the_editor`.
+
 ## Commits
 4752a0a7 agent log · 3c5b671c error states · 5e3198e7 theme highlighting · 98808424 permission keys, New Agent Chat · 3a2f3d1b inline chat
 
@@ -163,9 +189,9 @@ Then (user): code blocks start open, and an icon in the header shows or folds ev
 6. Error states without signing out: Preferences ▸ Agents, add an agent with command `env HOME=/tmp copilot --acp`, start a chat with it: “needs you to sign in” with Sign In (opens Terminal with `copilot login` — close it without signing in), Try Again, Agent Settings…. An agent with command `no-such-agent`: “Unable to find…” with Try Again and Agent Settings…. Remove the test agents afterwards.
 7. Kill the agent (`pkill -f claude-agent-acp`): “stopped running” with Restart and Show Log; Restart continues the chat.
 8. Read the [user guide](../user/agent-panel.md).
-9. Markdown preview scrolling (both renderers, a document with images and long paragraphs): scroll slowly and quickly. No rush through images or long paragraphs; the top line drifts a little near them and lines up again after. Page Down / ⌘↓ / ⌘↑ in the editor: the preview glides there. Open a document whose images load after it's shown: the preview stays lined up without scrolling.
-10. Scroll the **preview** (both renderers; wheel, scroller, and Page Down with the preview focused): the editor follows, and the caret doesn't move. Then scroll the editor: the preview carries on from where it is, no jump. Click a footnote: the editor follows the preview. Type near the end of the document: the editor doesn't move by itself.
-11. With the preview shown and resized, switch to a non-Markdown tab: the preview closes and the editor takes the space. Switch back: it reopens on the same edge at the same size (also with the agent panel open on the same edge). View ▸ Show Markdown Preview is disabled on the non-Markdown tab; Hide works there and stays hidden when you return.
+9. ✅ Markdown preview scrolling (both renderers, a document with images and long paragraphs): scroll slowly and quickly, and let it coast to a stop. The GitHub preview moves exactly with the editor, as the built-in one does (7f). No rush through images or long paragraphs; the top line drifts a little near them and lines up again after. Page Down / ⌘↓ / ⌘↑ in the editor: the preview glides there. Open a document whose images load after it's shown: the preview stays lined up without scrolling.
+10. ✅ Scroll the **preview** (both renderers; wheel, scroller, and Page Down with the preview focused): the editor follows, and the caret doesn't move. Then scroll the editor: the preview carries on from where it is, no jump. Click a footnote: the editor follows the preview. Type near the end of the document: the editor doesn't move by itself.
+11. ✅ With the preview shown and resized, switch to a non-Markdown tab: the preview closes and the editor takes the space. Switch back: it reopens on the same edge at the same size (also with the agent panel open on the same edge). View ▸ Show Markdown Preview is disabled on the non-Markdown tab; Hide works there and stays hidden when you return.
 12. ✅ Ask for code from a file in the project (e.g. “show me the method that folds transcript items”): each code block is one line with its language, length and place (`File.mm:12–30`); click the place to open the file there. Click the line: an editor view with the code in your theme and font; long lines scroll sideways, the wheel scrolls the chat. Select, copy and find in it work; typing, paste and Undo do nothing. Click again to fold it.
 13. ✅ With the header icon on closed, send a second message: the first exchange's replies and tool rows fold to one line (▸); your prompt stays whole, with no arrow. With the icon on open, nothing folds when you send. Click ▸ to open one again. Tool calls and the plan fold too. History ▸ load an earlier chat: only its last exchange is open.
 14. ✅ Switch themes with a code block unfolded: it follows.

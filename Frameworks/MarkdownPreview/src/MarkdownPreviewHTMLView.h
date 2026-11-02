@@ -1,8 +1,24 @@
 // Shows HTML from the GitHub renderer in a web view with GitHub’s styles.
 //
 // Web content can’t run JavaScript; only our own scripts (updating the content
-// and scrolling) run, in a separate world. Local files, such as images, are
+// and reporting its layout) run, in a separate world. Local files, such as images, are
 // served from below `readAccessURL` only, through a private URL scheme.
+//
+// The web view is as tall as the page, in a scroll view, so the preview scrolls
+// it as it does the built-in view: with the editor, in the app. A web view
+// scrolling itself does so in another process, frames behind and unevenly.
+
+// Key equivalents reach every view and the menus before keyDown:, and some use
+// these scrolling keys, e.g. ⌘↑ for Go ▸ Enclosing Folder, so the previews take
+// them first while they have focus. Space with or without shift, ⌘↑, ⌘↓.
+inline BOOL MarkdownPreviewIsScrollKeyEquivalent (NSEvent* anEvent)
+{
+	NSEventModifierFlags const modifiers = anEvent.modifierFlags & (NSEventModifierFlagCommand|NSEventModifierFlagOption|NSEventModifierFlagControl);
+	NSString* key = anEvent.charactersIgnoringModifiers;
+	if(modifiers == 0)
+		return [key isEqualToString:@" "];
+	return modifiers == NSEventModifierFlagCommand && key.length == 1 && ([key characterAtIndex:0] == NSUpArrowFunctionKey || [key characterAtIndex:0] == NSDownArrowFunctionKey);
+}
 
 @class MarkdownPreviewHTMLView;
 
@@ -10,7 +26,6 @@
 - (void)HTMLView:(MarkdownPreviewHTMLView*)view openURL:(NSURL*)url; // file URLs for local links
 @optional
 - (void)HTMLViewDidUpdateAnchors:(MarkdownPreviewHTMLView*)view;
-- (void)HTMLView:(MarkdownPreviewHTMLView*)view didScrollToPosition:(CGFloat)y fraction:(CGFloat)fraction; // by the user or a link, not by the methods below
 @end
 
 @interface MarkdownPreviewHTMLView : NSView
@@ -25,10 +40,8 @@
 // changes and when the layout does, e.g. as images load.
 @property (nonatomic, readonly) NSArray<NSValue*>* anchors;
 
-// Scrolls so `y` is at the top of the page, or `fraction` (0–1) of the way
-// down. Animated, jumps of more than half the view ease there.
-- (void)scrollToPosition:(CGFloat)y animated:(BOOL)animated;
-- (void)scrollToFraction:(CGFloat)fraction animated:(BOOL)animated;
+@property (nonatomic, readonly) NSScrollView* scrollView;
+@property (nonatomic, readonly, getter = isResizing) BOOL resizing; // the page’s height is changing, so scrolling isn’t the user’s
 
 // For tests: calls `completion` once the latest HTML is shown
 - (void)evaluateJavaScript:(NSString*)script completionHandler:(void(^)(id result, NSError* error))completion;

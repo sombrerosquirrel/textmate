@@ -1728,13 +1728,19 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 	return menu;
 }
 
+// Moving between tabs leaves focus in the Markdown preview, if it’s there
+- (void)selectTabDocument:(OakDocument*)document
+{
+	[self openAndSelectDocument:document activate:!self.markdownPreviewHasFocus];
+}
+
 // =========================
 // = OakTabBarViewDelegate =
 // =========================
 
 - (BOOL)tabBarView:(OakTabBarView*)aTabBarView shouldSelectIndex:(NSUInteger)anIndex
 {
-	[self openAndSelectDocument:_documents[anIndex] activate:YES];
+	[self selectTabDocument:_documents[anIndex]];
 	self.selectedTabIndex = anIndex;
 	return YES;
 }
@@ -1788,9 +1794,9 @@ static NSArray* const kObservedKeyPaths = @[ @"arrayController.arrangedObjects.p
 	return YES;
 }
 
-- (IBAction)selectNextTab:(id)sender            { self.selectedTabIndex = (_selectedTabIndex + 1) % _documents.count;                    [self openAndSelectDocument:_documents[_selectedTabIndex] activate:YES]; }
-- (IBAction)selectPreviousTab:(id)sender        { self.selectedTabIndex = (_selectedTabIndex + _documents.count - 1) % _documents.count; [self openAndSelectDocument:_documents[_selectedTabIndex] activate:YES]; }
-- (IBAction)takeSelectedTabIndexFrom:(id)sender { self.selectedTabIndex = [sender tag];                                                  [self openAndSelectDocument:_documents[_selectedTabIndex] activate:YES]; }
+- (IBAction)selectNextTab:(id)sender            { self.selectedTabIndex = (_selectedTabIndex + 1) % _documents.count;                    [self selectTabDocument:_documents[_selectedTabIndex]]; }
+- (IBAction)selectPreviousTab:(id)sender        { self.selectedTabIndex = (_selectedTabIndex + _documents.count - 1) % _documents.count; [self selectTabDocument:_documents[_selectedTabIndex]]; }
+- (IBAction)takeSelectedTabIndexFrom:(id)sender { self.selectedTabIndex = [sender tag];                                                  [self selectTabDocument:_documents[_selectedTabIndex]]; }
 
 // ==================
 // = OakFileBrowser =

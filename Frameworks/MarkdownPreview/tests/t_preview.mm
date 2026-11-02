@@ -207,6 +207,185 @@ static void reports_user_scrolling ()
 	OAK_ASSERT(fabs(recorder.positions.lastObject.doubleValue - 500) < 1);
 }
 
+// The GitHub view scrolls like the built-in one. Its page loads on the main
+// thread, so this runs on the test thread and only uses the views there.
+void test_github_view_scrolls_as_the_built_in_one ()
+{
+	__block MarkdownPreviewViewController* preview;
+	__block NSScrollView* scrollView;
+	PreviewScrollRecorder* recorder = [[PreviewScrollRecorder alloc] init];
+	recorder.positions = [NSMutableArray array];
+
+	NSMutableString* html = [NSMutableString string];
+	for(NSUInteger i = 0; i < 200; ++i)
+		[html appendFormat:@"<p data-sourcepos=\"%1$lu:1-%1$lu:10\">Paragraph %1$lu</p>\n", 2*i + 1];
+
+	dispatch_sync(dispatch_get_main_queue(), ^{
+		preview = [[MarkdownPreviewViewController alloc] init];
+		preview.delegate = recorder;
+		[preview showHTML:html documentURL:nil readAccessURL:nil];
+
+		NSMutableArray<NSView*>* queue = [NSMutableArray arrayWithObject:preview.view];
+		while(queue.count)
+		{
+			NSView* view = queue.firstObject;
+			[queue removeObjectAtIndex:0];
+			if([view isKindOfClass:[NSScrollView class]] && !view.isHiddenOrHasHiddenAncestor)
+				scrollView = (NSScrollView*)view;
+			[queue addObjectsFromArray:view.subviews];
+		}
+	});
+	OAK_ASSERT(scrollView != nil);
+
+	__block NSUInteger anchors = 0;
+	for(NSUInteger i = 0; i < 200 && anchors < 201; ++i)
+	{
+		usleep(50000);
+		dispatch_sync(dispatch_get_main_queue(), ^{
+			anchors = preview.anchors.count;
+		});
+	}
+	OAK_ASSERT_EQ(anchors, 201);
+
+	dispatch_sync(dispatch_get_main_queue(), ^{
+		// Following the editor moves the scroll view, on device pixels, and isn’t reported
+		[preview scrollToPosition:300.3 animated:NO];
+		CGFloat y = NSMinY(scrollView.contentView.bounds);
+		OAK_ASSERT(fabs(y - 300.3) <= 0.5);
+		OAK_ASSERT_EQ(y * 2, round(y * 2));
+		OAK_ASSERT_EQ(recorder.positions.count, 0);
+
+		// The user scrolling is
+		[scrollView.contentView scrollToPoint:NSMakePoint(0, 500)];
+		OAK_ASSERT_EQ(recorder.positions.count, 1);
+		OAK_ASSERT(fabs(recorder.positions.lastObject.doubleValue - 500) < 1);
+	});
+}
+
+static void switching_back_from_github_follows_the_editor ()
+{
+	NSMutableString* markdown = [NSMutableString string];
+	for(NSUInteger i = 0; i < 200; ++i)
+		[markdown appendFormat:@"Paragraph %lu\n\n", i];
+
+	MarkdownPreviewViewController* preview = [[MarkdownPreviewViewController alloc] init];
+	PreviewScrollRecorder* recorder = [[PreviewScrollRecorder alloc] init];
+	recorder.positions = [NSMutableArray array];
+	preview.delegate = recorder;
+	preview.view.frame = NSMakeRect(0, 0, 400, 300);
+	[preview showMarkdown:markdown baseURL:nil];
+	[preview scrollToPosition:100 animated:NO];
+	[preview showHTML:@"<p>Text</p>" documentURL:nil readAccessURL:nil];
+
+	// As the window does: the editor’s position, through the new anchors
+	__weak MarkdownPreviewViewController* weakPreview = preview;
+	recorder.didUpdateAnchors = ^{
+		[weakPreview scrollToPosition:600 animated:NO];
+	};
+	[preview showMarkdown:markdown baseURL:nil];
+
+	OAK_ASSERT(preview.scrollFraction > 0);
+	OAK_ASSERT_EQ(recorder.positions.count, 0); // or the editor would follow
+}
+
+static void keeps_focus_when_switching_renderers ()
+{
+	MarkdownPreviewViewController* preview = [[MarkdownPreviewViewController alloc] init];
+	[preview showMarkdown:@"Text\n" baseURL:nil];
+
+	NSWindow* window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 400, 300) styleMask:NSWindowStyleMaskBorderless backing:NSBackingStoreBuffered defer:YES];
+	window.releasedWhenClosed = NO;
+	window.contentView = preview.view;
+
+	// Without focus, it doesn’t take it
+	[window makeFirstResponder:nil];
+	[preview showHTML:@"<p>Text</p>" documentURL:nil readAccessURL:nil];
+	[preview showMarkdown:@"Text\n" baseURL:nil];
+	OAK_ASSERT(!preview.hasFocus);
+
+	[preview focus];
+	OAK_ASSERT(preview.hasFocus);
+	OAK_ASSERT([window.firstResponder isKindOfClass:[NSTextView class]]);
+
+	[preview showHTML:@"<p>Text</p>" documentURL:nil readAccessURL:nil];
+	OAK_ASSERT(preview.hasFocus);
+	OAK_ASSERT(![(NSView*)window.firstResponder isHiddenOrHasHiddenAncestor]);
+	OAK_ASSERT(![window.firstResponder isKindOfClass:[NSTextView class]]);
+
+	[preview showMarkdown:@"Text\n" baseURL:nil];
+	OAK_ASSERT(preview.hasFocus);
+	OAK_ASSERT([window.firstResponder isKindOfClass:[NSTextView class]]);
+
+	// Asked for while the placeholder shows, as coming back from a non-Markdown document
+	[window makeFirstResponder:nil];
+	[preview showPlaceholder:@"Nothing"];
+	[preview focus];
+	OAK_ASSERT(!preview.hasFocus);
+	[preview showMarkdown:@"Text\n" baseURL:nil];
+	OAK_ASSERT(preview.hasFocus);
+}
+
+static void scrolling_key_equivalents ()
+{
+	NSMutableString* markdown = [NSMutableString string];
+	for(NSUInteger i = 0; i < 200; ++i)
+		[markdown appendFormat:@"Paragraph %lu\n\n", i];
+
+	MarkdownPreviewViewController* preview = [[MarkdownPreviewViewController alloc] init];
+	PreviewScrollRecorder* recorder = [[PreviewScrollRecorder alloc] init];
+	recorder.positions = [NSMutableArray array];
+	preview.delegate = recorder;
+	preview.view.frame = NSMakeRect(0, 0, 400, 300);
+	[preview showMarkdown:markdown baseURL:nil];
+
+	NSTextView* textView;
+	NSMutableArray<NSView*>* queue = [NSMutableArray arrayWithObject:preview.view];
+	while(queue.count && !textView)
+	{
+		NSView* view = queue.firstObject;
+		[queue removeObjectAtIndex:0];
+		if([view isKindOfClass:[NSTextView class]])
+			textView = (NSTextView*)view;
+		[queue addObjectsFromArray:view.subviews];
+	}
+	OAK_ASSERT(textView != nil);
+
+	auto event = [&](unichar character, NSEventModifierFlags flags) -> NSEvent* {
+		NSString* key = [NSString stringWithCharacters:&character length:1];
+		return [NSEvent keyEventWithType:NSEventTypeKeyDown location:NSZeroPoint modifierFlags:flags timestamp:0 windowNumber:0 context:nil characters:key charactersIgnoringModifiers:key isARepeat:NO keyCode:0];
+	};
+	auto press = [&](unichar character, NSEventModifierFlags flags) -> BOOL {
+		return [textView performKeyEquivalent:event(character, flags)];
+	};
+
+	// Only with focus
+	OAK_ASSERT(!press(NSDownArrowFunctionKey, NSEventModifierFlagCommand));
+	NSWindow* window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 400, 300) styleMask:NSWindowStyleMaskBorderless backing:NSBackingStoreBuffered defer:YES];
+	window.releasedWhenClosed = NO;
+	window.contentView = preview.view;
+	[window makeFirstResponder:textView];
+
+	// Space isn’t a key equivalent: it goes through the window to keyDown:
+	[window sendEvent:event(' ', 0)];
+	OAK_ASSERT(preview.scrollFraction > 0);
+	[window sendEvent:event(' ', NSEventModifierFlagShift)];
+	OAK_ASSERT_EQ(preview.scrollFraction, 0);
+	OAK_ASSERT(recorder.positions.count > 0); // the editor follows; the first move after a resize doesn’t count
+	OAK_ASSERT_EQ(recorder.positions.lastObject.doubleValue, 0);
+	OAK_ASSERT(press(NSDownArrowFunctionKey, NSEventModifierFlagCommand));
+	OAK_ASSERT_EQ(preview.scrollFraction, 1);
+	OAK_ASSERT(press(NSUpArrowFunctionKey, NSEventModifierFlagCommand));
+	OAK_ASSERT_EQ(preview.scrollFraction, 0);
+
+	// Others aren’t ours
+	OAK_ASSERT(!press(NSDownArrowFunctionKey, NSEventModifierFlagCommand|NSEventModifierFlagShift));
+	OAK_ASSERT_EQ(preview.scrollFraction, 0);
+	OAK_ASSERT(!press('a', NSEventModifierFlagCommand));
+}
+
+void test_switching_back_from_github_follows_the_editor () { RunOnMainThread(switching_back_from_github_follows_the_editor); }
+void test_keeps_focus_when_switching_renderers () { RunOnMainThread(keeps_focus_when_switching_renderers); }
+void test_scrolling_key_equivalents () { RunOnMainThread(scrolling_key_equivalents); }
 void test_reports_user_scrolling () { RunOnMainThread(reports_user_scrolling); }
 void test_renders_markdown () { RunOnMainThread(renders_markdown); }
 void test_reports_anchors_and_scrolls () { RunOnMainThread(reports_anchors_and_scrolls); }

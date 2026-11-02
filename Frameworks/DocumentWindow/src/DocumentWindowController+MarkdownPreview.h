@@ -10,6 +10,7 @@ extern NSString* const kUserDefaultsMarkdownPreviewPlacementKey; // @"auto" (def
 
 @interface DocumentWindowController (MarkdownPreview)
 @property (nonatomic) BOOL markdownPreviewVisible;
+@property (nonatomic, readonly) BOOL markdownPreviewHasFocus;
 
 - (void)updateMarkdownPreviewPlacement; // after user defaults change
 - (void)shutdownMarkdownPreview;        // when the window closes
