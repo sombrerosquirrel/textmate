@@ -181,7 +181,7 @@ Switching GitHub → built-in (user): the page lost its place. Measured in the a
 4752a0a7 agent log · 3c5b671c error states · 5e3198e7 theme highlighting · 98808424 permission keys, New Agent Chat · 3a2f3d1b inline chat
 
 ## To check (user)
-1. Window ▸ Agent Log while chatting: messages appear live; filter by agent and kind, search, Copy, Clear. Agent popup ▸ Show Agent Log shows only that agent.
+1. ✅ Window ▸ Agent Log while chatting: messages appear live; filter by agent and kind, search, Copy, Clear. Agent popup ▸ Show Agent Log shows only that agent.
 2. A reply with code (e.g. “show me a Python and a shell example”): code blocks in the editor theme's colours and highlighted; change the theme (View ▸ Theme) and they follow.
 3. Claude in Manual mode, ask for an edit: with the message field empty, ↩ allows, ⎋ rejects; the card marks the options ↩ and ⎋.
 4. ⌃⇧⌘N starts a new chat (also with the panel hidden).
