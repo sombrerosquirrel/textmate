@@ -1,6 +1,6 @@
 ---
 title: Agent Panel — User Guide
-updated: 2026-10-24
+updated: 2026-11-02
 tags: [textmate, user-guide, agent, acp]
 ---
 
@@ -72,7 +72,9 @@ Replies and tool calls fold: click ▾ to fold one to a line and ▸ to open it 
 
 New text slides into view at the bottom while you're at the end of the chat; scroll up to read and it stays where you are.
 
-While the agent works, a line under the chat shows a slowly blinking dot, what it's doing (thinking, writing the reply, or the tool it's running), the time since you sent the message, the tool calls so far and the tokens this exchange used (when the agent reports them). While a permission card waits for you, the dot turns orange and stops blinking.
+Right after you send, a “Waiting for <agent>” line shows in the chat until the agent's first update. The line being worked on (a running tool call, Thinking, or the reply as it streams) has a blinking marker with its own time and tokens.
+
+The line above the message field is always there. While the agent works it shows a slowly blinking dot, what the agent is doing (thinking, writing the reply, or the tool it's running), the time since you sent the message, the tool calls so far and the tokens this exchange used (when the agent reports them). While a permission card waits for you, the dot turns orange and stops blinking, and the line says “Waiting for your approval”. After the exchange it says **Done**, **Stopped** or **Failed**, with the same figures. A new chat empties it.
 
 ## Approvals and changes
 
@@ -117,10 +119,23 @@ The chat explains failures and offers what to do next:
 - **Sign In**: the agent needs you to sign in.
 - **Try Again**: start the agent again and resend your message.
 - **Restart**: the agent stopped; restart it and carry on with the chat.
+
+After **Restart**, or **Try Again** with no message to resend, a blinking “Starting <agent>” line shows in the chat and above the message field until the agent is up. The chat then says it's running again (or ready), and the line above the field says **Started**, or **Not started** with the error.
 - **Agent Settings…**: fix the command, or use an API key.
 - **Show Log**: see what happened.
 
-**Window ▸ Agent Log** shows what TextMate and the agents sent each other: every message (→ sent, ← received), the agents' error output, and when they started and exited. You can filter by agent and kind, and search. **Copy** copies what's shown, for a bug report. The log keeps the last 5,000 entries and isn't saved.
+**Window ▸ Agent Log** shows what TextMate and the agents sent each other: every message (→ sent, ← received), the agents' error output, and when they started and exited. You can filter by agent and kind, and search. The agent filter lists only agents that have run since TextMate started. **Copy** copies what's shown, for a bug report. The log keeps the last 5,000 entries and isn't saved.
+
+### A stuck agent
+
+⎋ (or the stop button) stops what the agent is doing. If the agent itself hangs, quit its process in Terminal; the chat then says it stopped running, and **Restart** carries on with the chat:
+
+```sh
+pkill -f claude-agent-acp   # Claude Code
+pkill -f 'copilot --acp'    # GitHub Copilot
+```
+
+These quit that agent in every TextMate window, and the Copilot one also quits any `copilot --acp` you started yourself.
 
 ## Shortcuts
 
