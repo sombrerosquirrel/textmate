@@ -182,7 +182,7 @@ Switching GitHub → built-in (user): the page lost its place. Measured in the a
 
 ## To check (user)
 1. ✅ Window ▸ Agent Log while chatting: messages appear live; filter by agent and kind, search, Copy, Clear. Agent popup ▸ Show Agent Log shows only that agent.
-2. A reply with code (e.g. “show me a Python and a shell example”): code blocks in the editor theme's colours and highlighted; change the theme (View ▸ Theme) and they follow.
+2. ✅ A reply with code (e.g. “show me a Python and a shell example”): code blocks in the editor theme's colours and highlighted; change the theme (View ▸ Theme) and they follow.
 3. Claude in Manual mode, ask for an edit: with the message field empty, ↩ allows, ⎋ rejects; the card marks the options ↩ and ⎋.
 4. ⌃⇧⌘N starts a new chat (also with the panel hidden).
 5. Inline chat: select some code, ⌃⌥⌘I, ask e.g. “add a doc comment”. The popover shows progress (and Allow / Reject in Manual mode), then the changed file with Keep / Undo; Undo restores it; Show in Chat opens the panel with the exchange. Try with the panel hidden.
