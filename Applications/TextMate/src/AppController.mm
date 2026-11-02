@@ -244,9 +244,6 @@ BOOL HasDocumentWindow (NSArray* windows)
 				},
 				{ @"Show File Browser",      @selector(toggleFileBrowser:),    @"d", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagOption|NSEventModifierFlagControl },
 				{ @"Show HTML Output",       @selector(toggleHTMLOutput:),     @"h", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagOption|NSEventModifierFlagControl },
-				{ @"Show Agent Panel",       @selector(toggleAgentPanel:),     @"I", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagControl|NSEventModifierFlagShift },
-				{ @"Move Agent Panel to Left Side", @selector(toggleAgentPanelPlacement:) },
-				{ @"New Agent Chat",         @selector(newAgentChat:),         @"N", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagControl|NSEventModifierFlagShift },
 				{ @"Show Markdown Preview",  @selector(toggleMarkdownPreview:), @"M", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagControl|NSEventModifierFlagShift },
 				{ @"Markdown Preview Position",
 					.submenu = {
@@ -259,6 +256,11 @@ BOOL HasDocumentWindow (NSArray* windows)
 					}
 				},
 				{ @"Show Line Numbers",      @selector(toggleLineNumbers:),    @"l", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagOption },
+				{ /* -------- */ },
+				{ @"Show Agent Panel",       @selector(toggleAgentPanel:),     @"I", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagControl|NSEventModifierFlagShift },
+				{ @"Move Agent Panel to Left Side", @selector(toggleAgentPanelPlacement:) },
+				{ @"New Agent Chat",         @selector(newAgentChat:),         @"N", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagControl|NSEventModifierFlagShift },
+				{ @"Ask Agent at Caret…",    @selector(askAgentAtCaret:),      @"i", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagOption|NSEventModifierFlagControl },
 				{ /* -------- */ },
 				{ @"Show Invisibles",        @selector(toggleShowInvisibles:), @"i", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagOption },
 				{ /* -------- */ },
@@ -400,7 +402,6 @@ BOOL HasDocumentWindow (NSArray* windows)
 				{ @"Copilot Complete",                      @selector(lspCopilotComplete:),          .modifierFlags = NSEventModifierFlagOption, .key = 0x1B },
 				{ /* -------- */ },
 				{ @"Ask Agent About Selection",           @selector(askAgentAboutSelection:) },
-				{ @"Ask Agent at Caret…",                 @selector(askAgentAtCaret:), @"i", .modifierFlags = NSEventModifierFlagCommand|NSEventModifierFlagOption|NSEventModifierFlagControl },
 			}
 		},
 		{ @"File Browser",
