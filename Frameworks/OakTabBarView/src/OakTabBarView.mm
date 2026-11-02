@@ -332,7 +332,7 @@ static void* kOakTabViewSelectedContext  = &kOakTabViewSelectedContext;
 	if(!flag)
 	{
 		DisableImplicitAnimationForBlock(^{
-			self.mouseInside = NSMouseInRect([self convertPoint:self.window.mouseLocationOutsideOfEventStream fromView:nil], self.visibleRect, self.isFlipped);
+			self.mouseInside = NSMouseInRect([self convertPoint:self.window.mouseLocationOutsideOfEventStream fromView:nil], NSIntersectionRect(self.bounds, self.visibleRect), self.isFlipped);
 		});
 	}
 }
@@ -599,7 +599,7 @@ static void* kOakTabViewSelectedContext  = &kOakTabViewSelectedContext;
 	NSTrackingAreaOptions options = NSTrackingMouseEnteredAndExited|NSTrackingActiveAlways;
 	if(!self.tabBarView.isDragging)
 	{
-		BOOL isInside = NSMouseInRect([self convertPoint:self.window.mouseLocationOutsideOfEventStream fromView:nil], self.visibleRect, self.isFlipped);
+		BOOL isInside = NSMouseInRect([self convertPoint:self.window.mouseLocationOutsideOfEventStream fromView:nil], NSIntersectionRect(self.bounds, self.visibleRect), self.isFlipped);
 		if(isInside)
 			options |= NSTrackingAssumeInside;
 		if(self.mouseInside != isInside)
@@ -813,20 +813,43 @@ static void* kOakTabViewSelectedContext  = &kOakTabViewSelectedContext;
 	[super updateTrackingAreas];
 	if(_trackingArea)
 		[self removeTrackingArea:_trackingArea];
-	NSTrackingAreaOptions options = NSTrackingMouseEnteredAndExited|NSTrackingActiveAlways;
-	if(NSMouseInRect([self convertPoint:self.window.mouseLocationOutsideOfEventStream fromView:nil], self.visibleRect, self.isFlipped))
+	NSTrackingAreaOptions options = NSTrackingMouseEnteredAndExited|NSTrackingMouseMoved|NSTrackingActiveAlways;
+	if(NSMouseInRect([self convertPoint:self.window.mouseLocationOutsideOfEventStream fromView:nil], NSIntersectionRect(self.bounds, self.visibleRect), self.isFlipped))
 		options |= NSTrackingAssumeInside;
 
 	_trackingArea = [[NSTrackingArea alloc] initWithRect:self.bounds options:options owner:self userInfo:nil];
 	[self addTrackingArea:_trackingArea];
 }
 
+// Tab views miss mouseExited: when their frames change under the pointer (tabs opening, closing or resizing), leaving several tabs drawn as hovered. Re-derive the hover state from the pointer location so at most one tab is hovered.
+- (void)updateMouseInsideForTabViews
+{
+	if(self.isDragging || !self.window)
+		return;
+
+	NSPoint mouseLocation = self.window.mouseLocationOutsideOfEventStream;
+	for(OakTabFrame* tabFrame in _currentLayout)
+	{
+		OakTabView* tabView = tabFrame.tabItem.tabView;
+		BOOL isInside = !tabView.isHidden && NSMouseInRect([tabView convertPoint:mouseLocation fromView:nil], NSIntersectionRect(tabView.bounds, tabView.visibleRect), tabView.isFlipped);
+		if(tabView.mouseInside != isInside)
+			tabView.animator.mouseInside = isInside;
+	}
+}
+
 - (void)mouseEntered:(NSEvent*)anEvent
 {
+	[self updateMouseInsideForTabViews];
+}
+
+- (void)mouseMoved:(NSEvent*)anEvent
+{
+	[self updateMouseInsideForTabViews];
 }
 
 - (void)mouseExited:(NSEvent*)anEvent
 {
+	[self updateMouseInsideForTabViews];
 	if(_freezeTabFramesLeftOfIndex > 0)
 	{
 		_freezeTabFramesLeftOfIndex = 0;
@@ -1350,6 +1373,8 @@ static void* kOakTabViewSelectedContext  = &kOakTabViewSelectedContext;
 
 	_backgroundView.frame = NSMakeRect(x, y, NSWidth(self.bounds)+2 - x, height);
 	_createNewTabButton.frame  = { { x, round((height - NSHeight(createNewTabButtonFrame)) / 2) }, createNewTabButtonFrame.size };
+
+	[self updateMouseInsideForTabViews];
 }
 
 - (void)resizeSubviewsWithOldSize:(NSSize)aSize
