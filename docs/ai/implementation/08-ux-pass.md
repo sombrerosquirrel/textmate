@@ -7,7 +7,7 @@ tags: [textmate, implementation, ux, agent, markdown]
 
 # UX Pass — Agent Panel and Markdown Preview
 
-**Status:** 🔄 In progress. Preview scrolling and panels are done and waiting for the user's check. Chat folding, editor code blocks, pending file links and permission cards are done, tested by the user once, and fixed after that test (2026-10-24). Smooth scrolling and the working line are done (2026-10-24), waiting for the user's check. Not committed yet, apart from the preview work.
+**Status:** 🔄 In progress. §3–§11 are done, committed and confirmed by the user (M5 checks 9–21, 2026-11-02); the tab bar's stuck hover state is fixed (§13, 2026-11-02). What's left is in [§14](#14-to-do).
 **Branch:** `feature/agent-polish`
 **Implementation details:** [M5 step 7](07-m5-polish.md#step-7a--markdown-preview-scroll-smoothness-2026-10-20) (7a–7d). This document collects the UX work by feature: what the user asked for, how we compare with VS Code, what changed, and how to test it.
 
@@ -24,7 +24,8 @@ tags: [textmate, implementation, ux, agent, markdown]
 10. [Chat: smooth scrolling to new text](#10-chat-smooth-scrolling-to-new-text)
 11. [Chat: working indicator and status](#11-chat-working-indicator-and-status)
 12. [Test prompt](#12-test-prompt)
-13. [Open items](#13-open-items)
+13. [Tab bar: stuck hover state](#13-tab-bar-stuck-hover-state)
+14. [To do](#14-to-do)
 
 ---
 
@@ -127,7 +128,7 @@ Measured (speed-up: fastest 100 ms over mean speed, 1 = even; judder: mean chang
 | GitHub, 120 pt/s | 11.3, 0.06 | 2.2, 0.02 |
 | GitHub, 1200 pt/s | — (recorder bug in the baseline run) | 1.9, 0.05 |
 
-**Status:** done (commit `18d0c678`), waiting for the user's check.
+**Status:** done (commit `18d0c678`), confirmed by the user (2026-11-02).
 
 ## 4. Markdown preview: the editor follows the preview
 
@@ -140,7 +141,7 @@ Measured (speed-up: fastest 100 ms over mean speed, 1 = even; judder: mean chang
 | No feedback | Scrolls the editor makes to follow the preview don't move the preview again. |
 | In-page links | Footnotes and ↩ now move the editor too. |
 
-**Status:** done (commit `cf78658d`), waiting for the user's check.
+**Status:** done (commit `cf78658d`), confirmed by the user (2026-11-02).
 
 ## 5. Markdown preview: only for Markdown documents
 
@@ -151,7 +152,7 @@ Measured (speed-up: fastest 100 ms over mean speed, 1 = even; judder: mean chang
 | Suspended panels | A suspended panel leaves the layout but keeps its edge, order and size, so it comes back exactly where it was. Works for any preview panel. |
 | Markdown preview | Suspended while the selected document isn't Markdown. The menu still says Hide; Show is disabled for a non-Markdown document. The "isn't a Markdown document" placeholder is gone. |
 
-**Status:** done (commit `cf78658d`), waiting for the user's check.
+**Status:** done (commit `cf78658d`), confirmed by the user (2026-11-02).
 
 ## 6. Chat: folding, and code blocks as editor views
 
@@ -183,7 +184,7 @@ Test: `toggle_shows_or_folds_all_code_blocks`.
 
 Found in the app and fixed: the code view used the current document's font (proportional for Markdown); no space under the actions line; after a `// …` line the range ended one brace early.
 
-**Status:** done, tested by the user with the prompt in §10, not committed.
+**Status:** done (commit `6ef4bfdd`), confirmed by the user (2026-11-02).
 
 ## 7. Chat: links to files not created yet
 
@@ -193,7 +194,7 @@ Found in the app and fixed: the code view used the current document's font (prop
 |---|---|
 | In Manual mode the writes were waiting for approval; the chat showed the proposed content. Clicking `↳ geometry.py` opened a new, empty document at that path (M3 behaviour). | A link to a file that doesn't exist says "not created yet"; clicking it shows the proposed content (the tool call's diff) instead of opening an empty document. After the write, it opens the file as usual. Code block places only use files on disk. |
 
-**Status:** done, not committed.
+**Status:** done (commit `6ef4bfdd`), confirmed by the user (2026-11-02).
 
 ## 8. Chat: permission cards
 
@@ -210,7 +211,7 @@ Found in the app and fixed: the code view used the current document's font (prop
 
 ↩ / ⎋ in the empty message field still answer the open card.
 
-**Status:** done, not committed. The hold has no automated test (the panel controller has no test suite); check it with item 16 of the [M5 checklist](07-m5-polish.md#to-check-user).
+**Status:** done (commit `6ef4bfdd`), confirmed by the user (2026-11-02). The hold has no automated test (the panel controller has no test suite); check it with item 16 of the [M5 checklist](07-m5-polish.md#to-check-user).
 
 ## 9. Chat: disclosure arrows
 
@@ -218,7 +219,7 @@ Found in the app and fixed: the code view used the current document's font (prop
 
 Every ▸ / ▾ (messages, code block lines, Thinking) is 5 pt larger than the text beside it and its own click target. Test: the arrow's font is larger than the title's.
 
-**Status:** done, not committed.
+**Status:** done (commit `6ef4bfdd`), confirmed by the user (2026-11-02).
 
 ## 10. Chat: smooth scrolling to new text
 
@@ -235,7 +236,7 @@ Every ▸ / ▾ (messages, code block lines, Thinking) is 5 pt larger than the t
 
 Test: `new_text_scrolls_up_only_at_the_end` (outside a window, so without the animation).
 
-**Status:** done, not committed.
+**Status:** done (commit `6ef4bfdd`), confirmed by the user (2026-11-02).
 
 ## 11. Chat: working indicator and status
 
@@ -255,7 +256,7 @@ A line between the chat and the message field while the agent works (`AgentActiv
 
 Tests: `t_activity_view` (time strings; the line's text when working, with tools and tokens, and waiting; hidden when idle).
 
-**Status:** done, not committed.
+**Status:** done (commit `6ef4bfdd`), confirmed by the user (2026-11-02).
 
 ## 12. Test prompt
 
@@ -302,10 +303,40 @@ What to check:
 
 Delete `agent-fold-test/` afterwards.
 
-## 13. Open items
-- **Agent panel UX notes:** the user's wider list of panel issues (asked for 2026-10-20); folding was the first.
-- Code views: Find in the chat doesn't search inside them; a selection across one copies without its code; no gutter, so folding inside a block is keyboard-only (F1).
-- The prompt field as an `OakTextView` (bundle shortcuts, editor commands), as VS Code uses Monaco for its input.
-- A row-based transcript (per-message hover actions, less re-layout for long chats).
+## 13. Tab bar: stuck hover state
+
+**Asked (2026-11-02):** "The tabs show 3 different colours, what is the dark grey one for." Then: "fix the stuck hover state".
+
+The tabs have three shades: white for the selected tab, light grey for the others, and dark grey for the tab under the pointer, which also shows its × (`OakTabView`, background alpha 0 / 0.1 / 0.2). The screenshot had two dark grey tabs with the pointer over neither.
+
+| Cause | Fix |
+|---|---|
+| A tab checked whether the pointer was over it against its `visibleRect`, which in the document window covers the whole window (2556 × 1320) rather than the tab (250 × 29), found with a probe in the running app. Any tab that re-checked while the pointer was in the window turned dark grey and stayed so. The tab bar's own tracking area made the same check. | Clip the check to the view's bounds: `NSIntersectionRect(bounds, visibleRect)`, in all four places. |
+| Tabs miss `mouseExited:` when their frames change under the pointer (tabs opening or closing, the panel resizing the bar). | The tab bar works out the tab under the pointer and sets every tab's hover state to match (`updateMouseInsideForTabViews`), on mouse moves, enter and exit (its tracking area now includes `NSTrackingMouseMoved`) and after each layout change. Skipped while dragging a tab. |
+
+To check: open and close tabs and resize the agent panel with the pointer over the tab bar. At most one tab is dark grey, and none once the pointer leaves the bar.
+
+**Status:** done (commit `ad706720`), confirmed by the user (2026-11-02).
+
+## 14. To do
+
+Collected 2026-11-02 for us to work through. Ticked when done.
+
+**Agent panel**
+- [ ] **The user's list of panel issues** (asked for 2026-10-20; folding was the first). This is the main remaining part of the UX pass.
+- [ ] **"Claude Code stopped running"**: the panel showed this error (screenshot, 2026-11-02). Find out why, if it happens again.
+
+**Code views in the chat** (§6)
+- [ ] Find in the chat doesn't search inside them.
+- [ ] A selection across one copies without its code.
+- [ ] No gutter, so folding inside a block is keyboard-only (F1).
+
+**Larger changes** (to decide)
+- [ ] The prompt field as an `OakTextView` (bundle shortcuts, editor commands), as VS Code uses Monaco for its input.
+- [ ] A row-based transcript (per-message hover actions, less re-layout for long chats).
 - Several chats per window, chat in an editor tab, Quick Chat (§1): not planned unless the user asks.
-- Commit the chat work (§6–§11) once the user has checked it.
+
+**Elsewhere** (tracked in the [implementation status](README.md#future-work))
+- [ ] M5 step 8, the `pr/agent` port for upstream: deferred by the user.
+- [ ] `feature/agent` doesn't build at `7723847e` (it deletes the M1 debug window files that `AppController` uses until `d6d22909`). Fixing it needs a force-push: the user's decision.
+- [ ] Optional clean-up: upstream's leftover branches on the fork (`10_7`, `gh-pages`, `no-copy-of-scopes`), local `backup/pre-trailer-removal/*` branches and `refs/original`.
