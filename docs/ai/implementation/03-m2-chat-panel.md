@@ -20,6 +20,7 @@ Chat with Copilot and Claude in a panel docked beside the editor, with the VS Co
 - Panel can sit on the left or right; it is stacked next to the editor, with the file browser outside.
 - Include VS Code–style chat features (§6a).
 - Shortcut ⌃⇧⌘I. ⌃⌘I (VS Code's) was used first, but the HTML bundle's Add Persistent Include has it for `text.html`, which includes Markdown, and bundle shortcuts win when the editor has focus. Changed 2026-10-14.
+- **Shortcut change (2026-11-05):** to match the file browser’s ⌃⌥⌘D, the agent panel is now ⌃⌥⌘I and the Markdown preview ⌃⌥⌘M; Ask Agent at Caret moved from ⌃⌥⌘I to ⌃⇧⌘I. No bundle or menu item uses ⌃⌥⌘M; ⌃⌥⌘P stays the bundles’ Show Preview. Shortcuts below are as they were when written.
 
 ## Done
 

@@ -10,7 +10,7 @@ TextMate shows a live preview of the Markdown document you're editing, docked be
 
 ## Showing the preview
 
-- **View ▸ Show Markdown Preview** (⌃⇧⌘M) shows or hides it.
+- **View ▸ Show Markdown Preview** (⌃⌥⌘M) shows or hides it.
 - It follows the selected tab, and is only there for Markdown documents: switch to a document that isn't Markdown and the preview closes; switch back and it reopens in the same place, at the same size. **Show Markdown Preview** is unavailable while a non-Markdown document is selected; **Hide Markdown Preview** turns it off for good.
 - A document counts as Markdown if its grammar is Markdown (scope `text.html.markdown…`) or, before a grammar is picked, if its extension is `md`, `markdown`, `mdown`, `mkd` or `mkdn`.
 - Drag the divider to resize it. The size is remembered (separately for side and top/bottom positions).

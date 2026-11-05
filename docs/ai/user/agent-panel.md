@@ -25,7 +25,7 @@ If an agent isn't signed in, the chat says so and offers **Sign In**, which runs
 
 ## The panel
 
-- **View ▸ Show Agent Panel** (⌃⇧⌘I) shows or hides it. With the panel open, the shortcut moves the focus to the message field.
+- **View ▸ Show Agent Panel** (⌃⌥⌘I) shows or hides it. With the panel open, the shortcut moves the focus to the message field.
 - **View ▸ Move Agent Panel to Left/Right Side** picks the side. Drag the divider to resize it.
 - **View ▸ New Agent Chat** (⌃⇧⌘N) starts a new chat. So does the pencil button at the top of the panel.
 - The popup at the top left picks the agent. It also has **Agent Settings…** and **Show Agent Log**.
@@ -49,7 +49,7 @@ The switch beside **+** decides whether the agent works in the open file. While 
 From the editor:
 
 - **Text ▸ Ask Agent About Selection** attaches the selection, or the cursor position, and moves to the panel.
-- **View ▸ Ask Agent at Caret…** (⌃⌥⌘I) is inline chat. A small field opens at the caret, and your request goes to the window's chat about the selection or the caret's line. The field shows what the agent is doing and asks for any approvals it needs, with the diff of a proposed edit, then shows what changed in each file with **Keep**, **Undo** and **Show in Chat**. **Undo** there takes back only that request's edits; earlier ones stay in the changed-files list. The panel doesn't need to be open.
+- **View ▸ Ask Agent at Caret…** (⌃⇧⌘I) is inline chat. A small field opens at the caret, and your request goes to the window's chat about the selection or the caret's line. The field shows what the agent is doing and asks for any approvals it needs, with the diff of a proposed edit, then shows what changed in each file with **Keep**, **Undo** and **Show in Chat**. **Undo** there takes back only that request's edits; earlier ones stay in the changed-files list. The panel doesn't need to be open.
 - In the file browser, right-click files ▸ **Add to Agent Chat**.
 
 ## Replies
@@ -141,7 +141,7 @@ These quit that agent in every TextMate window, and the Copilot one also quits a
 
 | Shortcut | Action |
 |---|---|
-| ⌃⇧⌘I | Show the agent panel, or focus it |
+| ⌃⌥⌘I | Show the agent panel, or focus it |
 | ⌃⇧⌘N | New agent chat |
-| ⌃⌥⌘I | Ask agent at caret (inline chat) |
+| ⌃⇧⌘I | Ask agent at caret (inline chat) |
 | ↩ / ⎋ (empty message field) | Allow / reject the open permission card |

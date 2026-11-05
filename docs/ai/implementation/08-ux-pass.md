@@ -40,9 +40,9 @@ tags: [textmate, implementation, ux, agent, markdown]
 **Our agent panel.**
 - A split inside the editor area, not a sidebar. `AgentEditorSplitView` wraps the editor as `[editor | panel]` or `[panel | editor]`, with its own Auto Layout divider. `ProjectLayoutView` is unchanged, so the file browser stays outside: `file browser | chat | editor`. The chat is always next to the code.
 - Left or right (View ▸ Move Agent Panel…), resizable, width saved (default 380); the editor keeps at least 320 × 150.
-- ⌃⇧⌘I toggles it (VS Code's ⌃⌘I is the HTML bundle's).
+- ⌃⌥⌘I toggles it, matching the file browser's ⌃⌥⌘D (VS Code's ⌃⌘I is the HTML bundle's). Was ⌃⇧⌘I until 2026-11-05.
 - One panel and one session per project window. No chat in an editor tab, no Quick Chat.
-- Inline chat (⌃⌥⌘I, Ask Agent at Caret) sends to the same session as the panel, so the conversation and changed files stay in one place. It works with the panel closed.
+- Inline chat (⌃⇧⌘I, Ask Agent at Caret; was ⌃⌥⌘I until 2026-11-05) sends to the same session as the panel, so the conversation and changed files stay in one place. It works with the panel closed.
 - Chat history (list / load / resume): you switch chats inside the one panel.
 
 | | VS Code Copilot | Ours |
@@ -58,7 +58,7 @@ The controls inside the panel mostly match VS Code ([design §6a](../plans/agent
 
 | VS Code chat feature | TextMate | Milestone |
 |---|---|---|
-| Chat docked beside the editor, toggle shortcut | Docked panel, left or right (setting), stacked next to the editor (file browser outside), **⌃⇧⌘I** (⌃⌘I is taken by the HTML bundle), resizable, width remembered | M2 |
+| Chat docked beside the editor, toggle shortcut | Docked panel, left or right (setting), stacked next to the editor (file browser outside), **⌃⌥⌘I** (⌃⌘I is taken by the HTML bundle; ⌃⇧⌘I until 2026-11-05), resizable, width remembered | M2 |
 | Agent / mode / model pickers | Agent popup + generic config-option popups | M2 |
 | New chat | New Chat button (new session) | M2 |
 | Markdown replies with code blocks | Markdown renderer (headings, lists, code, quotes, tables, links) | M2 |
@@ -77,7 +77,7 @@ The controls inside the panel mostly match VS Code ([design §6a](../plans/agent
 | Terminal command output | Terminal output in tool rows | M3 |
 | Chat history (previous chats) | Session list / load / resume (both agents support it) | M4 |
 | MCP servers | One list for all agents, Preferences ▸ Agents | M4 |
-| Inline chat in the editor (⌘I) | Inline prompt at the caret, ⌃⌥⌘I (⌘I is Italic in Markdown/HTML) | M5 |
+| Inline chat in the editor (⌘I) | Inline prompt at the caret, ⌃⇧⌘I (⌘I is Italic in Markdown/HTML; ⌃⌥⌘I until 2026-11-05) | M5 |
 | Syntax-highlighted code blocks | TextMate grammars + theme | M5 |
 | Collapsible code blocks and messages | Folded code block lines with place; every message folds (§6) | UX pass |
 | Code blocks as editor views | Read-only `OakTextView` per unfolded block (§6) | UX pass |

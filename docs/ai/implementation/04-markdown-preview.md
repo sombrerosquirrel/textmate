@@ -20,6 +20,7 @@ A native Markdown preview docked beside the editor on any edge, with a built-in 
 - Both renderers; the GitHub renderer is optional and installable from the UI.
 - By default the preview goes opposite the agent panel; a setting moves it to the left, right, top or bottom.
 - Shortcuts: ⌃⇧⌘M for the preview; the agent panel moves from ⌃⌘I to ⌃⇧⌘I (2026-10-14). ⌃⌘I belongs to the HTML bundle's Add Persistent Include in HTML and Markdown files, and ⌃⇧⌘P (first proposed for the preview) to Bundle Development's Show Scope.
+- **Shortcut change (2026-11-05):** to match the file browser’s ⌃⌥⌘D, the agent panel is now ⌃⌥⌘I and the Markdown preview ⌃⌥⌘M; Ask Agent at Caret moved from ⌃⌥⌘I to ⌃⇧⌘I. No bundle or menu item uses ⌃⌥⌘M; ⌃⌥⌘P stays the bundles’ Show Preview. Shortcuts below are as they were when written.
 
 ## Phases
 
