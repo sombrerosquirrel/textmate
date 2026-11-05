@@ -371,6 +371,27 @@ void test_footnotes ()
 	OAK_ASSERT_EQ(S([[str attribute:NSLinkAttributeName atIndex:back effectiveRange:nullptr] absoluteString]), "file:///tmp/project/README.md#fnref-1");
 }
 
+void test_heading_slugs ()
+{
+	// github-slugger: punctuation and symbols go first, then one hyphen per space
+	OAK_ASSERT_EQ(S(OakMarkdownHeadingSlug(@"Getting Started")), "getting-started");
+	OAK_ASSERT_EQ(S(OakMarkdownHeadingSlug(@"A — B")), "a--b");
+	OAK_ASSERT_EQ(S(OakMarkdownHeadingSlug(@"What’s new in 2.0?")), "whats-new-in-20");
+	OAK_ASSERT_EQ(S(OakMarkdownHeadingSlug(@"snake_case & kebab-case")), "snake_case--kebab-case");
+	OAK_ASSERT_EQ(S(OakMarkdownHeadingSlug(@"Ünïcödé Straße 🚀")), "ünïcödé-straße-");
+}
+
+void test_heading_anchors ()
+{
+	NSAttributedString* str = Render(@"# Intro\n\nText.\n\n## The `code` *part*\n\n## Intro\n\n### Intro\n");
+	OAK_ASSERT_EQ(S(AnchorAt(str, [str.string rangeOfString:@"Intro"].location)), "intro");
+	OAK_ASSERT_EQ(S(AnchorAt(str, [str.string rangeOfString:@"The code"].location)), "the-code-part");
+	NSRange second = [str.string rangeOfString:@"Intro" options:0 range:NSMakeRange(10, str.length - 10)];
+	OAK_ASSERT_EQ(S(AnchorAt(str, second.location)), "intro-1");
+	OAK_ASSERT_EQ(S(AnchorAt(str, [str.string rangeOfString:@"Intro" options:NSBackwardsSearch].location)), "intro-2");
+	OAK_ASSERT(AnchorAt(str, [str.string rangeOfString:@"Text"].location) == nil);
+}
+
 void test_footnotes_left_alone ()
 {
 	// Undefined, in code, or escaped

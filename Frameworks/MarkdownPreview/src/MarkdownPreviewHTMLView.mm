@@ -54,8 +54,45 @@ del { color: var(--muted); }
 // Runs in its own world: the page’s own scripts are disabled
 static NSString* const kScript = @R"JS(
 function tmSetContent (html) {
-	document.getElementById("content").innerHTML = html;
+	const content = document.getElementById("content");
+	content.innerHTML = html;
+	tmAddHeadingIds(content);
 	tmAnchors = null;
+}
+
+// cmark-gfm leaves headings without ids; github.com gives them “user-content-”
+// and its slug of the text, as OakMarkdownHeadingSlug() does for the built-in view
+function tmHeadingSlug (text) {
+	return text.toLowerCase().replace(/[^\p{L}\p{M}\p{N}_\- ]/gu, "").replace(/ /g, "-");
+}
+
+function tmAddHeadingIds (content) {
+	const occurrences = new Map();
+	for(const heading of content.querySelectorAll("h1, h2, h3, h4, h5, h6")) {
+		const slug = tmHeadingSlug(heading.textContent);
+		let res = slug;
+		while(occurrences.has(res)) {
+			occurrences.set(slug, occurrences.get(slug) + 1);
+			res = slug + "-" + occurrences.get(slug);
+		}
+		occurrences.set(res, 0);
+		if(!heading.id)
+			heading.id = "user-content-" + res;
+	}
+}
+
+// “#intro” links work as on github.com, whose script adds the prefix; so does
+// “#user-content-intro”, and ids and names from raw HTML, which we don’t prefix
+function tmElementForFragment (fragment) {
+	let id = fragment;
+	try { id = decodeURIComponent(fragment); } catch(e) { }
+	const bare = id.startsWith("user-content-") ? id.slice(13) : id;
+	for(const candidate of [ id, "user-content-" + bare, bare ]) {
+		const el = document.getElementById(candidate) ?? document.getElementsByName(candidate)[0];
+		if(el)
+			return el;
+	}
+	return null;
 }
 
 // The page doesn’t scroll: the web view is as tall as the page, in a scroll view
@@ -359,7 +396,7 @@ static NSString* PathForPreviewURL (NSURL* url)
 - (void)scrollToFragment:(NSString*)fragment
 {
 	__weak MarkdownPreviewHTMLView* weakSelf = self;
-	[_webView callAsyncJavaScript:@"const el = document.getElementById(id) ?? document.getElementsByName(id)[0]; return el ? tmTop(el) : null;" arguments:@{ @"id": fragment } inFrame:nil inContentWorld:WKContentWorld.defaultClientWorld completionHandler:^(id top, NSError* error){
+	[_webView callAsyncJavaScript:@"const el = tmElementForFragment(id); return el ? tmTop(el) : null;" arguments:@{ @"id": fragment } inFrame:nil inContentWorld:WKContentWorld.defaultClientWorld completionHandler:^(id top, NSError* error){
 		if(MarkdownPreviewHTMLView* strongSelf = weakSelf; [top isKindOfClass:[NSNumber class]])
 		{
 			[strongSelf scrollToY:[top doubleValue] - 8];

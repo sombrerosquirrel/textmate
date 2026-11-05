@@ -1416,6 +1416,48 @@ namespace
 	}
 }
 
+NSString* OakMarkdownHeadingSlug (NSString* text)
+{
+	static NSCharacterSet* const kKept = [] {
+		NSMutableCharacterSet* res = [NSMutableCharacterSet alphanumericCharacterSet]; // letters, marks, numbers
+		[res addCharactersInString:@"_- "];
+		return [res copy];
+	}();
+
+	NSString* lowercase = text.lowercaseString;
+	NSMutableString* res = [NSMutableString string];
+	[lowercase enumerateSubstringsInRange:NSMakeRange(0, lowercase.length) options:NSStringEnumerationByComposedCharacterSequences usingBlock:^(NSString* character, NSRange, NSRange, BOOL*){
+		// Judged by the first code point; marks combined with a kept one stay with it
+		UTF32Char ch = [character characterAtIndex:0];
+		if(CFStringIsSurrogateHighCharacter(ch) && character.length > 1)
+			ch = CFStringGetLongCharacterForSurrogatePair(ch, [character characterAtIndex:1]);
+		if([kKept longCharacterIsMember:ch])
+			[res appendString:[character isEqualToString:@" "] ? @"-" : character];
+	}];
+	return res;
+}
+
+// Anchors each heading’s first character with its slug, numbering repeats as GitHub does
+static void AddHeadingAnchors (NSMutableAttributedString* str, std::vector<std::pair<NSUInteger, NSString*>> const& headings)
+{
+	NSMutableDictionary<NSString*, NSNumber*>* occurrences = [NSMutableDictionary dictionary];
+	for(auto const& [index, text] : headings)
+	{
+		NSString* const slug = OakMarkdownHeadingSlug(text);
+		NSString* res = slug;
+		while(occurrences[res])
+		{
+			NSInteger const count = occurrences[slug].integerValue + 1;
+			occurrences[slug] = @(count);
+			res = [NSString stringWithFormat:@"%@-%ld", slug, count];
+		}
+		occurrences[res] = @0;
+
+		if(index < str.length)
+			[str addAttribute:OakMarkdownAnchorAttributeName value:res range:NSMakeRange(index, 1)];
+	}
+}
+
 static NSMutableAttributedString* Render (NSString* markdown, OakMarkdownStyle* style, BOOL marksSourceLines, NSURL* baseURL, NSArray<OakMarkdownCodeBlock*>** codeBlocks, NSAttributedString*(^codeBlockFooter)(NSUInteger index))
 {
 	NSAttributedStringMarkdownParsingOptions* options = [[NSAttributedStringMarkdownParsingOptions alloc] init];
@@ -1453,12 +1495,33 @@ static NSMutableAttributedString* Render (NSString* markdown, OakMarkdownStyle* 
 	struct run_t { NSRange parsed; NSUInteger textStart; NSUInteger droppedPrefix; NSUInteger outputEnd; };
 	std::vector<run_t> runs;
 	auto runsPtr = &runs;
+
+	// Where each heading starts in the output, and its text (as the DOM’s textContent: no markup)
+	std::vector<std::pair<NSUInteger, NSString*>> headings;
+	auto headingsPtr = &headings;
+	__block NSInteger lastHeading = NSNotFound;
+
 	[parsed enumerateAttributesInRange:NSMakeRange(0, parsed.length) options:0 usingBlock:^(NSDictionary<NSAttributedStringKey, id>* attributes, NSRange range, BOOL* stop){
-		rendererPtr->append_run([parsed.string substringWithRange:range], attributes);
+		NSString* text = [parsed.string substringWithRange:range];
+		rendererPtr->append_run(text, attributes);
 		runsPtr->push_back({ range, rendererPtr->textStart, rendererPtr->droppedPrefix, rendererPtr->length() });
+
+		NSPresentationIntent* heading = attributes[NSPresentationIntentAttributeName];
+		while(heading && heading.intentKind != NSPresentationIntentKindHeader)
+			heading = heading.parentIntent;
+		if(!heading)
+			return;
+		if(heading.identity != lastHeading)
+		{
+			lastHeading = heading.identity;
+			headingsPtr->emplace_back(rendererPtr->textStart, [NSMutableString string]);
+		}
+		if(!([attributes[NSInlinePresentationIntentAttributeName] unsignedIntegerValue] & NSInlinePresentationIntentInlineHTML))
+			[(NSMutableString*)headingsPtr->back().second appendString:text];
 	}];
 
 	NSMutableAttributedString* res = renderer.finish();
+	AddHeadingAnchors(res, headings);
 	auto run = runs.begin();
 	for(auto const& [index, line] : sourceLines)
 	{

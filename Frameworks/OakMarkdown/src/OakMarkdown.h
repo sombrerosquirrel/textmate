@@ -59,8 +59,14 @@ extern NSAttributedStringKey const OakMarkdownSourceLineAttributeName;
 
 // On a footnote and on its first reference; value is the fragment links to it
 // use (NSString, “fn-1” or “fnref-1”). Footnote links are “#fn-1” resolved
-// against the base URL.
+// against the base URL. Also on the first character of each heading, with
+// GitHub’s slug of its text (“A — B” → “a--b”, repeats get “-1”, “-2”, …).
 extern NSAttributedStringKey const OakMarkdownAnchorAttributeName;
+
+// GitHub’s (github-slugger’s) slug of a heading’s text, without the
+// “-1” suffix of repeated headings: lowercased, punctuation and symbols
+// removed, then each space a hyphen (not collapsed)
+NSString* OakMarkdownHeadingSlug (NSString* text);
 
 // The link on the summary of the `index`th <details>, to open or close it
 NSURL* OakMarkdownDetailsURL (NSUInteger index);

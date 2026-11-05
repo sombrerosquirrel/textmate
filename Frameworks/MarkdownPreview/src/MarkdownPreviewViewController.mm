@@ -570,13 +570,19 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 	return YES;
 }
 
-// Links within the document, e.g. to footnotes and back, scroll the preview,
-// and the editor follows, as with the GitHub renderer
+// Links within the document, e.g. a table of contents or footnotes, scroll
+// the preview, and the editor follows, as with the GitHub renderer. One that
+// goes nowhere does nothing, rather than reopen the document.
 - (BOOL)scrollToAnchor:(NSString*)anchor ofURL:(NSURL*)url
 {
 	BOOL sameDocument = url.absoluteURL.isFileURL ? [url.absoluteURL.path isEqualToString:_baseURL.path] : !url.absoluteURL.scheme;
 	if(!sameDocument)
 		return NO;
+
+	// “#user-content-intro”, as GitHub prefixes ids, also works there without its script
+	anchor = anchor.stringByRemovingPercentEncoding ?: anchor;
+	if([anchor hasPrefix:@"user-content-"])
+		anchor = [anchor substringFromIndex:13];
 
 	NSTextStorage* textStorage = _textView.textStorage;
 	__block NSUInteger index = NSNotFound;
@@ -588,7 +594,7 @@ static NSString* const kRendererTransformerName = @"OakMarkdownPreviewRendererSe
 		}
 	}];
 	if(index == NSNotFound)
-		return NO;
+		return YES;
 
 	NSLayoutManager* layoutManager = _textView.layoutManager;
 	NSRect rect = [layoutManager lineFragmentRectForGlyphAtIndex:[layoutManager glyphIndexForCharacterAtIndex:index] effectiveRange:nullptr];

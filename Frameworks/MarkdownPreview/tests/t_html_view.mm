@@ -51,7 +51,7 @@ void test_shows_html ()
 {
 	MarkdownPreviewHTMLView* view = MakeView();
 	ShowHTML(view, @"<h1>Hello</h1>", nil, nil);
-	OAK_ASSERT(WaitFor(view, @"document.getElementById('content')?.innerHTML == '<h1>Hello</h1>'"));
+	OAK_ASSERT(WaitFor(view, @"document.getElementById('content')?.innerHTML == '<h1 id=\"user-content-hello\">Hello</h1>'"));
 
 	// Same document: only the content changes
 	ShowHTML(view, @"<p>Again</p>", nil, nil);
@@ -191,6 +191,41 @@ void test_links_within_the_page_scroll_the_scroll_view ()
 	};
 	for(NSUInteger i = 0; i < 100 && scrollY() == 0; ++i)
 		usleep(50000);
+	OAK_ASSERT(fabs(scrollY() - (target - 8)) < 1);
+}
+
+void test_headings_get_github_ids ()
+{
+	MarkdownPreviewHTMLView* view = MakeView();
+	ShowHTML(view, @"<h1>Intro</h1><h2>A — B</h2><h2>Intro</h2><h3 id='own'>Mine</h3>", nil, nil);
+	OAK_ASSERT(WaitFor(view, @"document.querySelectorAll('#content h3').length == 1"));
+	OAK_ASSERT_EQ(std::string([Evaluate(view, @"[...document.querySelectorAll('#content [id]')].map(el => el.id).join(' ')") UTF8String]), "user-content-intro user-content-a--b user-content-intro-1 own");
+
+	// Links as written for github.com, with the prefix, or percent-encoded
+	OAK_ASSERT([Evaluate(view, @"tmElementForFragment('a--b')?.id == 'user-content-a--b'") isEqual:@YES]);
+	OAK_ASSERT([Evaluate(view, @"tmElementForFragment('user-content-intro-1')?.id == 'user-content-intro-1'") isEqual:@YES]);
+	OAK_ASSERT([Evaluate(view, @"tmElementForFragment('a-%E2%80%94-b') == null && tmElementForFragment('own')?.id == 'own'") isEqual:@YES]);
+}
+
+void test_toc_links_scroll_to_headings ()
+{
+	MarkdownPreviewHTMLView* view = MakeView();
+	ShowHTML(view, @"<p data-sourcepos='1:1-1:5'><a id='link' href='#getting-started'>Link</a></p><div style='height: 2000px'></div><h2 data-sourcepos='3:1-3:5'>Getting Started</h2><div style='height: 2000px'></div>", nil, nil);
+	OAK_ASSERT_EQ(WaitForAnchors(view, 3).count, 3);
+
+	CGFloat target = [Evaluate(view, @"tmTop(document.querySelector('h2'))") doubleValue];
+	Evaluate(view, @"document.getElementById('link').click()");
+
+	auto scrollY = [&]() -> CGFloat {
+		__block CGFloat res;
+		dispatch_sync(dispatch_get_main_queue(), ^{
+			res = NSMinY(view.scrollView.contentView.bounds);
+		});
+		return res;
+	};
+	for(NSUInteger i = 0; i < 100 && scrollY() == 0; ++i)
+		usleep(50000);
+	OAK_ASSERT(target > 1000);
 	OAK_ASSERT(fabs(scrollY() - (target - 8)) < 1);
 }
 
