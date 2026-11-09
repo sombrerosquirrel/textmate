@@ -10,6 +10,8 @@
 #import <document/OakDocument.h>
 #import <document/OakDocumentController.h>
 #import <settings/settings.h>
+#import <io/path.h>
+#import <Preferences/Keys.h>
 #import <bundles/bundles.h>
 #import <theme/OakTheme.h>
 #import <text/case.h>
@@ -20,6 +22,7 @@
 // Private properties of DocumentWindowController, defined in its main file
 @interface DocumentWindowController (AgentPrivate)
 @property (nonatomic) OakTextView* textView;
+@property (nonatomic) FileBrowserViewController* fileBrowser;
 @end
 
 // Implemented by OakTextView (NSTextInputClient and snippet insertion) but not declared in its public header
@@ -342,20 +345,31 @@ static void* kFirstResponderContext = &kFirstResponderContext;
 	[self.agentPanel askAboutSelection];
 }
 
+// The line at `index` in the text view, for the inline prompt to sit under;
+// the top of the visible area if it’s scrolled out of view
+static NSRect LineRectAtIndex (OakTextView* textView, NSUInteger index)
+{
+	NSRect screenRect = [textView firstRectForCharacterRange:NSMakeRange(index, 0) actualRange:nullptr];
+	NSRect caretRect  = [textView convertRect:[textView.window convertRectFromScreen:screenRect] fromView:nil];
+	if(!NSIntersectsRect(caretRect, textView.visibleRect))
+		caretRect = NSMakeRect(NSMidX(textView.visibleRect), NSMinY(textView.visibleRect), 1, 1);
+	caretRect.size.width = MAX(caretRect.size.width, 1);
+	return caretRect;
+}
+
 - (IBAction)askAgentAtCaret:(id)sender
 {
 	OakTextView* textView = self.textView;
 	if(!textView)
 		return;
 	[self.window makeFirstResponder:textView];
+	[[self agentPanelCreatingIfNeeded] showInlinePromptRelativeToRect:LineRectAtIndex(textView, textView.selectedRange.location) ofView:textView];
+}
 
-	NSRange selection = textView.selectedRange;
-	NSRect screenRect = [textView firstRectForCharacterRange:NSMakeRange(selection.location, 0) actualRange:nullptr];
-	NSRect caretRect  = [textView convertRect:[self.window convertRectFromScreen:screenRect] fromView:nil];
-	if(!NSIntersectsRect(caretRect, textView.visibleRect))
-		caretRect = NSMakeRect(NSMidX(textView.visibleRect), NSMinY(textView.visibleRect), 1, 1);
-	caretRect.size.width = MAX(caretRect.size.width, 1);
-	[[self agentPanelCreatingIfNeeded] showInlinePromptRelativeToRect:caretRect ofView:textView];
+- (NSRect)selectionEndRectForAgentPanel:(AgentPanelViewController*)agentPanel
+{
+	OakTextView* textView = self.textView;
+	return textView ? LineRectAtIndex(textView, NSMaxRange(textView.selectedRange)) : NSZeroRect;
 }
 
 // Sent by the file browser’s Add to Agent Chat
@@ -385,9 +399,41 @@ static void* kFirstResponderContext = &kFirstResponderContext;
 @end
 
 @implementation DocumentWindowController (AgentPanelDelegate)
+// The agent’s working directory:
+// 1. The project folder, when one was chosen: a folder opened as a project, or
+//    projectDirectory in .tm_properties. The agent finds .claude there.
+// 2. The folder of the document, if it has been saved (an untitled document’s
+//    backup location doesn’t count).
+// 3. The folder at the top of the File Browser (a preference).
+// 4. The home folder.
+// The window’s projectPath isn’t used: without a project it falls back to the
+// File Browser or the document, in the opposite order.
 - (NSString*)projectPathForAgentPanel:(AgentPanelViewController*)agentPanel
 {
-	return self.projectPath ?: self.selectedDocument.directory ?: NSHomeDirectory();
+	if(NSString* projectFolder = [self chosenProjectFolder])
+		return projectFolder;
+	if(NSString* documentPath = self.selectedDocument.path)
+		return documentPath.stringByDeletingLastPathComponent;
+	if([NSUserDefaults.standardUserDefaults boolForKey:kUserDefaultsAgentUsesFileBrowserFolderKey])
+	{
+		if(NSString* fileBrowserFolder = [self searchRootForAgentPanel:agentPanel])
+			return fileBrowserFolder;
+	}
+	return NSHomeDirectory();
+}
+
+- (NSString*)chosenProjectFolder
+{
+	if(self.defaultProjectPath)
+		return self.defaultProjectPath;
+
+	// Read from where the document is, or else what the File Browser shows
+	NSString* documentPath = self.selectedDocument.path;
+	NSString* folder = documentPath.stringByDeletingLastPathComponent ?: (self.fileBrowserVisible ? self.fileBrowser.path : nil);
+	if(!folder)
+		return nil;
+	std::string const projectDirectory = settings_for_path(documentPath ? to_s(documentPath) : NULL_STR, scope::scope_t(), to_s(folder)).get(kSettingsProjectDirectoryKey, NULL_STR);
+	return path::is_absolute(projectDirectory) ? to_ns(path::normalize(projectDirectory)) : nil;
 }
 
 - (NSDictionary<NSString*, NSColor*>*)codeColorsForAgentPanel:(AgentPanelViewController*)agentPanel
@@ -458,6 +504,16 @@ static void* kFirstResponderContext = &kFirstResponderContext;
 }
 
 // Includes the cursor position so the agent knows where “here” is
+- (NSString*)searchRootForAgentPanel:(AgentPanelViewController*)agentPanel
+{
+	// nil for locations that aren’t folders on disk (e.g. SCM status, Favorites)
+	NSString* path = self.fileBrowserVisible ? self.fileBrowser.path : nil;
+	BOOL isDirectory = NO;
+	if(path && [NSFileManager.defaultManager fileExistsAtPath:path isDirectory:&isDirectory] && isDirectory)
+		return path;
+	return nil;
+}
+
 - (AgentAttachment*)currentFileAttachmentForAgentPanel:(AgentPanelViewController*)agentPanel
 {
 	OakDocument* document = self.selectedDocument;
@@ -508,24 +564,48 @@ static void* kFirstResponderContext = &kFirstResponderContext;
 
 - (NSDictionary*)agentPanel:(AgentPanelViewController*)agentPanel applyText:(NSString*)text
 {
+	return [self applyAgentText:text afterSelection:NO];
+}
+
+- (NSDictionary*)agentPanel:(AgentPanelViewController*)agentPanel applyTextAfterSelection:(NSString*)text
+{
+	return [self applyAgentText:text afterSelection:YES];
+}
+
+- (NSDictionary*)applyAgentText:(NSString*)text afterSelection:(BOOL)afterSelection
+{
 	OakDocument* document = self.selectedDocument;
 	OakTextView* textView = self.textView;
 	if(!document.isLoaded || !textView)
 		return nil;
 
-	// Without a selection the code goes at the end of the document, on a line of its own
 	NSString* originalText = document.content ?: @"";
-	NSRange range = textView.hasSelection ? textView.selectedRange : NSMakeRange(originalText.length, 0);
-	if(NSMaxRange(range) > originalText.length)
-		return nil;
-	if(!textView.hasSelection && originalText.length && ![originalText hasSuffix:@"\n"])
-		text = [@"\n" stringByAppendingString:text];
+	NSRange range;
+	if(afterSelection)
+	{
+		// After the selection or caret, on lines of its own
+		NSRange const selection = textView.selectedRange;
+		range = NSMakeRange(MIN(NSMaxRange(selection), originalText.length), 0);
+		if(range.location && [originalText characterAtIndex:range.location - 1] != '\n')
+			text = [@"\n" stringByAppendingString:text];
+		if(range.location < originalText.length && [originalText characterAtIndex:range.location] != '\n' && ![text hasSuffix:@"\n"])
+			text = [text stringByAppendingString:@"\n"];
+	}
+	else
+	{
+		// Without a selection the code goes at the end of the document, on a line of its own
+		range = textView.hasSelection ? textView.selectedRange : NSMakeRange(originalText.length, 0);
+		if(NSMaxRange(range) > originalText.length)
+			return nil;
+		if(!textView.hasSelection && originalText.length && ![originalText hasSuffix:@"\n"])
+			text = [@"\n" stringByAppendingString:text];
+	}
 
 	NSString* currentText = [originalText stringByReplacingCharactersInRange:range withString:text];
 	std::string const after = to_s(currentText);
 	auto const replacement = ChangedRange(to_s(originalText), after);
 	if(replacement.first.first != replacement.first.second || !replacement.second.empty())
-		[document performReplacements:{ replacement } checksum:0];
+		[textView performReplacements:{ replacement }];
 	[self.window makeFirstResponder:textView];
 
 	size_t from = replacement.first.first, to = from + replacement.second.size();
@@ -592,8 +672,13 @@ static void* kFirstResponderContext = &kFirstResponderContext;
 		return NO;
 
 	auto const range = ChangedRange(to_s(document.content ?: @""), to_s(text));
-	if(range.first.first != range.first.second || !range.second.empty())
-		[document performReplacements:{ range } checksum:0];
+	if(range.first.first == range.first.second && range.second.empty())
+		return YES;
+
+	// Through the view showing it, if any, so the view redraws and resizes
+	if(OakTextView* textView = self.textView; textView && textView.document == document)
+		[textView performReplacements:{ range }];
+	else	[document performReplacements:{ range } checksum:0];
 	return YES;
 }
 

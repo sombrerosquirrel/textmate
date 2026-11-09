@@ -130,7 +130,9 @@ static BOOL IsElision (NSString* trimmedLine)
 		for(NSString* line in [wanted componentsSeparatedByString:@"\n"])
 			[codeLines addObject:Trimmed(line)];
 
-		if([[content componentsJoinedByString:@"\n"] isEqualToString:[codeLines componentsJoinedByString:@"\n"]])
+		// Without a closing fence (the reply ended or is still coming) the content can end in blank lines
+		NSString* contentText = [[content componentsJoinedByString:@"\n"] stringByTrimmingCharactersInSet:NSCharacterSet.newlineCharacterSet];
+		if([contentText isEqualToString:[codeLines componentsJoinedByString:@"\n"]])
 		{
 			// Up to three lines of text just before the fence
 			NSMutableArray<NSString*>* before = [NSMutableArray array];

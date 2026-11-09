@@ -40,6 +40,7 @@ static NSDictionary* default_settings ()
 		kUserDefaultsClipboardHistoryDaysToKeep:  @(30),
 		kUserDefaultsLSPShowInlineDiagnosticsKey:    @YES,
 		kUserDefaultsMarkdownPreviewRendererKey:     @"builtin",
+		kUserDefaultsAgentUsesFileBrowserFolderKey:  @YES,
 	};
 }
 
@@ -139,6 +140,8 @@ NSString* const kUserDefaultsFormatterConfigurationsKey = @"formatters";
 // ====================
 
 NSString* const kUserDefaultsMarkdownPreviewRendererKey     = @"markdownPreviewRenderer";
+NSString* const kUserDefaultsAgentUsesFileBrowserFolderKey  = @"agentUsesFileBrowserFolder";
+NSString* const kUserDefaultsAgentChatStyleKey              = @"agentPanelMarkdownStyle"; // AgentUI’s kUserDefaultsAgentPanelMarkdownStyleKey
 NSString* const kUserDefaultsMarkdownPreviewAllowRawHTMLKey = @"markdownPreviewAllowRawHTML";
 NSString* const kUserDefaultsMarkdownPreviewCmarkPathKey    = @"markdownPreviewCmarkPath";
 

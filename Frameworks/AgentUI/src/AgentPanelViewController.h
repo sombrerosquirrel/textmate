@@ -14,6 +14,9 @@
 // The project’s `.tm_properties` agent settings: { agentName, agentCommand }, either may be missing.
 - (NSDictionary<NSString*, NSString*>*)agentSettingsForAgentPanel:(AgentPanelViewController*)agentPanel;
 - (AgentAttachment*)currentFileAttachmentForAgentPanel:(AgentPanelViewController*)agentPanel;
+// The folder at the top of the File Browser; agents search only inside it
+// unless the user allows more. nil: the project folder.
+- (NSString*)searchRootForAgentPanel:(AgentPanelViewController*)agentPanel;
 - (AgentAttachment*)selectionAttachmentForAgentPanel:(AgentPanelViewController*)agentPanel; // nil without a selection
 - (NSArray<AgentAttachment*>*)openFileAttachmentsForAgentPanel:(AgentPanelViewController*)agentPanel;
 - (void)agentPanel:(AgentPanelViewController*)agentPanel insertText:(NSString*)text;
@@ -23,6 +26,11 @@
 // one, as one undoable edit, and selects the new text. Returns { path (if
 // saved), originalText, currentText }, or nil.
 - (NSDictionary*)agentPanel:(AgentPanelViewController*)agentPanel applyText:(NSString*)text;
+// As applyText:, but after the selection (or caret), on lines of its own
+- (NSDictionary*)agentPanel:(AgentPanelViewController*)agentPanel applyTextAfterSelection:(NSString*)text;
+// The line where the selection (or caret) ends, in the coordinates of the view
+// the inline prompt was shown for; NSZeroRect if there is none
+- (NSRect)selectionEndRectForAgentPanel:(AgentPanelViewController*)agentPanel;
 - (void)agentPanel:(AgentPanelViewController*)agentPanel openFile:(NSString*)path line:(NSUInteger)line;
 // Shows `diff` (unified diff text) in a new document.
 - (void)agentPanel:(AgentPanelViewController*)agentPanel showDiff:(NSString*)diff title:(NSString*)title;
@@ -48,6 +56,7 @@
 extern NSString* const kUserDefaultsAgentPanelAgentKey;           // identifier of the last used agent
 extern NSString* const kUserDefaultsAgentPanelUsesCurrentFileKey; // requests go into the open file (default YES)
 extern NSString* const kUserDefaultsAgentPanelFoldsCodeBlocksKey; // code blocks start folded to their line (default NO)
+extern NSString* const kUserDefaultsAgentPanelMarkdownStyleKey;  // replies styled @"builtin" (default) or like @"github"
 
 @interface AgentPanelViewController : NSViewController
 @property (nonatomic, weak) id<AgentPanelDelegate> delegate;

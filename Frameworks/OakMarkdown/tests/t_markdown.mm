@@ -218,6 +218,80 @@ void test_block_quote ()
 	OAK_ASSERT_EQ(ParagraphStyleAt(str, @"normal").textBlocks.count, 0);
 }
 
+void test_default_style_layout ()
+{
+	// The built-in look, also used by the Markdown preview
+	NSAttributedString* str = Render(@"# Title\n\nBody\n\n- item\n\n> quote");
+	OAK_ASSERT_EQ(FontAt(str, @"Title").pointSize, NSFont.systemFontSize + 6);
+	OAK_ASSERT_EQ(ParagraphStyleAt(str, @"Title").paragraphSpacingBefore, 6);
+	OAK_ASSERT_EQ(ParagraphStyleAt(str, @"Title").paragraphSpacing, 4);
+	OAK_ASSERT_EQ(ParagraphStyleAt(str, @"Title").textBlocks.count, 0);
+	OAK_ASSERT_EQ(ParagraphStyleAt(str, @"Body").paragraphSpacing, 6);
+	OAK_ASSERT_EQ(ParagraphStyleAt(str, @"Body").lineSpacing, 0);
+	OAK_ASSERT_EQ(ParagraphStyleAt(str, @"item").paragraphSpacing, 3);
+	OAK_ASSERT_EQ([ParagraphStyleAt(str, @"quote").textBlocks.firstObject widthForLayer:NSTextBlockBorder edge:NSMinXEdge], 3);
+}
+
+void test_github_style ()
+{
+	OakMarkdownStyle* style = [OakMarkdownStyle githubStyle];
+	NSAttributedString* str = [OakMarkdownRenderer attributedStringFromMarkdown:@"# Title\n\n## Section\n\n### Sub\n\nBody with [a link](https://example.com)\n\n> quote\n\n| A |\n|---|\n| 1 |\n\n<h2>HTML</h2>" style:style codeBlocks:nullptr codeBlockFooter:nil];
+
+	OAK_ASSERT_EQ(FontAt(str, @"Body").pointSize, 14);
+	OAK_ASSERT_EQ(FontAt(str, @"Title").pointSize, 28);
+	OAK_ASSERT_EQ(FontAt(str, @"Section").pointSize, 21);
+	OAK_ASSERT(IsBold(FontAt(str, @"Section")));
+
+	// A line under h1 and h2 (also in HTML), not under h3
+	for(NSString* heading in @[ @"Title", @"Section", @"HTML" ])
+	{
+		NSTextBlock* block = ParagraphStyleAt(str, heading).textBlocks.firstObject;
+		OAK_ASSERT(block != nil);
+		OAK_ASSERT_EQ([block widthForLayer:NSTextBlockBorder edge:NSMaxYEdge], 1);
+		OAK_ASSERT_EQ([block widthForLayer:NSTextBlockMargin edge:NSMinYEdge], style.headingSpacingBefore);
+	}
+	OAK_ASSERT_EQ(ParagraphStyleAt(str, @"Sub").textBlocks.count, 0);
+	OAK_ASSERT_EQ(ParagraphStyleAt(str, @"Sub").paragraphSpacingBefore, style.headingSpacingBefore);
+
+	OAK_ASSERT_EQ(ParagraphStyleAt(str, @"Body").paragraphSpacing, 14);
+	OAK_ASSERT_GT(ParagraphStyleAt(str, @"Body").lineSpacing, 0);
+	OAK_ASSERT_EQ([ParagraphStyleAt(str, @"quote").textBlocks.firstObject widthForLayer:NSTextBlockBorder edge:NSMinXEdge], style.quoteBorderWidth);
+	OAK_ASSERT_EQ([ParagraphStyleAt(str, @"1").textBlocks.firstObject widthForLayer:NSTextBlockPadding edge:NSMinXEdge], 13 + 1); // + the line it draws
+
+	NSRange link = [str.string rangeOfString:@"a link"];
+	OAK_ASSERT([[str attribute:NSForegroundColorAttributeName atIndex:link.location effectiveRange:nullptr] isEqual:style.linkColor]);
+}
+
+void test_rounded_striped_table ()
+{
+	OakMarkdownStyle* style = [OakMarkdownStyle githubStyle];
+	NSAttributedString* str = [OakMarkdownRenderer attributedStringFromMarkdown:@"| Name | Value |\n|---|---|\n| one | 1 |\n| two | 2 |\n| three | 3 |" style:style codeBlocks:nullptr codeBlockFooter:nil];
+	NSTextTableBlock* cell = ParagraphStyleAt(str, @"three").textBlocks.firstObject;
+	OAK_ASSERT([cell isKindOfClass:NSClassFromString(@"OakMarkdownTableCell")]);
+	OAK_ASSERT_EQ([[(id)cell.table valueForKey:@"rowCount"] integerValue], 4);
+	OAK_ASSERT_EQ([cell widthForLayer:NSTextBlockBorder edge:NSMinXEdge], 0); // it draws its own lines
+
+	// The built-in style keeps plain tables
+	NSTextTableBlock* plain = ParagraphStyleAt(Render(@"| A |\n|---|\n| 1 |"), @"1").textBlocks.firstObject;
+	OAK_ASSERT([plain isMemberOfClass:[NSTextTableBlock class]]);
+	OAK_ASSERT_EQ([plain widthForLayer:NSTextBlockBorder edge:NSMinXEdge], 0.5);
+
+	// Draws (views need the main thread); a picture for checking by eye with OAK_MARKDOWN_TABLE_PNG=path
+	__block NSBitmapImageRep* bitmap;
+	dispatch_sync(dispatch_get_main_queue(), ^{
+		NSTextView* textView = [[NSTextView alloc] initWithFrame:NSMakeRect(0, 0, 300, 200)];
+		textView.backgroundColor = NSColor.whiteColor;
+		textView.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
+		[textView.textStorage setAttributedString:str];
+		[textView.layoutManager ensureLayoutForTextContainer:textView.textContainer];
+		bitmap = [textView bitmapImageRepForCachingDisplayInRect:textView.bounds];
+		[textView cacheDisplayInRect:textView.bounds toBitmapImageRep:bitmap];
+	});
+	OAK_ASSERT(bitmap != nil);
+	if(char const* path = getenv("OAK_MARKDOWN_TABLE_PNG"))
+		[[bitmap representationUsingType:NSBitmapImageFileTypePNG properties:@{ }] writeToFile:@(path) atomically:YES];
+}
+
 // =====================
 // = Document Preview =
 // =====================

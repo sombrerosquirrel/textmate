@@ -115,3 +115,36 @@ void test_prompt ()
 
 	OAK_ASSERT_EQ([AgentAttachment promptWithText:@"" attachments:@[ ] promptCapabilities:kBasic].count, 0);
 }
+
+void test_prompt_with_search_root ()
+{
+	// The rule comes last, after the current-file note, and names the folder
+	AgentAttachment* current = [AgentAttachment fileAttachmentWithPath:@"/tmp/project/docs/a.md" text:@"x" cursorLine:1 column:1];
+	NSArray* prompt = [AgentAttachment promptWithText:@"Find the setup guide" attachments:@[ ] currentFile:current searchRoot:@"/tmp/project/docs" promptCapabilities:kBasic];
+	OAK_ASSERT_EQ(prompt.count, 3);
+	OAK_ASSERT([prompt[2][@"text"] isEqualToString:[AgentAttachment searchScopeNoteForDirectory:@"/tmp/project/docs"]]);
+	OAK_ASSERT([prompt[2][@"text"] hasPrefix:@"Search scope: the File Browser shows /tmp/project/docs."]);
+	OAK_ASSERT([prompt[2][@"text"] containsString:@"without first asking the user for permission"]);
+
+	// Nothing to send, nothing added; no folder, no rule
+	OAK_ASSERT_EQ([AgentAttachment promptWithText:@"" attachments:@[ ] currentFile:nil searchRoot:@"/tmp/project" promptCapabilities:kBasic].count, 0);
+	OAK_ASSERT_EQ([AgentAttachment promptWithText:@"Hi" attachments:@[ ] currentFile:nil searchRoot:nil promptCapabilities:kBasic].count, 1);
+}
+
+void test_slash_command_sent_alone ()
+{
+	AgentAttachment* current = [AgentAttachment fileAttachmentWithPath:@"/tmp/project/main.cc" text:@"int main () { }" cursorLine:3 column:1];
+	AgentAttachment* other   = [AgentAttachment fileAttachmentWithPath:@"/tmp/project/other.cc" text:@"x"];
+	for(NSString* command in @[ @"/clear", @"/review main.cc", @"/mcp:server:tool arg" ])
+	{
+		NSArray* prompt = [AgentAttachment promptWithText:command attachments:@[ other ] currentFile:current searchRoot:@"/tmp/project" promptCapabilities:kEmbedded];
+		OAK_ASSERT_EQ(prompt.count, 1);
+		OAK_ASSERT([prompt[0][@"text"] isEqualToString:command]);
+	}
+
+	OAK_ASSERT(![AgentAttachment isSlashCommand:@"/Users/me/file.txt explain"]);
+	OAK_ASSERT(![AgentAttachment isSlashCommand:@"/"]);
+	OAK_ASSERT(![AgentAttachment isSlashCommand:@" /clear"]);
+	OAK_ASSERT(![AgentAttachment isSlashCommand:@"please /clear"]);
+	OAK_ASSERT_EQ([AgentAttachment promptWithText:@"/Users/me/a.txt explain" attachments:@[ ] currentFile:current promptCapabilities:kEmbedded].count, 2);
+}

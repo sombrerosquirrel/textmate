@@ -41,6 +41,7 @@ If an agent isn't signed in, the chat says so and offers **Sign In**, which runs
 | ⎋ | Stop the agent |
 | ↑ / ↓ | Earlier messages, on the first or last line |
 | / | The agent's commands; ↩ sends the selected one, ⇥ completes it |
+| /clear | Starts a new chat, like the New Chat button (unless the agent has its own /clear). A command is sent as typed, without attachments |
 
 Add context with **+** (current file, selection, open files, other files), by dragging files in, or by pasting images if the agent accepts them. Each appears as a chip you can remove.
 
@@ -49,12 +50,35 @@ The switch beside **+** decides whether the agent works in the open file. While 
 From the editor:
 
 - **Text ▸ Ask Agent About Selection** attaches the selection, or the cursor position, and moves to the panel.
-- **View ▸ Ask Agent at Caret…** (⌃⇧⌘I) is inline chat. A small field opens at the caret, and your request goes to the window's chat about the selection or the caret's line. The field shows what the agent is doing and asks for any approvals it needs, with the diff of a proposed edit, then shows what changed in each file with **Keep**, **Undo** and **Show in Chat**. **Undo** there takes back only that request's edits; earlier ones stay in the changed-files list. The panel doesn't need to be open.
+- **View ▸ Ask Agent at Caret…** (⌃⇧⌘I) is inline chat. A small field opens at the caret, and your request goes to the window's chat about the selection or the caret's line. The field shows what the agent is doing and asks for any approvals it needs, with the diff of a proposed edit, then shows what changed in each file with **Keep**, **Undo** and **Show in Chat**. When the agent answers with code instead of editing, the reply is shown formatted, with **Copy** and **Replace Selection** (or **Insert at Cursor** when nothing was selected). The popover stays open afterwards: the button becomes **Insert After**, which adds more on the lines after what you just inserted. With more than one code block, a checkbox for each picks which ones the buttons use (the first is checked to start with; checked blocks go in one after another). Selecting text in the reply uses just that instead, e.g. a block without its example line. Code from Replace Selection and Insert After is listed with the agent's changes, so you can review or undo it; ⌘Z undoes any of them. **Undo** there takes back only that request's edits; earlier ones stay in the changed-files list. The panel doesn't need to be open.
 - In the file browser, right-click files ▸ **Add to Agent Chat**.
+
+### Where agents search
+
+Every message tells the agent that the folder at the top of the File Browser is its search area. When it needs to find a file, document or anything else, it searches that folder first and stays inside it. Before it searches anywhere else (a parent folder, the rest of the project, your home folder) it must ask you, say where and why, and wait for your answer. Files you name or attach can still be read where they are.
+
+To widen or narrow the search, move the File Browser to another folder before sending. The folder is read when the message is sent, so Try Again uses wherever the File Browser is then. Without a File Browser folder (closed, or showing Favorites or SCM status), the project folder is used.
+
+This rule is an instruction to the agent, so it applies to every agent. TextMate can't block the agent's own search tools: anything that needs your approval still shows an approval card.
+
+### Where agents start
+
+An agent starts in the first of these folders:
+
+1. **The project folder**, if one was chosen: a folder you opened as a project, or `projectDirectory` in `.tm_properties`. The agent finds the project's `.claude` settings (and `CLAUDE.md`) there.
+2. **The document's folder**, if the document has been saved. An untitled document doesn't count, even though TextMate keeps a backup of it somewhere.
+3. **The folder at the top of the File Browser**, if the File Browser is visible. Turn this off in Preferences ▸ Agents ("Without a project or saved document, start agents in the File Browser's folder").
+4. **Your home folder.**
+
+The folder is chosen when the agent starts. Moving the File Browser afterwards changes the search rule above but not where the agent runs; start a **New Chat** to move the agent too. An agent that restarts mid-chat continues in the folder the chat began in.
+
+Claude Code asks before reading or editing outside the folder it runs in ("Yes, allow reading from `dir/` during this session", "Yes, allow all edits in `dir/` during this session"). When it starts in the File Browser's folder, that question enforces the search rule; inside a project it only covers leaving the project.
 
 ## Replies
 
-Replies are formatted Markdown. Each code block has a line over it: its language, how many lines it has, and where it sits, e.g. `▸ Objective-C · 18 lines · Parser.mm:120–137`. Click the place to open the file at those lines. The place is found when the reply names the file (in the code fence, or just before the block), or when the code is in a file the agent touched or one you have open; otherwise the line shows the block's first line of code.
+Replies are formatted Markdown, in the built-in style of the Markdown preview or, with **Preferences ▸ Agents ▸ Chat text style: GitHub**, styled like GitHub: its fonts, colours and link blue, roomier spacing, a line under the two largest heading levels, wider quote bars, and tables with rounded corners and shaded alternate rows. The change applies to open chats at once. Code blocks keep your editor theme either way.
+
+Each code block has a line over it: its language, how many lines it has, and where it sits, e.g. `▸ Objective-C · 18 lines · Parser.mm:120–137`. Click the place to open the file at those lines. The place is found when the reply names the file (in the code fence, or just before the block), or when the code is in a file the agent touched or one you have open; otherwise the line shows the block's first line of code.
 
 Below the line, the code shows in a small read-only editor with your theme, the font for its language, and the editor's selection, copying, find and keyboard folding. Long lines scroll sideways. To change the code, open the file from its place. Click the line to fold the block to just that line, and again to show it.
 

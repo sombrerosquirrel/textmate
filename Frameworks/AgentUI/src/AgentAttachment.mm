@@ -128,6 +128,25 @@ static NSString* FileURI (NSString* path)
 
 + (NSArray<NSDictionary*>*)promptWithText:(NSString*)text attachments:(NSArray<AgentAttachment*>*)attachments currentFile:(AgentAttachment*)currentFile promptCapabilities:(NSDictionary*)promptCapabilities
 {
+	return [self promptWithText:text attachments:attachments currentFile:currentFile searchRoot:nil promptCapabilities:promptCapabilities];
+}
+
++ (BOOL)isSlashCommand:(NSString*)text
+{
+	static NSRegularExpression* const regex = [NSRegularExpression regularExpressionWithPattern:@"\\A/[A-Za-z][\\w:.-]*(?=\\s|\\z)" options:0 error:nil];
+	return text.length && [regex firstMatchInString:text options:0 range:NSMakeRange(0, text.length)] != nil;
+}
+
++ (NSString*)searchScopeNoteForDirectory:(NSString*)searchRoot
+{
+	return [NSString stringWithFormat:@"Search scope: the File Browser shows %1$@. When you need to find a file, document, symbol or anything else, search inside %1$@ first and keep searches tight to it: give search tools that folder as their path, never a parent folder, the home folder or /. Do not search outside %1$@ — not even its parent folders or the rest of the project — without first asking the user for permission and waiting for their answer; say where you want to look and why. Files the user names or attaches may be read where they are.", searchRoot];
+}
+
++ (NSArray<NSDictionary*>*)promptWithText:(NSString*)text attachments:(NSArray<AgentAttachment*>*)attachments currentFile:(AgentAttachment*)currentFile searchRoot:(NSString*)searchRoot promptCapabilities:(NSDictionary*)promptCapabilities
+{
+	if([self isSlashCommand:text])
+		return @[ @{ @"type": @"text", @"text": text } ];
+
 	NSMutableArray* res = [NSMutableArray array];
 	if(text.length)
 		[res addObject:@{ @"type": @"text", @"text": text }];
@@ -147,6 +166,9 @@ static NSString* FileURI (NSString* path)
 		NSString* note   = [NSString stringWithFormat:@"The user has %@ open in the editor%@. Unless they say otherwise, requests that don’t name a file refer to it, and text to add or insert goes at the cursor.", currentFile.path, cursor];
 		[res addObject:@{ @"type": @"text", @"text": note }];
 	}
+
+	if(res.count && searchRoot.length)
+		[res addObject:@{ @"type": @"text", @"text": [self searchScopeNoteForDirectory:searchRoot] }];
 	return res;
 }
 @end

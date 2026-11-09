@@ -169,6 +169,7 @@ static NSUInteger LineCount (NSString* code)
 	NSTimer* _workingStatusTimer;
 	BOOL _workingMarkerHidden;
 	BOOL _reloading;                 // reloadData empties and refills the text
+	NSString* _clickedIdentifier;    // at the next update: the item to keep where it is
 	NSMutableSet<NSString*>* _scrolledToPermissionIds;
 }
 @end
@@ -253,6 +254,21 @@ static NSUInteger LineCount (NSString* code)
 		return;
 	_foldsCodeBlocks = flag;
 	[_toggledCodeBlocks removeAllObjects];
+	[self reloadData];
+}
+
+- (void)setUsesGitHubStyle:(BOOL)flag
+{
+	if(_usesGitHubStyle == flag)
+		return;
+	_usesGitHubStyle = flag;
+
+	OakMarkdownStyle* style = flag ? [OakMarkdownStyle githubStyle] : [OakMarkdownStyle defaultStyle];
+	style.codeBlockBackgroundColor = _markdownStyle.codeBlockBackgroundColor;
+	style.codeBlockTextColor       = _markdownStyle.codeBlockTextColor;
+	style.codeHighlighter          = _markdownStyle.codeHighlighter;
+	_markdownStyle = style;
+	self.linkTextAttributes = @{ NSForegroundColorAttributeName: style.linkColor ?: NSColor.linkColor, NSCursorAttributeName: NSCursor.pointingHandCursor };
 	[self reloadData];
 }
 
@@ -529,11 +545,15 @@ static NSUInteger LineCount (NSString* code)
 	step = MAX(-limit, MIN(step, limit));
 	CGFloat progress = MIN(1, (link.timestamp + elapsed - _scrollStart) / kScrollEaseIn);
 	step *= progress * progress * (3 - 2 * progress); // smoothstep
-	BOOL done = fabs(remaining) < 1;
+	// The clip view keeps to whole pixels, so smaller steps would never arrive
+	CGFloat pixel = 1 / (self.window.backingScaleFactor ?: 1);
+	if(progress >= 1 && fabs(step) < pixel)
+		step = copysign(pixel, remaining);
+	BOOL done = fabs(remaining) <= MAX(pixel, 0.5);
 
-	_scrollPosition = done ? target : position + step;
-	[clipView setBoundsOrigin:NSMakePoint(NSMinX(clipView.bounds), _scrollPosition)];
+	[clipView setBoundsOrigin:NSMakePoint(NSMinX(clipView.bounds), done ? target : position + step)];
 	[clipView.enclosingScrollView reflectScrolledClipView:clipView];
+	_scrollPosition = NSMinY(clipView.bounds); // where it went, after rounding
 	if(done)
 		[self stopGliding];
 }
@@ -578,6 +598,248 @@ static NSUInteger LineCount (NSString* code)
 	}
 }
 
+// What shows stays put when text above it changes, e.g. a reply folding as
+// newer ones pass it or a tool call’s output: the first item in view that
+// isn’t about to change, or the one clicked, keeps its place
+- (NSString*)anchorItemTop:(CGFloat*)top
+{
+	if(![self.superview isKindOfClass:[NSClipView class]] || !self.textStorage.length)
+		return nil;
+
+	NSRect visible = self.visibleRect;
+	NSPoint point = NSMakePoint(NSMinX(visible) - self.textContainerOrigin.x, NSMinY(visible) - self.textContainerOrigin.y);
+	NSUInteger glyph = [self.layoutManager glyphIndexForPoint:point inTextContainer:self.textContainer];
+	NSUInteger index = [self.layoutManager characterIndexForGlyphAtIndex:glyph];
+
+	NSUInteger location = 0;
+	for(AgentTranscriptItem* item in _transcript.items)
+	{
+		NSString* identifier = item.identifier;
+		NSUInteger length = _renderedLengths[identifier].unsignedIntegerValue;
+		BOOL clicked = [identifier isEqualToString:_clickedIdentifier];
+		if(length && (clicked || (!_clickedIdentifier && index < location + length && ![_pendingIdentifiers containsObject:identifier])))
+		{
+			*top = NSMinY([self rectOfRange:NSMakeRange(location, 1)]);
+			return identifier;
+		}
+		if(length && index < location + length)
+			index = location + length; // changing: look further down
+		location += length;
+	}
+	return nil;
+}
+
+- (void)keepItem:(NSString*)identifier atTop:(CGFloat)oldTop origin:(CGFloat)oldOrigin
+{
+	NSUInteger location = 0;
+	for(AgentTranscriptItem* item in _transcript.items)
+	{
+		NSUInteger length = _renderedLengths[item.identifier].unsignedIntegerValue;
+		if([item.identifier isEqualToString:identifier])
+		{
+			if(!length)
+				return;
+			CGFloat delta = NSMinY([self rectOfRange:NSMakeRange(location, 1)]) - oldTop;
+			NSClipView* clipView = (NSClipView*)self.superview;
+			if(fabs(delta) < 0.5 && NSMinY(clipView.bounds) == oldOrigin)
+				return;
+
+			// The room for the reply goes with the text
+			if(self.minSize.height > NSHeight(clipView.bounds))
+			{
+				self.minSize = NSMakeSize(0, MAX(NSHeight(clipView.bounds), self.minSize.height + delta));
+				[self sizeToFit];
+			}
+
+			CGFloat y = MAX(0, MIN(oldOrigin + delta, NSHeight(self.frame) - NSHeight(clipView.bounds)));
+			NSPoint origin = NSMakePoint(NSMinX(clipView.bounds), y);
+			_lastScrollOrigin = origin;
+			[clipView setBoundsOrigin:origin];
+			[clipView.enclosingScrollView reflectScrolledClipView:clipView];
+			if(_scrollLink) // a glide under way carries on from here
+			{
+				_scrollPosition = y;
+				_scrollTarget  += delta;
+			}
+			return;
+		}
+		location += length;
+	}
+}
+
+// ===================================
+// = Replacing only what changed =
+// ===================================
+
+static BOOL SameObjects (id a, id b) { return a == b || [a isEqual:b]; }
+
+// Text blocks (and tables) are made anew with each render and compare by
+// identity, so compare what they draw
+static BOOL SameBlockGeometry (NSTextBlock* a, NSTextBlock* b)
+{
+	if(a.class != b.class || a.verticalAlignment != b.verticalAlignment || !SameObjects(a.backgroundColor, b.backgroundColor))
+		return NO;
+	for(NSTextBlockDimension dimension : { NSTextBlockWidth, NSTextBlockMinimumWidth, NSTextBlockMaximumWidth, NSTextBlockHeight, NSTextBlockMinimumHeight, NSTextBlockMaximumHeight })
+	{
+		if([a valueForDimension:dimension] != [b valueForDimension:dimension] || [a valueTypeForDimension:dimension] != [b valueTypeForDimension:dimension])
+			return NO;
+	}
+	for(NSRectEdge edge : { NSMinXEdge, NSMinYEdge, NSMaxXEdge, NSMaxYEdge })
+	{
+		for(NSTextBlockLayer layer : { NSTextBlockPadding, NSTextBlockBorder, NSTextBlockMargin })
+		{
+			if([a widthForLayer:layer edge:edge] != [b widthForLayer:layer edge:edge] || [a widthValueTypeForLayer:layer edge:edge] != [b widthValueTypeForLayer:layer edge:edge])
+				return NO;
+		}
+		if(!SameObjects([a borderColorForEdge:edge], [b borderColorForEdge:edge]))
+			return NO;
+	}
+	return YES;
+}
+
+static BOOL SameTextBlock (NSTextBlock* a, NSTextBlock* b)
+{
+	if(a == b)
+		return YES;
+	if(!SameBlockGeometry(a, b))
+		return NO;
+	if(![a isKindOfClass:[NSTextTableBlock class]])
+		return YES;
+
+	NSTextTableBlock* cellA = (NSTextTableBlock*)a;
+	NSTextTableBlock* cellB = (NSTextTableBlock*)b;
+	NSTextTable* tableA = cellA.table;
+	NSTextTable* tableB = cellB.table;
+	if(cellA.startingRow != cellB.startingRow || cellA.rowSpan != cellB.rowSpan || cellA.startingColumn != cellB.startingColumn || cellA.columnSpan != cellB.columnSpan)
+		return NO;
+	if(tableA == tableB)
+		return YES;
+	if(!SameBlockGeometry(tableA, tableB) || tableA.numberOfColumns != tableB.numberOfColumns || tableA.layoutAlgorithm != tableB.layoutAlgorithm || tableA.collapsesBorders != tableB.collapsesBorders || tableA.hidesEmptyCells != tableB.hidesEmptyCells)
+		return NO;
+	for(NSString* key in @[ @"rowCount", @"cornerRadius", @"stripeColor", @"lineColor" ]) // OakMarkdown’s rounded tables
+	{
+		if([tableA respondsToSelector:NSSelectorFromString(key)] && !SameObjects([tableA valueForKey:key], [tableB valueForKey:key]))
+			return NO;
+	}
+	return YES;
+}
+
+static BOOL SameParagraphStyle (NSParagraphStyle* a, NSParagraphStyle* b)
+{
+	if(SameObjects(a, b))
+		return YES;
+	if(!a || !b || a.textBlocks.count != b.textBlocks.count)
+		return NO;
+	for(NSUInteger i = 0; i < a.textBlocks.count; ++i)
+	{
+		if(!SameTextBlock(a.textBlocks[i], b.textBlocks[i]))
+			return NO;
+	}
+	NSMutableParagraphStyle* withoutBlocksA = [a mutableCopy];
+	NSMutableParagraphStyle* withoutBlocksB = [b mutableCopy];
+	withoutBlocksA.textBlocks = @[ ];
+	withoutBlocksB.textBlocks = @[ ];
+	return [withoutBlocksA isEqual:withoutBlocksB];
+}
+
+static BOOL SameAttachment (NSTextAttachment* a, NSTextAttachment* b)
+{
+	if(SameObjects(a, b))
+		return YES;
+	// A code view’s placeholder: the view itself is found by AgentCodeBlockKeyAttributeName
+	id cellA = a.attachmentCell, cellB = b.attachmentCell;
+	return [cellA isKindOfClass:[AgentCodeBlockAttachmentCell class]] && [cellB isKindOfClass:[AgentCodeBlockAttachmentCell class]] && [(AgentCodeBlockAttachmentCell*)cellA height] == [(AgentCodeBlockAttachmentCell*)cellB height];
+}
+
+// `stored` is from the text storage, which adds a font where `rendered` has none
+static BOOL SameAttributes (NSDictionary* stored, NSDictionary* rendered)
+{
+	if([stored isEqualToDictionary:rendered])
+		return YES;
+	static NSFont* const fixedFont = [NSFont fontWithName:@"Helvetica" size:12];
+	NSMutableSet* keys = [NSMutableSet setWithArray:stored.allKeys];
+	[keys addObjectsFromArray:rendered.allKeys];
+	for(NSAttributedStringKey key in keys)
+	{
+		id a = stored[key], b = rendered[key];
+		if([key isEqualToString:NSFontAttributeName] && !b && SameObjects(a, fixedFont))
+			continue;
+		if([key isEqualToString:NSParagraphStyleAttributeName] ? !SameParagraphStyle(a, b) : ([key isEqualToString:NSAttachmentAttributeName] ? !SameAttachment(a, b) : !SameObjects(a, b)))
+			return NO;
+	}
+	return YES;
+}
+
+// Whether two paragraph styles of `rendered` share a text block (or table), i.e. lay out as one
+static BOOL ShareBlock (NSParagraphStyle* a, NSParagraphStyle* b)
+{
+	for(NSTextBlock* blockA in a.textBlocks)
+	{
+		for(NSTextBlock* blockB in b.textBlocks)
+		{
+			if(blockA == blockB)
+				return YES;
+			if([blockA isKindOfClass:[NSTextTableBlock class]] && [blockB isKindOfClass:[NSTextTableBlock class]] && ((NSTextTableBlock*)blockA).table == ((NSTextTableBlock*)blockB).table)
+				return YES;
+		}
+	}
+	return NO;
+}
+
+// How many characters at the start of `range` in `storage` are already as in
+// `rendered`. The rest is replaced, from there, so layout starts there rather
+// than at the item’s start. A text block (a table, code, a quote) that the
+// change falls in is replaced whole: half old and half new, it would draw as two.
+static NSUInteger SameStartLength (NSTextStorage* storage, NSRange range, NSAttributedString* rendered)
+{
+	NSUInteger const length = MIN(range.length, rendered.length);
+	if(!length)
+		return 0;
+
+	std::vector<unichar> oldChars(length), newChars(length);
+	[storage.string getCharacters:oldChars.data() range:NSMakeRange(range.location, length)];
+	[rendered.string getCharacters:newChars.data() range:NSMakeRange(0, length)];
+	NSUInteger same = 0;
+	while(same < length && oldChars[same] == newChars[same])
+		++same;
+
+	for(NSUInteger i = 0; i < same; )
+	{
+		NSRange oldRun, newRun;
+		NSDictionary* oldAttributes = [storage attributesAtIndex:range.location + i effectiveRange:&oldRun];
+		NSDictionary* newAttributes = [rendered attributesAtIndex:i effectiveRange:&newRun];
+		if(!SameAttributes(oldAttributes, newAttributes))
+		{
+			same = i;
+			break;
+		}
+		i = MIN(NSMaxRange(oldRun) - range.location, NSMaxRange(newRun));
+	}
+
+	if(same >= rendered.length)
+		return same;
+
+	// Not inside a character made of several code units (e.g. an emoji)
+	NSString* text = rendered.string;
+	same = [text rangeOfComposedCharacterSequenceAtIndex:same].location;
+
+	// From the start of the paragraph, and of the text block it’s in
+	NSUInteger start = [text paragraphRangeForRange:NSMakeRange(same, 0)].location;
+	NSParagraphStyle* style = [rendered attribute:NSParagraphStyleAttributeName atIndex:start effectiveRange:nullptr];
+	if(style.textBlocks.count)
+	{
+		while(start)
+		{
+			NSUInteger previous = [text paragraphRangeForRange:NSMakeRange(start - 1, 0)].location;
+			if(!ShareBlock(style, [rendered attribute:NSParagraphStyleAttributeName atIndex:previous effectiveRange:nullptr]))
+				break;
+			start = previous;
+		}
+		same = start;
+	}
+	return same;
+}
+
 - (void)flushPendingItems
 {
 	_flushScheduled = NO;
@@ -587,6 +849,10 @@ static NSUInteger LineCount (NSString* code)
 		[_pendingIdentifiers addObject:item.identifier];
 
 	BOOL wasAtBottom = _followsEnd || (!_reloading && [self isScrolledToBottom]);
+	BOOL followsEnd  = _followsEnd;
+	CGFloat anchorTop = 0, oldOrigin = NSMinY(self.visibleRect);
+	NSString* anchorItem = _reloading ? nil : [self anchorItemTop:&anchorTop];
+	_clickedIdentifier = nil;
 	NSTextStorage* storage = self.textStorage;
 	[storage beginEditing];
 	_fileTexts = [NSMutableDictionary dictionary];
@@ -623,8 +889,17 @@ static NSUInteger LineCount (NSString* code)
 				}
 			}];
 			if(oldLength)
-					[storage replaceCharactersInRange:NSMakeRange(location, oldLength.unsignedIntegerValue) withAttributedString:rendered];
-			else	[storage insertAttributedString:rendered atIndex:location];
+			{
+				// Only from the first change, so layout starts there rather than at the item’s start
+				NSUInteger const oldLen = oldLength.unsignedIntegerValue;
+				NSUInteger const same   = SameStartLength(storage, NSMakeRange(location, oldLen), rendered);
+				if(same < oldLen || same < rendered.length)
+					[storage replaceCharactersInRange:NSMakeRange(location + same, oldLen - same) withAttributedString:[rendered attributedSubstringFromRange:NSMakeRange(same, rendered.length - same)]];
+			}
+			else
+			{
+				[storage insertAttributedString:rendered atIndex:location];
+			}
 
 			_renderedLengths[identifier] = @(rendered.length);
 		}
@@ -637,6 +912,9 @@ static NSUInteger LineCount (NSString* code)
 
 	[self positionCodeViews];
 	[self.layoutManager ensureLayoutForTextContainer:self.textContainer];
+	if(anchorItem)
+		[self keepItem:anchorItem atTop:anchorTop origin:oldOrigin];
+	_followsEnd = followsEnd; // the text changing isn’t the user scrolling
 	if(_makesRoomForReply)
 	{
 		_makesRoomForReply = NO;
@@ -1116,9 +1394,30 @@ static NSUInteger IndexOfDiffForPath (NSDictionary* toolCall, NSString* path)
 // Where a code block sits: a file named by its fence or the text before it,
 // or touched by the turn’s tool calls, or open, whose text contains the
 // code. A file named by the fence is the place even without the code in it.
+// Whether a closing fence follows the block’s code in `markdown`
+static BOOL CodeBlockIsClosed (OakMarkdownCodeBlock* codeBlock, NSString* markdown)
+{
+	NSRange code = codeBlock.code.length ? [markdown rangeOfString:codeBlock.code options:NSBackwardsSearch] : NSMakeRange(NSNotFound, 0);
+	if(code.location == NSNotFound)
+		return YES; // can’t tell, so look it up
+	NSString* rest = [markdown substringFromIndex:NSMaxRange(code)];
+	for(NSString* line in [rest componentsSeparatedByString:@"\n"])
+	{
+		NSString* trimmed = [line stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
+		if([trimmed hasPrefix:@"```"] || [trimmed hasPrefix:@"~~~"])
+			return YES;
+	}
+	return NO;
+}
+
 - (NSDictionary*)placeOfCodeBlock:(OakMarkdownCodeBlock*)codeBlock item:(AgentTranscriptItem*)item
 {
 	if(![_actionDelegate respondsToSelector:@selector(transcriptView:absolutePathForPath:)] || ![_actionDelegate respondsToSelector:@selector(transcriptView:textOfFileAtPath:)])
+		return nil;
+
+	// A block still streaming changes with each update, so it would search the
+	// files again each time (most of the time an update took); wait for its end
+	if(item == _workingItem && !CodeBlockIsClosed(codeBlock, item.text))
 		return nil;
 
 	NSString* cacheKey = [NSString stringWithFormat:@"%@\n%@\n%@", item.identifier, codeBlock.info ?: @"", codeBlock.code];
@@ -1607,6 +1906,7 @@ static NSUInteger IndexOfDiffForPath (NSDictionary* toolCall, NSString* path)
 	{
 		item.expanded = !item.expanded;
 		[_pendingIdentifiers addObject:item.identifier];
+		_clickedIdentifier = item.identifier;
 		[self flushPendingItems];
 	}
 	else if([action isEqualToString:@"fold"] && item)
@@ -1614,6 +1914,7 @@ static NSUInteger IndexOfDiffForPath (NSDictionary* toolCall, NSString* path)
 		item.folded = !item.folded;
 		item.foldsWhenPassed = NO; // the user’s to fold now
 		[_pendingIdentifiers addObject:item.identifier];
+		_clickedIdentifier = item.identifier;
 		[self flushPendingItems];
 	}
 	else if([action isEqualToString:@"code"] && item && parameters[@"block"])
@@ -1623,6 +1924,7 @@ static NSUInteger IndexOfDiffForPath (NSDictionary* toolCall, NSString* path)
 				[_toggledCodeBlocks removeObject:key];
 		else	[_toggledCodeBlocks addObject:key];
 		[_pendingIdentifiers addObject:item.identifier];
+		_clickedIdentifier = item.identifier;
 		[self flushPendingItems];
 	}
 	else if([action isEqualToString:@"diff"] && item)

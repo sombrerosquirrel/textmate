@@ -86,6 +86,11 @@ enum OTVFontSmoothing : NSUInteger
 - (IBAction)saveScratchMacro:(id)sender;
 
 - (void)performBundleItem:(bundles::item_ptr)anItem;
+
+// Replaces byte ranges of the document as one undo step, refreshing the view
+// as for its own edits. Edits made to the document directly (OakDocument’s
+// performReplacements:checksum:) leave a showing view’s size and drawing stale.
+- (void)performReplacements:(std::multimap<std::pair<size_t, size_t>, std::string> const&)replacements;
 - (void)updateEnvironment:(std::map<std::string, std::string>&)res;
 
 @end

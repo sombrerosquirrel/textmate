@@ -53,6 +53,9 @@
 // Whether code blocks show folded to their line; setting it applies to every
 // block, also those clicked open or folded
 @property (nonatomic) BOOL foldsCodeBlocks;
+// Replies’ Markdown styled like GitHub’s instead of the built-in look; code
+// blocks keep the editor’s theme either way
+@property (nonatomic) BOOL usesGitHubStyle;
 // Folds or opens everything with a ▾ / ▸: the items and their code blocks.
 // Later replies’ code blocks follow, as with foldsCodeBlocks.
 - (void)setAllFolded:(BOOL)flag;

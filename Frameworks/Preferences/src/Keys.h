@@ -89,6 +89,8 @@ extern NSString* const kUserDefaultsFormatterConfigurationsKey;
 // ====================
 
 extern NSString* const kUserDefaultsMarkdownPreviewRendererKey;     // @"builtin" (default) or @"github"
+extern NSString* const kUserDefaultsAgentChatStyleKey;             // agent panel replies styled @"builtin" (default) or like @"github"; registered by AgentUI
+extern NSString* const kUserDefaultsAgentUsesFileBrowserFolderKey; // without a project or saved document, agents start in the File Browser’s folder (default YES)
 extern NSString* const kUserDefaultsMarkdownPreviewAllowRawHTMLKey; // GitHub renderer: pass HTML in the document through
 extern NSString* const kUserDefaultsMarkdownPreviewCmarkPathKey;    // cmark-gfm chosen with Locate…, else found on PATH
 

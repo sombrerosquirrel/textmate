@@ -34,7 +34,57 @@ static NSColor* CodeBackgroundColor ()
 	return color;
 }
 
+// GitHub’s Primer colours, light and dark
+static NSColor* GitHubColor (NSString* name, uint32_t light, CGFloat lightAlpha, uint32_t dark, CGFloat darkAlpha)
+{
+	return [NSColor colorWithName:name dynamicProvider:^NSColor*(NSAppearance* appearance){
+		BOOL isDark = [[appearance bestMatchFromAppearancesWithNames:@[ NSAppearanceNameAqua, NSAppearanceNameDarkAqua ]] isEqualToString:NSAppearanceNameDarkAqua];
+		uint32_t const rgb = isDark ? dark : light;
+		return [NSColor colorWithSRGBRed:((rgb >> 16) & 0xFF) / 255.0 green:((rgb >> 8) & 0xFF) / 255.0 blue:(rgb & 0xFF) / 255.0 alpha:isDark ? darkAlpha : lightAlpha];
+	}];
+}
+
 @implementation OakMarkdownStyle
+- (instancetype)init
+{
+	if(self = [super init])
+	{
+		_paragraphSpacing     = 6;
+		_listItemSpacing      = 3;
+		_headingSpacingBefore = 6;
+		_headingSpacingAfter  = 4;
+		_quoteBorderWidth     = 3;
+		_tableCellPadding     = NSMakeSize(4, 4);
+	}
+	return self;
+}
+
+// GitHub’s comment styles (14 px text), see primer/css’s markdown-body
++ (instancetype)githubStyle
+{
+	OakMarkdownStyle* style = [[self alloc] init];
+	CGFloat const size = 14;
+	style.font                    = [NSFont systemFontOfSize:size];
+	style.codeFont                = [NSFont monospacedSystemFontOfSize:round(size * 0.85) weight:NSFontWeightRegular];
+	style.textColor               = GitHubColor(@"OakMarkdownGitHubText",          0x1F2328, 1,    0xF0F6FC, 1);
+	style.secondaryTextColor      = GitHubColor(@"OakMarkdownGitHubSecondaryText", 0x59636E, 1,    0x9198A1, 1);
+	style.codeBackgroundColor     = GitHubColor(@"OakMarkdownGitHubCodeBackground", 0x818B98, 0.12, 0x656C76, 0.2);
+	style.borderColor             = GitHubColor(@"OakMarkdownGitHubBorder",        0xD1D9E0, 1,    0x3D444D, 1);
+	style.linkColor               = GitHubColor(@"OakMarkdownGitHubLink",          0x0969DA, 1,    0x4493F8, 1);
+	style.paragraphSpacing        = size;              // margin-bottom: 16px at 16 px
+	style.listItemSpacing         = round(size / 4);   // li + li: .25em
+	style.lineSpacing             = round(size / 3);   // line-height: 1.5
+	style.headingSpacingBefore    = round(size * 1.5); // 24px
+	style.headingSpacingAfter     = size;              // 16px
+	style.headingScales           = @[ @2, @1.5, @1.25, @1, @0.875, @0.85 ];
+	style.rulesUnderMajorHeadings = YES;
+	style.quoteBorderWidth        = round(size / 4);   // .25em
+	style.tableCellPadding        = NSMakeSize(13, 6);
+	style.tableCornerRadius       = 6;
+	style.tableStripeColor        = GitHubColor(@"OakMarkdownGitHubTableStripe", 0x818B98, 0.08, 0x656C76, 0.15);
+	return style;
+}
+
 + (instancetype)defaultStyle
 {
 	OakMarkdownStyle* style = [[self alloc] init];
@@ -45,6 +95,126 @@ static NSColor* CodeBackgroundColor ()
 	style.codeBackgroundColor = CodeBackgroundColor();
 	style.borderColor         = NSColor.separatorColor;
 	return style;
+}
+@end
+
+// ==========================
+// = Rounded, Striped Tables =
+// ==========================
+
+// A table whose cells draw a rounded outline and stripes. The renderer keeps
+// rowCount up to date as rows are added, so cells know which edges are outside.
+@interface OakMarkdownTable : NSTextTable
+@property (nonatomic) NSInteger rowCount;
+@property (nonatomic) CGFloat cornerRadius;
+@property (nonatomic) NSColor* stripeColor;
+@property (nonatomic) NSColor* lineColor;
+@end
+
+@implementation OakMarkdownTable
+@end
+
+// A rectangle with only some corners rounded
+static NSBezierPath* RoundedRect (NSRect rect, CGFloat radius, BOOL topLeft, BOOL topRight, BOOL bottomRight, BOOL bottomLeft, BOOL flipped)
+{
+	if(!flipped) // in an unflipped view the top is maxY
+	{
+		std::swap(topLeft, bottomLeft);
+		std::swap(topRight, bottomRight);
+	}
+	radius = MIN(radius, MIN(NSWidth(rect), NSHeight(rect)) / 2);
+	CGFloat const r[4] = { topLeft ? radius : 0, topRight ? radius : 0, bottomRight ? radius : 0, bottomLeft ? radius : 0 }; // corners at minY first
+
+	NSBezierPath* path = [NSBezierPath bezierPath];
+	[path moveToPoint:NSMakePoint(NSMinX(rect) + r[0], NSMinY(rect))];
+	[path lineToPoint:NSMakePoint(NSMaxX(rect) - r[1], NSMinY(rect))];
+	[path appendBezierPathWithArcFromPoint:NSMakePoint(NSMaxX(rect), NSMinY(rect)) toPoint:NSMakePoint(NSMaxX(rect), NSMinY(rect) + r[1]) radius:r[1]];
+	[path lineToPoint:NSMakePoint(NSMaxX(rect), NSMaxY(rect) - r[2])];
+	[path appendBezierPathWithArcFromPoint:NSMakePoint(NSMaxX(rect), NSMaxY(rect)) toPoint:NSMakePoint(NSMaxX(rect) - r[2], NSMaxY(rect)) radius:r[2]];
+	[path lineToPoint:NSMakePoint(NSMinX(rect) + r[3], NSMaxY(rect))];
+	[path appendBezierPathWithArcFromPoint:NSMakePoint(NSMinX(rect), NSMaxY(rect)) toPoint:NSMakePoint(NSMinX(rect), NSMaxY(rect) - r[3]) radius:r[3]];
+	[path lineToPoint:NSMakePoint(NSMinX(rect), NSMinY(rect) + r[0])];
+	[path appendBezierPathWithArcFromPoint:NSMakePoint(NSMinX(rect), NSMinY(rect)) toPoint:NSMakePoint(NSMinX(rect) + r[0], NSMinY(rect)) radius:r[0]];
+	[path closePath];
+	return path;
+}
+
+// A translucent stripe takes about twice as long to draw as the whole table
+// does without it, so mix it with the text view’s background first
+static NSColor* StripeColor (NSColor* stripe, NSView* view)
+{
+	NSColor* background = [view isKindOfClass:[NSTextView class]] && ((NSTextView*)view).drawsBackground ? ((NSTextView*)view).backgroundColor : nil;
+	NSColor* top    = [stripe colorUsingColorSpace:NSColorSpace.sRGBColorSpace];     // in the current appearance
+	NSColor* bottom = [background colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
+	if(!top || !bottom || bottom.alphaComponent < 1 || top.alphaComponent >= 1)
+		return stripe;
+
+	CGFloat const a = top.alphaComponent;
+	return [NSColor colorWithSRGBRed:top.redComponent * a + bottom.redComponent * (1 - a) green:top.greenComponent * a + bottom.greenComponent * (1 - a) blue:top.blueComponent * a + bottom.blueComponent * (1 - a) alpha:1];
+}
+
+// Draws its own lines, 1 pt, without layout borders: its top and leading edges,
+// plus the trailing and bottom ones on the table’s outside, so lines between
+// cells are drawn once. Corner cells round their outside corner.
+@interface OakMarkdownTableCell : NSTextTableBlock
+@end
+
+@implementation OakMarkdownTableCell
+- (void)drawBackgroundWithFrame:(NSRect)frameRect inView:(NSView*)controlView characterRange:(NSRange)charRange layoutManager:(NSLayoutManager*)layoutManager
+{
+	OakMarkdownTable* table = (OakMarkdownTable*)self.table;
+	if(![table isKindOfClass:[OakMarkdownTable class]])
+		return [super drawBackgroundWithFrame:frameRect inView:controlView characterRange:charRange layoutManager:layoutManager];
+
+	BOOL const firstRow = self.startingRow == 0;
+	BOOL const lastRow  = self.startingRow + self.rowSpan >= table.rowCount;
+	BOOL const firstCol = self.startingColumn == 0;
+	BOOL const lastCol  = self.startingColumn + self.columnSpan >= table.numberOfColumns;
+	BOOL const flipped  = controlView.isFlipped;
+	CGFloat const radius = table.cornerRadius;
+	frameRect = [controlView backingAlignedRect:frameRect options:NSAlignAllEdgesNearest]; // sharp lines (frames can start on half points)
+
+	[NSGraphicsContext saveGraphicsState];
+
+	if(table.stripeColor && self.startingRow > 0 && self.startingRow % 2 == 0)
+	{
+		[StripeColor(table.stripeColor, controlView) set];
+		if(radius > 0 && lastRow && (firstCol || lastCol))
+				[RoundedRect(frameRect, radius, NO, NO, lastCol, firstCol, flipped) fill];
+		else	NSRectFillUsingOperation(frameRect, NSCompositingOperationSourceOver); // much faster than filling a path
+	}
+
+	// An inside cell’s trailing and bottom lines fall on the next cells’ lines, so they draw once
+	NSRect lines = frameRect;
+	if(!lastCol)
+		lines.size.width += 1;
+	if(!lastRow)
+	{
+		lines.size.height += 1;
+		if(!flipped)
+			lines.origin.y -= 1;
+	}
+
+	[table.lineColor set];
+	BOOL const corner = radius > 0 && (firstRow || lastRow) && (firstCol || lastCol);
+	if(corner)
+	{
+		NSBezierPath* outline = RoundedRect(NSInsetRect(lines, 0.5, 0.5), radius, firstRow && firstCol, firstRow && lastCol, lastRow && lastCol, lastRow && firstCol, flipped);
+		outline.lineWidth = 1;
+		[outline stroke];
+	}
+	else // filling is much faster than stroking a path
+	{
+		NSRect const edges[4] = {
+			NSMakeRect(NSMinX(lines), NSMinY(lines), NSWidth(lines), 1),
+			NSMakeRect(NSMinX(lines), NSMaxY(lines) - 1, NSWidth(lines), 1),
+			NSMakeRect(NSMinX(lines), NSMinY(lines), 1, NSHeight(lines)),
+			NSMakeRect(NSMaxX(lines) - 1, NSMinY(lines), 1, NSHeight(lines)),
+		};
+		NSRectFillList(edges, 4);
+	}
+
+	[NSGraphicsContext restoreGraphicsState];
 }
 @end
 
@@ -415,7 +585,8 @@ namespace
 		void begin_block (block_info_t const& block)
 		{
 			NSMutableParagraphStyle* paragraph = [[NSMutableParagraphStyle alloc] init];
-			paragraph.paragraphSpacing = 6;
+			paragraph.paragraphSpacing = style.paragraphSpacing;
+			paragraph.lineSpacing      = style.lineSpacing;
 			paragraph.alignment        = html_alignment(); // e.g. Markdown inside <div align="center">
 
 			CGFloat indent = block.quoteDepth * kQuoteIndent;
@@ -424,7 +595,7 @@ namespace
 			if(block.listItem)
 			{
 				indent += block.listDepth * kListIndent;
-				paragraph.paragraphSpacing = 3;
+				paragraph.paragraphSpacing = style.listItemSpacing;
 				if(block.listItem.identity != lastListItemIdentity)
 				{
 					lastListItemIdentity = block.listItem.identity;
@@ -449,10 +620,7 @@ namespace
 			}
 
 			if(block.headerLevel)
-			{
-				paragraph.paragraphSpacingBefore = 6;
-				paragraph.paragraphSpacing       = 4;
-			}
+				make_heading(paragraph, block.headerLevel, indent, block.quoteDepth || block.listItem || block.tableCell);
 
 			if(block.codeBlock && block.codeBlock.identity != currentCodeIdentity)
 			{
@@ -479,12 +647,13 @@ namespace
 				paragraph.firstLineHeadIndent = 0;
 				paragraph.headIndent       = 0;
 				paragraph.paragraphSpacing = 0;
+				paragraph.lineSpacing      = 0;
 			}
 			else if(block.quoteDepth && !block.listItem)
 			{
 				NSTextBlock* quote = [[NSTextBlock alloc] init];
 				[quote setValue:100 type:NSTextBlockPercentageValueType forDimension:NSTextBlockWidth]; // without a width the block collapses to one character per line
-				[quote setWidth:3 type:NSTextBlockAbsoluteValueType forLayer:NSTextBlockBorder edge:NSMinXEdge];
+				[quote setWidth:style.quoteBorderWidth type:NSTextBlockAbsoluteValueType forLayer:NSTextBlockBorder edge:NSMinXEdge];
 				[quote setBorderColor:style.borderColor forEdge:NSMinXEdge];
 				[quote setWidth:8 type:NSTextBlockAbsoluteValueType forLayer:NSTextBlockPadding edge:NSMinXEdge];
 				[quote setWidth:(block.quoteDepth - 1) * kQuoteIndent type:NSTextBlockAbsoluteValueType forLayer:NSTextBlockMargin edge:NSMinXEdge];
@@ -499,7 +668,18 @@ namespace
 				NSTextTable* table = tables[tableKey];
 				if(!table)
 				{
-					table = [[NSTextTable alloc] init];
+					if(style.tableCornerRadius > 0 || style.tableStripeColor)
+					{
+						OakMarkdownTable* rounded = [[OakMarkdownTable alloc] init];
+						rounded.cornerRadius = style.tableCornerRadius;
+						rounded.stripeColor  = style.tableStripeColor;
+						rounded.lineColor    = style.borderColor;
+						table = rounded;
+					}
+					else
+					{
+						table = [[NSTextTable alloc] init];
+					}
 					table.numberOfColumns = MAX(block.table.columnCount, 1);
 					table.layoutAlgorithm = NSTextTableAutomaticLayoutAlgorithm;
 					table.collapsesBorders = YES;
@@ -512,10 +692,24 @@ namespace
 					[rows addObject:@(block.tableRow.identity)];
 				NSInteger row = [rows indexOfObject:@(block.tableRow.identity)];
 
-				NSTextTableBlock* cell = [[NSTextTableBlock alloc] initWithTable:table startingRow:row rowSpan:1 startingColumn:block.tableCell.column columnSpan:1];
-				[cell setWidth:0.5 type:NSTextBlockAbsoluteValueType forLayer:NSTextBlockBorder];
-				[cell setBorderColor:style.borderColor];
-				[cell setWidth:4 type:NSTextBlockAbsoluteValueType forLayer:NSTextBlockPadding];
+				NSTextTableBlock* cell;
+				CGFloat padding = 0;
+				if(OakMarkdownTable* rounded = [table isKindOfClass:[OakMarkdownTable class]] ? (OakMarkdownTable*)table : nil)
+				{
+					rounded.rowCount = MAX(rounded.rowCount, row + 1);
+					cell    = [[OakMarkdownTableCell alloc] initWithTable:table startingRow:row rowSpan:1 startingColumn:block.tableCell.column columnSpan:1];
+					padding = 1; // room for the line it draws
+				}
+				else
+				{
+					cell = [[NSTextTableBlock alloc] initWithTable:table startingRow:row rowSpan:1 startingColumn:block.tableCell.column columnSpan:1];
+					[cell setWidth:0.5 type:NSTextBlockAbsoluteValueType forLayer:NSTextBlockBorder];
+					[cell setBorderColor:style.borderColor];
+				}
+				[cell setWidth:style.tableCellPadding.width + padding type:NSTextBlockAbsoluteValueType forLayer:NSTextBlockPadding edge:NSMinXEdge];
+				[cell setWidth:style.tableCellPadding.width + padding type:NSTextBlockAbsoluteValueType forLayer:NSTextBlockPadding edge:NSMaxXEdge];
+				[cell setWidth:style.tableCellPadding.height + padding type:NSTextBlockAbsoluteValueType forLayer:NSTextBlockPadding edge:NSMinYEdge];
+				[cell setWidth:style.tableCellPadding.height + padding type:NSTextBlockAbsoluteValueType forLayer:NSTextBlockPadding edge:NSMaxYEdge];
 				paragraph.textBlocks          = @[ cell ];
 				paragraph.firstLineHeadIndent = 0;
 				paragraph.headIndent          = 0;
@@ -528,6 +722,38 @@ namespace
 			paragraphStyle = paragraph;
 			if(prefix)
 				append(prefix, @{ NSParagraphStyleAttributeName: paragraph, NSForegroundColorAttributeName: style.textColor, NSFontAttributeName: style.font });
+		}
+
+		// Spacing around a heading and, with rulesUnderMajorHeadings, a line under h1 and h2
+		void make_heading (NSMutableParagraphStyle* paragraph, NSInteger level, CGFloat indent, bool nested)
+		{
+			paragraph.paragraphSpacingBefore = style.headingSpacingBefore;
+			paragraph.paragraphSpacing       = style.headingSpacingAfter;
+			if(!style.rulesUnderMajorHeadings || level > 2 || nested)
+				return;
+
+			CGFloat const pointSize = heading_font(level).pointSize;
+			NSTextBlock* rule = [[NSTextBlock alloc] init];
+			[rule setValue:100 type:NSTextBlockPercentageValueType forDimension:NSTextBlockWidth];
+			[rule setWidth:1 type:NSTextBlockAbsoluteValueType forLayer:NSTextBlockBorder edge:NSMaxYEdge];
+			[rule setBorderColor:style.borderColor forEdge:NSMaxYEdge];
+			[rule setWidth:round(pointSize * 0.3) type:NSTextBlockAbsoluteValueType forLayer:NSTextBlockPadding edge:NSMaxYEdge];
+			[rule setWidth:style.headingSpacingBefore type:NSTextBlockAbsoluteValueType forLayer:NSTextBlockMargin edge:NSMinYEdge];
+			[rule setWidth:style.headingSpacingAfter type:NSTextBlockAbsoluteValueType forLayer:NSTextBlockMargin edge:NSMaxYEdge];
+			[rule setWidth:indent type:NSTextBlockAbsoluteValueType forLayer:NSTextBlockMargin edge:NSMinXEdge];
+			paragraph.textBlocks             = @[ rule ];
+			paragraph.firstLineHeadIndent    = 0;
+			paragraph.headIndent             = 0;
+			paragraph.paragraphSpacingBefore = 0; // the block’s margins
+			paragraph.paragraphSpacing       = 0;
+		}
+
+		NSFont* heading_font (NSInteger level)
+		{
+			CGFloat size = style.font.pointSize + std::max<NSInteger>(0, 8 - 2 * level);
+			if(style.headingScales.count >= level && level > 0)
+				size = round(style.font.pointSize * style.headingScales[level - 1].doubleValue);
+			return [NSFont systemFontOfSize:size weight:NSFontWeightSemibold];
 		}
 
 		// A full-width line: the bottom border of an (almost) empty block
@@ -645,7 +871,7 @@ namespace
 			if(code)
 				font = style.codeFont;
 			if(headerLevel)
-				font = [NSFont systemFontOfSize:style.font.pointSize + std::max<NSInteger>(0, 8 - 2 * headerLevel) weight:NSFontWeightSemibold];
+				font = heading_font(headerLevel);
 			if((inlineIntent & NSInlinePresentationIntentStronglyEmphasized) || block.headerRow || html.bold)
 				font = FontWithTrait(font, NSFontDescriptorTraitBold);
 			if((inlineIntent & NSInlinePresentationIntentEmphasized) || html.italic)
@@ -683,6 +909,8 @@ namespace
 				res[NSLinkAttributeName] = [link isKindOfClass:[NSURL class]] ? [(NSURL*)link absoluteURL] : link; // relative links resolved against the base URL
 			else if(html.link)
 				res[NSLinkAttributeName] = html.link;
+			if(res[NSLinkAttributeName] && style.linkColor)
+				res[NSForegroundColorAttributeName] = style.linkColor;
 			return res;
 		}
 
@@ -823,20 +1051,18 @@ namespace
 			CGFloat const indent = lists * kListIndent + quotes * kQuoteIndent;
 
 			NSMutableParagraphStyle* paragraph = [[NSMutableParagraphStyle alloc] init];
-			paragraph.paragraphSpacing    = 6;
+			paragraph.paragraphSpacing    = style.paragraphSpacing;
+			paragraph.lineSpacing         = style.lineSpacing;
 			paragraph.alignment           = html_alignment();
 			paragraph.firstLineHeadIndent = listItem ? std::max<CGFloat>(indent - kListIndent, 0) : indent;
 			paragraph.headIndent          = indent;
 			if(listItem)
 			{
-				paragraph.paragraphSpacing = 3;
+				paragraph.paragraphSpacing = style.listItemSpacing;
 				paragraph.tabStops = @[ [[NSTextTab alloc] initWithTextAlignment:NSTextAlignmentLeft location:indent options:@{ }] ];
 			}
-			if(html_style().headerLevel)
-			{
-				paragraph.paragraphSpacingBefore = 6;
-				paragraph.paragraphSpacing       = 4;
-			}
+			if(NSInteger level = html_style().headerLevel)
+				make_heading(paragraph, level, indent, lists || quotes);
 			if(rule)
 				make_rule(paragraph, indent);
 			paragraphStyle = paragraph;

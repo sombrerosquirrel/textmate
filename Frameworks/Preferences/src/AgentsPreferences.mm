@@ -1,6 +1,7 @@
 #import "AgentsPreferences.h"
 #import <AgentClient/AgentRegistry.h>
 #import <AgentClient/AgentKeychain.h>
+#import "Keys.h"
 #import <OakAppKit/OakUIConstructionFunctions.h>
 
 static NSString* const kColumnEnabled = @"enabled";
@@ -339,13 +340,33 @@ static BOOL DiffersFromDefault (AgentDescriptor* agent)
 	NSTextField* footnote = HintLabel(@"In a project’s .tm_properties, agentName picks the agent to use (by name) and agentCommand replaces its command.");
 	footnote.preferredMaxLayoutWidth = 530;
 
+	NSButton* fileBrowserFolderCheckBox = OakCreateCheckBox(@"Without a project or saved document, start agents in the File Browser’s folder");
+	fileBrowserFolderCheckBox.state  = [NSUserDefaults.standardUserDefaults boolForKey:kUserDefaultsAgentUsesFileBrowserFolderKey] ? NSControlStateValueOn : NSControlStateValueOff;
+	fileBrowserFolderCheckBox.target = self;
+	fileBrowserFolderCheckBox.action = @selector(toggleUsesFileBrowserFolder:);
+	NSTextField* fileBrowserFolderHint = HintLabel(@"Agents start in the project folder, where they find its .claude settings, or else in the folder of the document, if it has been saved. Otherwise they start in the folder at the top of the File Browser (Claude Code then asks before working outside it), or with this off, in your home folder. Takes effect when the agent next starts (e.g. New Chat).");
+	fileBrowserFolderHint.preferredMaxLayoutWidth = 510;
+
+	NSPopUpButton* chatStylePopUp = OakCreatePopUpButton();
+	[chatStylePopUp addItemsWithTitles:@[ @"Built-in", @"GitHub" ]];
+	[chatStylePopUp selectItemAtIndex:[[NSUserDefaults.standardUserDefaults stringForKey:kUserDefaultsAgentChatStyleKey] isEqualToString:@"github"] ? 1 : 0];
+	chatStylePopUp.target = self;
+	chatStylePopUp.action = @selector(takeChatStyleFrom:);
+	NSTextField* chatStyleLabel = OakCreateLabel(@"Chat text style:");
+	NSTextField* chatStyleHint  = HintLabel(@"How the agent’s replies look: like the built-in Markdown preview, or like GitHub (fonts, colours, spacing, headings, quotes and tables). Code blocks keep the editor’s theme.");
+	chatStyleHint.preferredMaxLayoutWidth = 510;
+
 	NSView* view = [[NSView alloc] initWithFrame:kTabItemFrame]; // tab items are sized by autoresizing, and nothing fits in 0×0
-	NSDictionary* views = @{ @"table": tableScrollView, @"add": addButton, @"remove": _removeAgentButton, @"form": form, @"footnote": footnote };
+	NSDictionary* views = @{ @"table": tableScrollView, @"add": addButton, @"remove": _removeAgentButton, @"form": form, @"footnote": footnote, @"fileBrowserFolder": fileBrowserFolderCheckBox, @"fileBrowserFolderHint": fileBrowserFolderHint, @"chatStyleLabel": chatStyleLabel, @"chatStyle": chatStylePopUp, @"chatStyleHint": chatStyleHint };
 	OakAddAutoLayoutViewsToSuperview(views.allValues, view);
 	[view addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"H:|-12-[table(==150@750)]-12-[form]-(>=12)-|" options:0 metrics:nil views:views]];
 	[view addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"H:|-12-[add(==20)]-(-1)-[remove(==add)]" options:NSLayoutFormatAlignAllTop|NSLayoutFormatAlignAllBottom metrics:nil views:views]];
 	[view addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"H:|-12-[footnote]-12-|" options:0 metrics:nil views:views]];
-	[view addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"V:|-12-[table]-8-[add(==19)]-12-[footnote]-12-|" options:0 metrics:nil views:views]];
+	[view addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"H:|-12-[fileBrowserFolder]-(>=12)-|" options:0 metrics:nil views:views]];
+	[view addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"H:|-32-[fileBrowserFolderHint]-12-|" options:0 metrics:nil views:views]];
+	[view addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"H:|-12-[chatStyleLabel]-8-[chatStyle]-(>=12)-|" options:NSLayoutFormatAlignAllFirstBaseline metrics:nil views:views]];
+	[view addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"H:|-32-[chatStyleHint]-12-|" options:0 metrics:nil views:views]];
+	[view addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"V:|-12-[table]-8-[add(==19)]-12-[footnote]-16-[fileBrowserFolder]-4-[fileBrowserFolderHint]-16-[chatStyle]-4-[chatStyleHint]-12-|" options:0 metrics:nil views:views]];
 	[view addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"V:|-12-[form]-(>=8@750)-[footnote]" options:0 metrics:nil views:views]];
 	return view;
 }
@@ -427,6 +448,16 @@ static BOOL DiffersFromDefault (AgentDescriptor* agent)
 	[self saveAgents];
 	[_agentsTableView reloadData];
 	[self updateAgentForm];
+}
+
+- (void)takeChatStyleFrom:(NSPopUpButton*)sender
+{
+	[NSUserDefaults.standardUserDefaults setObject:(sender.indexOfSelectedItem == 1 ? @"github" : @"builtin") forKey:kUserDefaultsAgentChatStyleKey];
+}
+
+- (void)toggleUsesFileBrowserFolder:(NSButton*)sender
+{
+	[NSUserDefaults.standardUserDefaults setBool:sender.state == NSControlStateValueOn forKey:kUserDefaultsAgentUsesFileBrowserFolderKey];
 }
 
 - (void)toggleUsesAPIKey:(NSButton*)sender

@@ -14,6 +14,7 @@
 NSString* const kUserDefaultsAgentPanelAgentKey           = @"agentPanelAgent";
 NSString* const kUserDefaultsAgentPanelUsesCurrentFileKey = @"agentPanelUsesCurrentFile";
 NSString* const kUserDefaultsAgentPanelFoldsCodeBlocksKey = @"agentPanelFoldsCodeBlocks";
+NSString* const kUserDefaultsAgentPanelMarkdownStyleKey  = @"agentPanelMarkdownStyle";
 
 static NSString* FormatTokenCount (double count)
 {
@@ -89,6 +90,7 @@ static NSView* Separator ()
 	AgentDescriptor* _agent;
 	AgentSession* _session;
 	NSString* _lastSessionId;   // the chat to load if the agent is started again
+	NSString* _lastWorkingDirectory; // where that chat ran: it continues there, wherever the File Browser is now
 	BOOL _restoringChat;        // loading _lastSessionId: the transcript already shows its replay
 	BOOL _creatingSession;
 	NSString* _logSource;       // the session’s name in the agent log, e.g. “textmate — Claude Code”
@@ -141,6 +143,7 @@ static NSView* Separator ()
 		kUserDefaultsAgentPanelAgentKey:           @"copilot",
 		kUserDefaultsAgentPanelUsesCurrentFileKey: @YES,
 		kUserDefaultsAgentPanelFoldsCodeBlocksKey: @NO,
+		kUserDefaultsAgentPanelMarkdownStyleKey:  @"builtin",
 	}];
 }
 
@@ -153,6 +156,7 @@ static NSView* Separator ()
 		_heldUpdates       = [NSMutableArray array];
 		_finishedToolCallIds = [NSMutableSet set];
 		[NSNotificationCenter.defaultCenter addObserver:self selector:@selector(agentRegistryDidChange:) name:AgentRegistryDidChangeNotification object:nil];
+		[NSNotificationCenter.defaultCenter addObserver:self selector:@selector(userDefaultsDidChange:) name:NSUserDefaultsDidChangeNotification object:NSUserDefaults.standardUserDefaults];
 	}
 	return self;
 }
@@ -251,6 +255,20 @@ static NSView* Separator ()
 }
 
 // Opens or folds everything with a ▾ / ▸, also what comes later
+// Preferences ▸ Agents ▸ Chat text, applied to open chats at once
+- (void)updateMarkdownStyle
+{
+	_transcriptView.usesGitHubStyle = [[NSUserDefaults.standardUserDefaults stringForKey:kUserDefaultsAgentPanelMarkdownStyleKey] isEqualToString:@"github"];
+}
+
+- (void)userDefaultsDidChange:(NSNotification*)aNotification
+{
+	// Posted on the thread that changed the defaults; setting the same style does nothing
+	if(NSThread.isMainThread)
+			[self updateMarkdownStyle];
+	else	dispatch_async(dispatch_get_main_queue(), ^{ [self updateMarkdownStyle]; });
+}
+
 - (IBAction)toggleFolding:(id)sender
 {
 	BOOL folds = !_transcriptView.foldsCodeBlocks;
@@ -297,6 +315,7 @@ static NSView* Separator ()
 	NSScrollView* transcriptScrollView = [AgentTranscriptView scrollableTranscriptView];
 	_transcriptView = transcriptScrollView.documentView;
 	_transcriptView.foldsCodeBlocks = [NSUserDefaults.standardUserDefaults boolForKey:kUserDefaultsAgentPanelFoldsCodeBlocksKey];
+	[self updateMarkdownStyle];
 	[self updateFoldingButton];
 	_transcript.foldsNewItems      = _transcriptView.foldsCodeBlocks;
 	_transcriptView.transcript     = _transcript;
@@ -426,7 +445,8 @@ static NSView* Separator ()
 	if(!_agent)
 		_agent = [self reloadAgents];
 	AgentDescriptor* agent = _agent;
-	NSString* projectPath  = [_delegate projectPathForAgentPanel:self] ?: NSHomeDirectory();
+	BOOL continuesChat = _lastSessionId && _lastWorkingDirectory && [_transcript.items indexOfObjectPassingTest:^BOOL(AgentTranscriptItem* item, NSUInteger, BOOL*){ return item.kind == AgentTranscriptItemKindUser; }] != NSNotFound;
+	NSString* projectPath  = continuesChat ? _lastWorkingDirectory : ([_delegate projectPathForAgentPanel:self] ?: NSHomeDirectory());
 	_logSource = [NSString stringWithFormat:@"%@ — %@", projectPath.lastPathComponent, agent.name];
 	[AgentRegistry makeSessionForAgent:agent workingDirectory:projectPath completion:^(AgentSession* session, NSError* error){
 		_creatingSession = NO;
@@ -445,6 +465,7 @@ static NSView* Separator ()
 
 		_session = session;
 		_session.delegate   = self;
+		_lastWorkingDirectory = projectPath;
 		// Claude Code runs commands itself; ask it to report their output as terminals
 		_session.clientCapabilities = @{ @"_meta": @{ @"terminal_output": @YES, @"terminal_output_delta": @YES } };
 		_session.fileSystem = [self fileSystemForProjectPath:projectPath];
@@ -550,6 +571,7 @@ static NSView* Separator ()
 - (void)clearConversation
 {
 	_lastSessionId = nil;
+	_lastWorkingDirectory = nil;
 	_fileSystem = nil;
 	[_terminals killAll];
 	_terminals = nil;
@@ -709,14 +731,16 @@ static NSString* RelativeDate (NSString* isoDate)
 	(void)self.view; // the chat runs whether or not the panel is shown
 	[_inlinePrompt close];
 
-	_inlineAttachment = nil;
+	AgentAttachment* selection = nil;
 	if([_delegate respondsToSelector:@selector(selectionAttachmentForAgentPanel:)])
-		_inlineAttachment = [_delegate selectionAttachmentForAgentPanel:self];
+		selection = [_delegate selectionAttachmentForAgentPanel:self];
+	_inlineAttachment = selection;
 	if(!_inlineAttachment && [_delegate respondsToSelector:@selector(currentFileAttachmentForAgentPanel:)])
 		_inlineAttachment = [_delegate currentFileAttachmentForAgentPanel:self];
 
 	_inlinePrompt = [[AgentInlinePromptController alloc] initWithAgentName:_agent.name context:_inlineAttachment.name];
 	_inlinePrompt.delegate = self;
+	_inlinePrompt.replacesSelection = _inlineAttachment && _inlineAttachment == selection;
 	[_inlinePrompt showInPopoverRelativeToRect:rect ofView:view];
 	[self startSessionIfNeeded];
 }
@@ -838,6 +862,30 @@ static NSString* RelativeDate (NSString* isoDate)
 	if(_inlineChanges.count)
 		[self confirmUndoChanges:_inlineChanges toTexts:_inlineSnapshot];
 	_inlineChanges = nil;
+}
+
+// As the chat’s Insert at Cursor and Apply in Editor; a replaced selection is
+// listed with the agent’s changes, to review or undo
+- (void)inlinePrompt:(AgentInlinePromptController*)inlinePrompt insertText:(NSString*)text mode:(AgentInlineInsertMode)mode
+{
+	if(mode == AgentInlineInsertAtCursor)
+	{
+		[self transcriptView:_transcriptView insertCode:text];
+	}
+	else if(mode == AgentInlineInsertReplacingSelection)
+	{
+		[self transcriptView:_transcriptView applyCode:text];
+	}
+	else if([_delegate respondsToSelector:@selector(agentPanel:applyTextAfterSelection:)])
+	{
+		NSDictionary* result = [_delegate agentPanel:self applyTextAfterSelection:text];
+		if([result[@"path"] isKindOfClass:[NSString class]])
+			[_fileSystem recordChangeAtPath:[result[@"path"] stringByStandardizingPath] originalText:result[@"originalText"] currentText:result[@"currentText"]];
+	}
+
+	// Below what went in, so it isn’t covered and the next one goes after it
+	if([_delegate respondsToSelector:@selector(selectionEndRectForAgentPanel:)])
+		[inlinePrompt moveToRect:[_delegate selectionEndRectForAgentPanel:self]];
 }
 
 - (void)inlinePromptShowChat:(AgentInlinePromptController*)inlinePrompt
@@ -1001,12 +1049,35 @@ static NSString* RelativeDate (NSString* isoDate)
 	[self showItem:[_transcript addNotice:message]];
 }
 
+// “/clear” is the New Chat button, unless the agent has a command by that
+// name. Claude’s adapter doesn’t support /clear: sent, it does nothing visible.
+- (BOOL)agentHasCommand:(NSString*)name
+{
+	for(NSDictionary* command in _session.availableCommands)
+	{
+		if([command[@"name"] isEqual:name])
+			return YES;
+	}
+	return NO;
+}
+
+- (BOOL)isPanelClearCommand:(NSString*)text
+{
+	return [[text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet] isEqualToString:@"/clear"] && ![self agentHasCommand:@"clear"];
+}
+
 - (void)promptViewDidSubmit:(AgentPromptView*)promptView
 {
 	NSString* text = promptView.text;
 	NSArray<AgentAttachment*>* attachments = promptView.attachments;
 	promptView.text = @"";
 	[promptView removeAllAttachments];
+	if([self isPanelClearCommand:text])
+	{
+		[promptView rememberPrompt:text];
+		[self newChat:nil];
+		return;
+	}
 	[self submitText:text attachments:attachments currentFile:promptView.usesCurrentFile];
 }
 
@@ -1044,7 +1115,9 @@ static NSString* RelativeDate (NSString* isoDate)
 - (void)sendPendingPrompt
 {
 	NSDictionary* promptCapabilities = _session.agentCapabilities[@"promptCapabilities"];
-	NSArray* prompt = [AgentAttachment promptWithText:_pendingText attachments:_pendingAttachments currentFile:_pendingCurrentFile promptCapabilities:promptCapabilities];
+	// Read now rather than when typed, so a retry follows the File Browser too
+	NSString* searchRoot = [_delegate respondsToSelector:@selector(searchRootForAgentPanel:)] ? [_delegate searchRootForAgentPanel:self] : nil;
+	NSArray* prompt = [AgentAttachment promptWithText:_pendingText attachments:_pendingAttachments currentFile:_pendingCurrentFile searchRoot:(searchRoot ?: [_delegate projectPathForAgentPanel:self]) promptCapabilities:promptCapabilities];
 	_retryText        = _pendingText;
 	_retryAttachments = _pendingAttachments;
 	_retryCurrentFile = _pendingCurrentFile;
@@ -1115,7 +1188,10 @@ static NSString* RelativeDate (NSString* isoDate)
 
 - (NSArray<NSDictionary*>*)slashCommandsForPromptView:(AgentPromptView*)promptView
 {
-	return _session.availableCommands ?: @[ ];
+	NSArray<NSDictionary*>* commands = _session.availableCommands ?: @[ ];
+	if(![self agentHasCommand:@"clear"])
+		commands = [commands arrayByAddingObject:@{ @"name": @"clear", @"description": @"Start a new chat (same as the New Chat button)" }];
+	return commands;
 }
 
 - (BOOL)promptViewAcceptsImages:(AgentPromptView*)promptView
@@ -1667,7 +1743,7 @@ static NSString* RelativeDate (NSString* isoDate)
 {
 	NSString* absolute = path.stringByExpandingTildeInPath;
 	if(![absolute hasPrefix:@"/"])
-		absolute = [[_delegate projectPathForAgentPanel:self] stringByAppendingPathComponent:absolute];
+		absolute = [(_fileSystem.rootDirectory ?: [_delegate projectPathForAgentPanel:self]) stringByAppendingPathComponent:absolute]; // where the agent runs
 	absolute = absolute.stringByStandardizingPath;
 
 	// Only files on disk: an open document for a path the agent hasn’t written yet is empty
@@ -1700,7 +1776,7 @@ static NSString* RelativeDate (NSString* isoDate)
 - (void)transcriptView:(AgentTranscriptView*)transcriptView openFile:(NSString*)path line:(NSUInteger)line
 {
 	if(![path hasPrefix:@"/"])
-		path = [[_delegate projectPathForAgentPanel:self] stringByAppendingPathComponent:path];
+		path = [(_fileSystem.rootDirectory ?: [_delegate projectPathForAgentPanel:self]) stringByAppendingPathComponent:path];
 	if([_delegate respondsToSelector:@selector(agentPanel:openFile:line:)])
 		[_delegate agentPanel:self openFile:path line:line];
 }

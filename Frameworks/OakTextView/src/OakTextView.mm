@@ -754,6 +754,19 @@ static size_t const kSCMDiffGutterMaxBytes = 2 * 1024 * 1024;
 		[self performBundleItem:item];
 }
 
+- (void)performReplacements:(std::multimap<std::pair<size_t, size_t>, std::string> const&)replacements
+{
+	if(!documentView || replacements.empty())
+		return;
+
+	[_document beginUndoGrouping];
+	{
+		AUTO_REFRESH;
+		documentView->perform_replacements(replacements);
+	}
+	[_document endUndoGrouping];
+}
+
 - (void)reflectDocumentSize
 {
 	if(documentView && [self enclosingScrollView])

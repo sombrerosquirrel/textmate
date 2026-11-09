@@ -41,7 +41,24 @@
 // unless it has `open`), the other way round if its index (0 for the first in
 // the document) is in the set, and its summary links to OakMarkdownDetailsURL().
 @property (nonatomic, copy) NSSet<NSNumber*>* toggledDetails;
+
+// Spacing, headings, quotes, tables and links. A new style has the built-in
+// look; githubStyle sets these (and the fonts and colours) to look like GitHub.
+@property (nonatomic) CGFloat paragraphSpacing;     // after a paragraph (6)
+@property (nonatomic) CGFloat listItemSpacing;      // after a list item (3)
+@property (nonatomic) CGFloat lineSpacing;          // between the lines of a paragraph (0)
+@property (nonatomic) CGFloat headingSpacingBefore; // 6
+@property (nonatomic) CGFloat headingSpacingAfter;  // 4
+@property (nonatomic, copy) NSArray<NSNumber*>* headingScales; // h1–h6 font size as a multiple of `font`’s; nil: 6, 4 and 2 pt larger for h1–h3
+@property (nonatomic) BOOL rulesUnderMajorHeadings; // a line (borderColor) under h1 and h2
+@property (nonatomic) CGFloat quoteBorderWidth;     // the bar left of a block quote (3)
+@property (nonatomic) NSSize tableCellPadding;      // horizontal, vertical (4, 4)
+@property (nonatomic) CGFloat tableCornerRadius;    // rounds the table’s outline (0)
+@property (nonatomic) NSColor* tableStripeColor;    // behind every second row after the header (nil: none)
+@property (nonatomic) NSColor* linkColor;           // nil: the text view’s; a text view’s linkTextAttributes override it
+
 + (instancetype)defaultStyle;
++ (instancetype)githubStyle;
 @end
 
 @interface OakMarkdownCodeBlock : NSObject

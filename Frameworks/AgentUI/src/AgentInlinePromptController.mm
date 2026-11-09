@@ -1,9 +1,11 @@
 #import "AgentInlinePromptController.h"
 #import "AgentDiffText.h"
 #import <AgentClient/AgentDiff.h>
+#import <OakMarkdown/OakMarkdown.h>
 
 static CGFloat const kWidth = 420;
 static CGFloat const kMaxDiffHeight = 280; // taller diffs scroll
+static CGFloat const kMaxReplyHeight = 220; // and replies
 
 static NSTextField* Label (NSString* text, BOOL secondary)
 {
@@ -15,13 +17,20 @@ static NSTextField* Label (NSString* text, BOOL secondary)
 	return label;
 }
 
-@interface AgentInlinePromptController () <NSPopoverDelegate, NSTextFieldDelegate>
+@interface AgentInlinePromptController () <NSPopoverDelegate, NSTextFieldDelegate, NSTextViewDelegate>
 {
 	NSString* _agentName;
 	NSString* _context;
 	NSPopover* _popover;
 	NSStackView* _stack;
 	NSTextField* _promptField;
+	NSArray<NSString*>* _codes;           // the reply’s code blocks
+	NSArray<NSButton*>* _codeCheckboxes;  // with several: which ones the actions use
+	NSTextView* _replyView;
+	NSTextField* _codeStatus;             // the hint over the buttons, then what was done
+	NSButton* _copyButton;
+	NSButton* _insertButton;
+	AgentInlineInsertMode _insertMode;
 }
 @end
 
@@ -96,23 +105,134 @@ static NSTextField* Label (NSString* text, BOOL secondary)
 	return res;
 }
 
+// The reply as Markdown, code blocks included, in the popover’s fonts
++ (NSAttributedString*)replyText:(NSString*)reply codeBlocks:(NSArray<OakMarkdownCodeBlock*>**)codeBlocks
+{
+	OakMarkdownStyle* style = [OakMarkdownStyle defaultStyle];
+	style.font     = [NSFont systemFontOfSize:NSFont.systemFontSize];
+	style.codeFont = [NSFont monospacedSystemFontOfSize:NSFont.smallSystemFontSize weight:NSFontWeightRegular];
+	return [OakMarkdownRenderer attributedStringFromMarkdown:reply style:style codeBlocks:codeBlocks codeBlockFooter:nil];
+}
+
+// With several code blocks: a checkbox for each, named by its number,
+// language and first line. The first is checked to start with.
+- (NSView*)codeBlockCheckboxes:(NSArray<OakMarkdownCodeBlock*>*)codeBlocks
+{
+	NSMutableArray<NSButton*>* checkboxes = [NSMutableArray array];
+	for(NSUInteger i = 0; i < codeBlocks.count; ++i)
+	{
+		NSString* firstLine = @"";
+		for(NSString* line in [codeBlocks[i].code componentsSeparatedByString:@"\n"])
+		{
+			if((firstLine = [line stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet]).length)
+				break;
+		}
+		if(firstLine.length > 48)
+			firstLine = [[firstLine substringToIndex:[firstLine rangeOfComposedCharacterSequenceAtIndex:48].location] stringByAppendingString:@"…"];
+		NSString* language = codeBlocks[i].language;
+		NSString* title = [NSString stringWithFormat:@"%lu. %@%@", i + 1, language.length ? [language stringByAppendingString:@" — "] : @"", firstLine];
+
+		NSButton* checkbox = [NSButton checkboxWithTitle:title target:self action:@selector(toggleCodeBlock:)];
+		checkbox.controlSize = NSControlSizeSmall;
+		checkbox.font        = [NSFont systemFontOfSize:NSFont.smallSystemFontSize];
+		checkbox.tag         = i;
+		checkbox.state       = i == 0 ? NSControlStateValueOn : NSControlStateValueOff;
+		checkbox.lineBreakMode = NSLineBreakByTruncatingTail;
+		[checkbox.widthAnchor constraintLessThanOrEqualToConstant:kWidth - 24].active = YES;
+		[checkboxes addObject:checkbox];
+	}
+	_codeCheckboxes = checkboxes;
+
+	NSStackView* stack = [NSStackView stackViewWithViews:checkboxes];
+	stack.orientation = NSUserInterfaceLayoutOrientationVertical;
+	stack.alignment   = NSLayoutAttributeLeading;
+	stack.spacing     = 2;
+	return stack;
+}
+
+// Shows the block in the reply
+- (void)toggleCodeBlock:(NSButton*)sender
+{
+	NSUInteger const block = sender.tag;
+	NSTextStorage* textStorage = _replyView.textStorage;
+	__block NSRange range = NSMakeRange(NSNotFound, 0);
+	[textStorage enumerateAttribute:OakMarkdownCodeBlockAttributeName inRange:NSMakeRange(0, textStorage.length) options:0 usingBlock:^(NSNumber* index, NSRange blockRange, BOOL* stop){
+		if(index && index.unsignedIntegerValue == block)
+		{
+			range = range.location == NSNotFound ? blockRange : NSUnionRange(range, blockRange);
+		}
+		else if(range.location != NSNotFound)
+		{
+			*stop = YES;
+		}
+	}];
+	if(range.location != NSNotFound && sender.state == NSControlStateValueOn)
+	{
+		[_replyView scrollRangeToVisible:range];
+		[_replyView showFindIndicatorForRange:range];
+	}
+	[self updateCodeButtons];
+}
+
+// Text selected in the reply, else the checked blocks (or the only one), one after another
+- (NSString*)codeToUse
+{
+	NSRange selection = _replyView.selectedRange;
+	if(selection.length)
+		return [_replyView.string substringWithRange:selection];
+
+	if(!_codeCheckboxes)
+		return _codes.firstObject;
+
+	NSMutableArray* res = [NSMutableArray array];
+	for(NSButton* checkbox in _codeCheckboxes)
+	{
+		if(checkbox.state == NSControlStateValueOn)
+			[res addObject:_codes[checkbox.tag]];
+	}
+	return res.count ? [res componentsJoinedByString:@"\n"] : nil;
+}
+
+- (void)updateCodeButtons
+{
+	BOOL const enabled = self.codeToUse.length > 0;
+	_copyButton.enabled   = enabled;
+	_insertButton.enabled = enabled;
+}
+
+- (void)textViewDidChangeSelection:(NSNotification*)notification
+{
+	[self updateCodeButtons];
+}
+
+- (void)setCodeStatus:(NSString*)status
+{
+	_codeStatus.stringValue = status;
+	_codeStatus.hidden      = NO;
+}
+
 // As tall as the diffs, up to kMaxDiffHeight; then it scrolls
 - (NSView*)diffViewForChanges:(NSArray<NSDictionary*>*)changes
 {
+	return [self scrollingText:[AgentInlinePromptController diffTextForChanges:changes] maxHeight:kMaxDiffHeight];
+}
+
+- (NSView*)scrollingText:(NSAttributedString*)text maxHeight:(CGFloat)maxHeight
+{
 	CGFloat const width = kWidth - 24;
-	NSScrollView* scrollView = [[NSScrollView alloc] initWithFrame:NSMakeRect(0, 0, width, kMaxDiffHeight)];
+	NSScrollView* scrollView = [[NSScrollView alloc] initWithFrame:NSMakeRect(0, 0, width, maxHeight)];
 	scrollView.hasVerticalScroller = YES;
 	scrollView.autohidesScrollers  = YES;
 	scrollView.drawsBackground     = NO;
 
-	NSTextView* textView = [[NSTextView alloc] initWithFrame:NSMakeRect(0, 0, scrollView.contentSize.width, kMaxDiffHeight)];
+	NSTextView* textView = [[NSTextView alloc] initWithFrame:NSMakeRect(0, 0, scrollView.contentSize.width, maxHeight)];
 	textView.editable           = NO;
 	textView.selectable         = YES;
 	textView.drawsBackground    = NO;
 	textView.verticallyResizable = YES;
 	textView.autoresizingMask   = NSViewWidthSizable;
 	textView.textContainer.widthTracksTextView = YES;
-	[textView.textStorage setAttributedString:[AgentInlinePromptController diffTextForChanges:changes]];
+	[textView.textStorage setAttributedString:text];
 	scrollView.documentView = textView;
 
 	[textView.layoutManager ensureLayoutForTextContainer:textView.textContainer];
@@ -120,7 +240,7 @@ static NSTextField* Label (NSString* text, BOOL secondary)
 	[textView sizeToFit];
 
 	[scrollView.widthAnchor constraintEqualToConstant:width].active = YES;
-	[scrollView.heightAnchor constraintEqualToConstant:MIN(height, kMaxDiffHeight)].active = YES;
+	[scrollView.heightAnchor constraintEqualToConstant:MIN(height, maxHeight)].active = YES;
 	return scrollView;
 }
 
@@ -195,17 +315,35 @@ static NSTextField* Label (NSString* text, BOOL secondary)
 	NSMutableArray* views = [NSMutableArray array];
 	if(changes.count)
 		[views addObject:[self diffViewForChanges:changes]];
+	_codes          = @[ ];
+	_codeCheckboxes = nil;
+	_replyView      = nil;
+	_insertMode     = _replacesSelection ? AgentInlineInsertReplacingSelection : AgentInlineInsertAtCursor;
 	if(reply.length)
 	{
-		NSString* text = reply.length > 400 ? [[reply substringToIndex:[reply rangeOfComposedCharacterSequenceAtIndex:400].location] stringByAppendingString:@"…"] : reply;
-		NSTextField* label = Label(text, changes.count > 0);
-		label.maximumNumberOfLines = 8;
-		[views addObject:label];
+		NSArray<OakMarkdownCodeBlock*>* codeBlocks;
+		NSAttributedString* text = [AgentInlinePromptController replyText:reply codeBlocks:&codeBlocks];
+		_codes = [codeBlocks valueForKey:@"code"] ?: @[ ];
+		NSScrollView* scrollView = (NSScrollView*)[self scrollingText:text maxHeight:changes.count ? kMaxReplyHeight / 2 : kMaxReplyHeight];
+		_replyView = scrollView.documentView;
+		_replyView.delegate = self;
+		[views addObject:scrollView];
+		if(codeBlocks.count > 1)
+			[views addObject:[self codeBlockCheckboxes:codeBlocks]];
 	}
 	if(!views.count)
 		[views addObject:Label(@"Done, nothing changed.", NO)];
 
+	BOOL const hasCode = _codes.count > 0;
+	_codeStatus = Label(@"Check the blocks to use; they go in one after another. Or select text in the reply to use just that.", YES);
+	_codeStatus.hidden = !_codeCheckboxes;
+	if(hasCode)
+		[views addObject:_codeStatus];
+
 	NSMutableArray* buttons = [NSMutableArray arrayWithObject:[self button:@"Show in Chat" action:@selector(showChat:) key:nil]];
+	_copyButton = _insertButton = nil;
+	if(hasCode)
+		[buttons addObject:_copyButton = [self button:@"Copy" action:@selector(copyCode:) key:nil]];
 	if(changes.count)
 	{
 		[buttons addObject:[self button:@"Undo" action:@selector(undoChanges:) key:nil]];
@@ -213,10 +351,13 @@ static NSTextField* Label (NSString* text, BOOL secondary)
 	}
 	else
 	{
+		if(hasCode)
+			[buttons addObject:_insertButton = [self button:(_replacesSelection ? @"Replace Selection" : @"Insert at Cursor") action:@selector(insertCode:) key:nil]];
 		[buttons addObject:[self button:@"Close" action:@selector(closeButton:) key:@"\r"]];
 	}
 	[views addObject:[self buttonRow:buttons]];
 	[self setViews:views];
+	[self updateCodeButtons];
 }
 
 - (void)showFailure:(NSString*)message
@@ -237,6 +378,27 @@ static NSTextField* Label (NSString* text, BOOL secondary)
 - (void)undoChanges:(id)sender  { [self close]; [_delegate inlinePromptUndoChanges:self]; }
 - (void)showChat:(id)sender     { [self close]; [_delegate inlinePromptShowChat:self]; }
 - (void)closeButton:(id)sender  { [self close]; }
+// The popover stays open for more. After the first, each goes after the last.
+- (void)insertCode:(id)sender
+{
+	NSString* code = self.codeToUse;
+	if(!code.length)
+		return;
+	[_delegate inlinePrompt:self insertText:code mode:_insertMode];
+	[self setCodeStatus:_insertMode == AgentInlineInsertReplacingSelection ? @"Replaced the selection. Check other blocks to add them after it." : @"Inserted. Check other blocks to add them after it."];
+	_insertMode = AgentInlineInsertAfterLastInsertion;
+	_insertButton.title = @"Insert After";
+}
+
+- (void)copyCode:(id)sender
+{
+	NSString* code = self.codeToUse;
+	if(!code.length)
+		return;
+	[NSPasteboard.generalPasteboard clearContents];
+	[NSPasteboard.generalPasteboard setString:code forType:NSPasteboardTypeString];
+	[self setCodeStatus:@"Copied."];
+}
 
 // ===========
 // = Popover =
@@ -250,6 +412,17 @@ static NSTextField* Label (NSString* text, BOOL secondary)
 	_popover.delegate = self;
 	[_popover showRelativeToRect:rect ofView:view preferredEdge:view.isFlipped ? NSRectEdgeMaxY : NSRectEdgeMinY];
 	[self.view.window makeFirstResponder:_promptField];
+}
+
+// Only up or down: it keeps the column it was opened at
+- (void)moveToRect:(NSRect)rect
+{
+	if(!_popover.isShown || NSIsEmptyRect(rect))
+		return;
+	NSRect res = _popover.positioningRect;
+	res.origin.y    = NSMinY(rect);
+	res.size.height = NSHeight(rect);
+	_popover.positioningRect = res;
 }
 
 - (BOOL)isShown

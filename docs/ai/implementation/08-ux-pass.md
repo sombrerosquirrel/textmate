@@ -7,7 +7,7 @@ tags: [textmate, implementation, ux, agent, markdown]
 
 # UX Pass — Agent Panel and Markdown Preview
 
-**Status:** 🔄 In progress. §3–§11 are done, committed and confirmed by the user (M5 checks 9–21, 2026-11-02); the tab bar's stuck hover state is fixed (§13, 2026-11-02). What's left is in [§14](#14-to-do).
+**Status:** 🔄 In progress. §3–§11 are done, committed and confirmed by the user (M5 checks 9–21, 2026-11-02); the tab bar's stuck hover state is fixed (§13, 2026-11-02). What's left is in [§15](#15-to-do).
 **Branch:** `feature/agent-polish`
 **Implementation details:** [M5 step 7](07-m5-polish.md#step-7a--markdown-preview-scroll-smoothness-2026-10-20) (7a–7d). This document collects the UX work by feature: what the user asked for, how we compare with VS Code, what changed, and how to test it.
 
@@ -25,7 +25,8 @@ tags: [textmate, implementation, ux, agent, markdown]
 11. [Chat: working indicator and status](#11-chat-working-indicator-and-status)
 12. [Test prompt](#12-test-prompt)
 13. [Tab bar: stuck hover state](#13-tab-bar-stuck-hover-state)
-14. [To do](#14-to-do)
+14. [Chat: GitHub text style](#14-chat-github-text-style)
+15. [To do](#15-to-do)
 
 ---
 
@@ -318,13 +319,34 @@ To check: open and close tabs and resize the agent panel with the pointer over t
 
 **Status:** done (commit `ad706720`), confirmed by the user (2026-11-02).
 
-## 14. To do
+## 14. Chat: GitHub text style
+
+**Asked (2026-11-08):** "is it possible for the agent panel to also style like Github (in markdown preview)? Selectable between built in and github." Decisions (user): restyle the panel's own renderer (not the preview's web view, which would mean rebuilding the chat as HTML; it would also need cmark-gfm), keep the editor theme for code blocks, and a setting separate from the preview's.
+
+| What | How |
+|---|---|
+| Style options | `OakMarkdownStyle` gains paragraph, list item, line and heading spacing, heading sizes (`headingScales`), `rulesUnderMajorHeadings`, quote bar width, table cell padding and `linkColor`. A new style has the built-in values, so the preview and the default panel look are unchanged (test: `default_style_layout`). |
+| `githubStyle` | GitHub's comment styles (primer/css markdown-body) at 14 pt: Primer text, secondary, border, inline code and link colours for light and dark; headings 2, 1.5, 1.25, 1, 0.875, 0.85 em, semibold, a 1 pt line under h1 and h2 (also `<h1>`/`<h2>` in HTML); 1 em after paragraphs; line height about 1.5; 0.25 em quote bar; table cells padded 13 × 6. Test: `github_style`. |
+| Setting | Preferences ▸ Agents, Chat text style: Built-in / GitHub (`agentPanelMarkdownStyle`, `builtin` by default). The panel watches the defaults and re-renders open chats (`AgentTranscriptView.usesGitHubStyle`), keeping the editor theme's code block colours and highlighter; the transcript's link colour follows the style. |
+| Rounded, striped tables (2026-11-08, asked for after the first version) | `tableCornerRadius` (6) and `tableStripeColor` (Primer grey, translucent) in `githubStyle`. Such tables use `OakMarkdownTable` (knows its row count, kept up to date as rows are added) and `OakMarkdownTableCell`, which has no layout border and draws its own 1 pt lines in `drawBackgroundWithFrame:…`: its outline, with an inside cell's trailing and bottom lines drawn 1 pt further so they fall exactly on the next cells' lines, and the outside corners rounded. Frames are snapped to pixels (they can start on half points). Every second row after the header is shaded, as on GitHub. The built-in style keeps plain `NSTextTable` cells. Test: `rounded_striped_table` (set `OAK_MARKDOWN_TABLE_PNG=path` to save a picture). Speed (2026-11-08, the user found tables slow; debug build, 20-row table, per full pass): render 0.8 ms and layout 2.8 ms in every style; drawing was 4.0 ms against 2.2 ms for the built-in style, all of it from the translucent stripe. The stripe is now mixed with the text view's background into an opaque colour (1.9 ms), and straight lines and stripes are filled as rectangles rather than paths. |
+| Not like GitHub | Inline code and the quote bar have square corners (inline code is a text background, not a block), and TextKit 1 breaks lines its own way, so the result is close rather than identical. Tool rows, prompts and cards keep the panel's own look. |
+
+**Status:** done, not yet checked by the user.
+
+## 15. To do
 
 Collected 2026-11-02 for us to work through. Ticked when done.
 
 **Agent panel**
 - [ ] **The user's list of panel issues** (asked for 2026-10-20; folding was the first). This is the main remaining part of the UX pass.
 - [ ] **"Claude Code stopped running"**: the panel showed this error (screenshot, 2026-11-02). Find out why, if it happens again.
+- [ ] **Attachments with slash commands** (2026-11-08). A message starting with `/name` is now sent as its text alone (`+[AgentAttachment isSlashCommand:]`), since Claude only runs a command that is the whole message. Attached files, the current-file note and the search-scope note are left out, with no notice, because most commands (`/clear`) take no file. To revisit: pass attachments to commands that take files or paths, e.g. as path arguments in the text, and only then say when they're dropped. `/clear` is handled by the panel as New Chat (Claude's adapter lists it as unsupported and, sent, it did nothing visible), unless the agent offers its own `clear` command.
+- [ ] **Claude commands its adapter doesn't support** (2026-11-08): `/cost`, `/todos`, `/login`, `/logout`, `/release-notes`. Claude's ACP adapter (`UNSUPPORTED_COMMANDS` in claude-agent-acp 0.101.0, along with `clear`, `keybindings-help` and `output-style:new`) leaves them out of its command list, and typed anyway they do nothing visible. Look at handling each in the panel, as `/clear` now is: e.g. `/cost` from the usage the agent reports, `/todos` as the Plan, `/login` / `/logout` through the agent's sign-in, or say they aren't available.
+
+- [x] **Streaming speed** (2026-11-08, measured with a temporary benchmark: 10 earlier replies, then a reply with prose, a table and a 60-line code block streamed 40 characters at a time; debug build). Rendering a chunk took 4.1 ms, 3.5 ms of it searching files for the place of the code block still streaming: its code changes with each chunk, so the cache never hit. That search now waits for the block's closing fence or the end of the reply (`CodeBlockIsClosed`; test `streaming_code_block_place_waits_for_its_end`); rendering a chunk takes 0.5 ms. What's left per update: text edit about 1 ms, layout 1–2 ms (it starts at the reply's first character, since the whole reply's text is replaced), drawing 0.8 ms.
+- [x] **Replace only what changed** (2026-11-08). A streaming update replaced the reply's whole text, so layout started at its first character. `flushPendingItems` now keeps the start that's already as rendered (`SameStartLength`) and replaces from the first change. Attributes compare by what they draw, since OakMarkdown makes text blocks and tables anew with each render: block geometry, colours and table cells (`SameTextBlock`), code view placeholders by height, and the font the text storage adds where the render has none. A text block the change falls in (a table, code block or quote) is replaced whole, so it never draws as two. Same benchmark (a 147-update reply after 10 earlier ones, debug build): an update 2.5 → 1.2 ms (near the end of the reply 3.1 → 1.5 ms); drawing 0.8–1 ms. Tests: `streaming_edits_only_what_changed`; `streaming_looks_like_full_render` streams headings, a growing table, a quote, an open code view and an emoji 7 characters at a time and compares the chat's pixels with a fresh render after each chunk, in both styles. The test code view now follows its code's height, like `OakCodeView`.
+- [x] **Position code views only for changed items**: not done, measured as not worth it. Once layout is done, positioning every code view takes 0.03 ms; its cost before was the layout it triggered.
+- [x] **Code place for an open fence at the end of a reply** (2026-11-08): `textBeforeCode` now ignores blank lines at the end of a block without a closing fence, so a file named just before it is found once the reply is done (covered in `streaming_code_block_place_waits_for_its_end`).
 
 **Code views in the chat** (§6)
 - [ ] Find in the chat doesn't search inside them.

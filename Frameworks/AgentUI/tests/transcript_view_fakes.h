@@ -12,6 +12,11 @@
 @end
 
 @implementation FakeCodeView
+- (void)setCode:(NSString*)code // like OakCodeView, its height follows its code (as a reply streams)
+{
+	_code = [code copy];
+	self.fittingHeight = 20 * [code componentsSeparatedByString:@"\n"].count;
+}
 @end
 
 @interface FakeTranscriptDelegate : NSObject <AgentTranscriptViewDelegate>
@@ -34,7 +39,6 @@
 {
 	FakeCodeView* view = [[FakeCodeView alloc] initWithFrame:NSZeroRect];
 	view.code = code;
-	view.fittingHeight = 20 * [code componentsSeparatedByString:@"\n"].count;
 	[_views addObject:view];
 	return view;
 }

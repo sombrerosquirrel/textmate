@@ -72,6 +72,20 @@ static void read_only_text_view ()
 	OAK_ASSERT([(id<NSMenuItemValidation>)textView validateMenuItem:copy]);
 }
 
+// Replacing through the view refreshes it, as for its own edits: an edit to
+// the document alone left the old, taller text drawn below the new end
+static void replacements_refresh_the_view ()
+{
+	OakCodeView* view = CodeView(@"one\ntwo\nthree\nfour\nfive\nsix\n");
+	OakTextView* textView = view.textView;
+	CGFloat const six = textView.naturalHeight;
+
+	[textView performReplacements:{ { { 4, 28 }, "2,3,4,5,6\n" } }];
+	OAK_ASSERT([textView.document.content isEqualToString:@"one\n2,3,4,5,6\n"]);
+	OAK_ASSERT_LT(textView.naturalHeight, six);
+}
+
+void test_replacements_refresh_the_view () { RunOnMainThread(replacements_refresh_the_view); }
 void test_fitting_height_follows_lines () { RunOnMainThread(fitting_height_follows_lines); }
 void test_code_replaces_changed_part () { RunOnMainThread(code_replaces_changed_part); }
 void test_read_only_text_view () { RunOnMainThread(read_only_text_view); }

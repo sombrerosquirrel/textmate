@@ -36,4 +36,17 @@ typedef NS_ENUM(NSInteger, AgentAttachmentKind) {
 // as the file the user means unless they say otherwise. Its contents aren’t
 // sent; the agent reads the file if it needs to.
 + (NSArray<NSDictionary*>*)promptWithText:(NSString*)text attachments:(NSArray<AgentAttachment*>*)attachments currentFile:(AgentAttachment*)currentFile promptCapabilities:(NSDictionary*)promptCapabilities;
+// Also tells the agent to look for files only in `searchRoot` (the folder at
+// the top of the File Browser), and to ask the user before searching outside
+// it. Sent with every prompt, so the rule holds for any agent and follows the
+// File Browser as the user moves it.
+//
+// A slash command (text such as “/clear” or “/review main.cc”) is sent as its
+// text alone: agents like Claude only run it when it’s the whole message, so
+// attachments and notes are left out.
++ (NSArray<NSDictionary*>*)promptWithText:(NSString*)text attachments:(NSArray<AgentAttachment*>*)attachments currentFile:(AgentAttachment*)currentFile searchRoot:(NSString*)searchRoot promptCapabilities:(NSDictionary*)promptCapabilities;
+// Whether `text` starts with “/name”, as slash commands do (not “/Users/…”).
++ (BOOL)isSlashCommand:(NSString*)text;
+// The search rule sent for `searchRoot`.
++ (NSString*)searchScopeNoteForDirectory:(NSString*)searchRoot;
 @end

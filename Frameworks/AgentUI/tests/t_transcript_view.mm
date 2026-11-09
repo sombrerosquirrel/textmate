@@ -77,6 +77,112 @@ static void code_blocks_start_folded_with_place ()
 	OAK_ASSERT_EQ(host.delegate.views.count, 0);
 }
 
+// A block still streaming isn’t looked up in files at each update, only once it ends
+static void streaming_code_block_place_waits_for_its_end ()
+{
+	transcript_host_t host;
+	host.delegate.files = @{ @"/project/Sources/A.m": @"@implementation A\n- (void)one\n{\n}\n\n- (void)two\n{\n\tint x = 1;\n}\n@end\n" };
+
+	AgentTranscriptItem* item = [host.transcript applyUpdate:@{ @"sessionUpdate": @"agent_message_chunk", @"content": @{ @"type": @"text", @"text": @"In Sources/A.m:\n\n```objc\n- (void)two\n{\n\tint x = 1;\n}\n" } }];
+	[host.view setWorkingItem:item tokens:0];
+	[host.view reloadData];
+	OAK_ASSERT(!host.contains(@"A.m:6–9"));
+	OAK_ASSERT(host.contains(@"▸ Objective-C · 4 lines · - (void)two"));
+
+	// The closing fence arrives
+	[host.transcript applyUpdate:@{ @"sessionUpdate": @"agent_message_chunk", @"content": @{ @"type": @"text", @"text": @"```\n\nMore text" } }];
+	[host.view setNeedsDisplayItem:item];
+	[host.view performSelector:@selector(flushPendingItems)];
+	OAK_ASSERT(host.contains(@"▸ Objective-C · 4 lines · A.m:6–9"));
+
+	// A reply that ends without closing its fence is looked up when it’s done
+	transcript_host_t open;
+	open.delegate.files = host.delegate.files;
+	AgentTranscriptItem* unclosed = [open.transcript applyUpdate:@{ @"sessionUpdate": @"agent_message_chunk", @"content": @{ @"type": @"text", @"text": @"In Sources/A.m:\n\n```objc\n- (void)two\n{\n\tint x = 1;\n}\n" } }];
+	[open.view setWorkingItem:unclosed tokens:0];
+	[open.view reloadData];
+	OAK_ASSERT(!open.contains(@"A.m:6–9"));
+	[open.view setWorkingItem:nil tokens:0];
+	[open.view performSelector:@selector(flushPendingItems)];
+	OAK_ASSERT(open.contains(@"A.m:6–9"));
+}
+
+// Streaming text changes the chat from the first changed character, not from the
+// reply’s start, and ends up as a full render would
+static void streaming_edits_only_what_changed ()
+{
+	transcript_host_t host;
+	host.view.usesGitHubStyle = YES;
+	AgentTranscriptItem* item = [host.transcript applyUpdate:@{ @"sessionUpdate": @"agent_message_chunk", @"content": @{ @"type": @"text", @"text": @"# Heading\n\nA first paragraph with **bold** text.\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\nSecond" } }];
+	[host.view reloadData];
+
+	__block NSRange edited = NSMakeRange(NSNotFound, 0);
+	id observer = [NSNotificationCenter.defaultCenter addObserverForName:NSTextStorageDidProcessEditingNotification object:host.view.textStorage queue:nil usingBlock:^(NSNotification* notification){
+		NSTextStorage* storage = notification.object;
+		edited = edited.location == NSNotFound ? storage.editedRange : NSUnionRange(edited, storage.editedRange);
+	}];
+	[host.transcript applyUpdate:@{ @"sessionUpdate": @"agent_message_chunk", @"content": @{ @"type": @"text", @"text": @" paragraph, now *longer*." } }];
+	[host.view setNeedsDisplayItem:item];
+	[host.view performSelector:@selector(flushPendingItems)];
+	[NSNotificationCenter.defaultCenter removeObserver:observer];
+
+	NSUInteger const table = [host.view.textStorage.string rangeOfString:@"2\nSecond"].location;
+	OAK_ASSERT_NE(edited.location, NSNotFound);
+	OAK_ASSERT_LT(table, edited.location); // the heading, paragraph and table weren’t touched
+	OAK_ASSERT(host.contains(@"Second paragraph, now longer."));
+
+	NSAttributedString* streamed = [host.view.textStorage copy];
+	[host.view reloadData];
+	OAK_ASSERT_EQ(std::string(streamed.string.UTF8String), host.text());
+}
+
+static NSData* Picture (transcript_host_t& host)
+{
+	[host.view.layoutManager ensureLayoutForTextContainer:host.view.textContainer];
+	[host.view performSelector:@selector(positionCodeViews)];
+	NSBitmapImageRep* bitmap = [host.view bitmapImageRepForCachingDisplayInRect:host.view.bounds];
+	[host.view cacheDisplayInRect:host.view.bounds toBitmapImageRep:bitmap];
+	return [NSData dataWithBytes:bitmap.bitmapData length:bitmap.bytesPerPlane];
+}
+
+// After each chunk, the chat looks as it would rendered from scratch: no table
+// or code block split in two, nothing left over
+static void streaming_looks_like_full_render ()
+{
+	NSString* const reply = @"# Title\n\nIntro with **bold** and `code` 👍🏽.\n\n## Table\n\n| Name | Value |\n|---|---|\n| one | 1 |\n| two | 2 |\n| three | 3 |\n\n> A quote\n> over two lines\n\n```objc\nint a = 1;\nint b = 2;\nint c = 3;\n```\n\n- item\n- item two\n\nThe end.";
+	for(NSString* style in @[ @"builtin", @"github" ])
+	{
+		transcript_host_t host;
+		host.view.foldsCodeBlocks = NO;
+		host.view.usesGitHubStyle = [style isEqualToString:@"github"];
+		AgentTranscriptItem* item = nil;
+		for(NSUInteger at = 0; at < reply.length; at += 7)
+		{
+			NSRange chunk = [reply rangeOfComposedCharacterSequencesForRange:NSMakeRange(at, MIN(7, reply.length - at))];
+			at = NSMaxRange(chunk) - 7;
+			item = [host.transcript applyUpdate:@{ @"sessionUpdate": @"agent_message_chunk", @"content": @{ @"type": @"text", @"text": [reply substringWithRange:chunk] } }];
+			if(!host.view.textStorage.length)
+					[host.view reloadData];
+			else	[host.view setNeedsDisplayItem:item];
+			[host.view performSelector:@selector(flushPendingItems)];
+
+			transcript_host_t fresh;
+			fresh.view.foldsCodeBlocks = NO;
+			fresh.view.usesGitHubStyle = host.view.usesGitHubStyle;
+			[fresh.transcript applyUpdate:@{ @"sessionUpdate": @"agent_message_chunk", @"content": @{ @"type": @"text", @"text": item.text } }];
+			[fresh.view reloadData];
+
+			OAK_ASSERT_EQ(host.text(), fresh.text());
+			OAK_ASSERT_EQ(NSHeight(host.view.frame), NSHeight(fresh.view.frame));
+			if(![Picture(host) isEqualToData:Picture(fresh)])
+			{
+				fprintf(stderr, "%s: differs after «%s»\n", style.UTF8String, item.text.UTF8String);
+				OAK_FAIL("streamed chat looks different from a full render");
+			}
+		}
+	}
+}
+
 static void unfolded_code_block_shows_view ()
 {
 	transcript_host_t host;
@@ -616,6 +722,47 @@ static void room_for_reply_at_the_end ()
 	[host.scrollView removeFromSuperview];
 }
 
+// With several prompts, earlier replies fold as newer ones pass them; what
+// shows doesn’t move
+static void text_above_changing_keeps_place ()
+{
+	transcript_host_t host;
+	NSWindow* window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 400, 600) styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];
+	window.releasedWhenClosed = NO;
+	[window.contentView addSubview:host.scrollView];
+	NSClipView* clipView = host.scrollView.contentView;
+
+	NSMutableString* longText = [NSMutableString string];
+	for(NSUInteger i = 0; i < 100; ++i)
+		[longText appendFormat:@"Line %lu of a long reply.\n\n", i];
+	AgentTranscriptItem* first = host.reply(longText);
+	AgentTranscriptItem* user = [host.transcript addUserMessage:@"Next" attachmentNames:@[ ]];
+	[host.view setNeedsDisplayItem:user];
+	[host.view performSelector:@selector(flushPendingItems)];
+	AgentTranscriptItem* second = [host.transcript applyUpdate:@{ @"sessionUpdate": @"agent_message_chunk", @"content": @{ @"type": @"text", @"text": longText } }];
+	[host.view setNeedsDisplayItem:second];
+	[host.view performSelector:@selector(flushPendingItems)];
+	[host.view scrollPoint:NSMakePoint(0, NSHeight(host.view.bounds))];
+
+	[host.transcript addUserMessage:@"Again" attachmentNames:@[ ]];
+	[host.view setNeedsDisplayItem:host.transcript.items.lastObject];
+	[host.view makeRoomForReply];
+	[host.view performSelector:@selector(flushPendingItems)];
+	[NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.45]];
+
+	NSUInteger again = [host.view.textStorage.string rangeOfString:@"Again"].location;
+	auto againInView = [&](){ return NSMinY([host.view firstRectForCharacterRange:NSMakeRange([host.view.textStorage.string rangeOfString:@"Again"].location, 1) actualRange:nullptr]) - NSMinY(clipView.window.frame); };
+	CGFloat before = againInView();
+	OAK_ASSERT_NE(again, NSNotFound);
+
+	// The long reply folds to a line, far above
+	first.folded = YES;
+	[host.view setNeedsDisplayItem:first];
+	[host.view performSelector:@selector(flushPendingItems)];
+	OAK_ASSERT_LT(fabs(againInView() - before), 1);
+	[host.scrollView removeFromSuperview];
+}
+
 static void reload_at_end_stays_at_end ()
 {
 	transcript_host_t host;
@@ -636,12 +783,16 @@ static void reload_at_end_stays_at_end ()
 }
 
 void test_code_blocks_start_folded_with_place () { RunOnMainThread(code_blocks_start_folded_with_place); }
+void test_streaming_code_block_place_waits_for_its_end () { RunOnMainThread(streaming_code_block_place_waits_for_its_end); }
+void test_streaming_edits_only_what_changed () { RunOnMainThread(streaming_edits_only_what_changed); }
+void test_streaming_looks_like_full_render () { RunOnMainThread(streaming_looks_like_full_render); }
 void test_unfolded_code_block_shows_view () { RunOnMainThread(unfolded_code_block_shows_view); }
 void test_fold_items () { RunOnMainThread(fold_items); }
 void test_links_to_files_not_created_yet () { RunOnMainThread(links_to_files_not_created_yet); }
 void test_permission_card_scrolls_into_view () { RunOnMainThread(permission_card_scrolls_into_view); }
 void test_lone_move_shows_at_once_a_run_glides () { RunOnMainThread(lone_move_shows_at_once_a_run_glides); }
 void test_room_for_reply_at_the_end () { RunOnMainThread(room_for_reply_at_the_end); }
+void test_text_above_changing_keeps_place () { RunOnMainThread(text_above_changing_keeps_place); }
 void test_reload_at_end_stays_at_end () { RunOnMainThread(reload_at_end_stays_at_end); }
 void test_new_text_scrolls_up_only_at_the_end () { RunOnMainThread(new_text_scrolls_up_only_at_the_end); }
 void test_toggle_shows_or_folds_all_code_blocks () { RunOnMainThread(toggle_shows_or_folds_all_code_blocks); }
